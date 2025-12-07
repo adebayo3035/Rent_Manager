@@ -1,0 +1,242 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Poppins', sans-serif;
+}
+
+body {
+  /* font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0; */
+  background-color: #f8f8f8;
+}
+
+header {
+  background-color: #fff;
+  color: white;
+  text-align: center;
+}
+
+
+header h1 {
+  text-align: center;
+  margin: 5px 0;
+}
+
+/* Navbar Styles */
+nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #333;
+  padding: 5px 8px;
+}
+
+.nav-links {
+  display: flex;
+  list-style: none;
+  width: 100%;
+}
+
+.nav-links li {
+  margin: 0 10px;
+}
+
+.nav-links a {
+  color: white;
+  text-decoration: none;
+  padding: 4px 7px;
+  display: block;
+  font-size: 11px;
+  text-align: left;
+}
+
+.nav-links a:hover {
+  background-color: #575757;
+  border-radius: 4px;
+}
+
+/* Hamburger Icon */
+.icon2 {
+  display: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 8px;
+}
+/* End of NavBar */
+main {
+  padding: 20px;
+}
+
+section {
+  background-color: #fff;
+  padding: 20px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+  color: #333;
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+}
+
+/* Grid Layout for Cards */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  cursor: pointer;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.card h3 {
+  color: #555;
+  margin-bottom: 10px;
+  font-size: 1.2rem;
+}
+
+.card p {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #007bff;
+}
+
+/* Table Styles */
+#customer-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+#customer-table th,
+#customer-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+#customer-table th {
+  background-color: #007bff;
+  color: white;
+}
+
+#customer-table tr:hover {
+  background-color: #f1f1f1;
+}
+
+/* Lists Styles */
+#topMenuItems {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+#orderList,
+#topMenuList,
+#activeCustomers {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+#orderList li,
+#topMenuList li,
+#activeCustomers li {
+  padding: 15px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  transition: background 0.3s, transform 0.3s;
+}
+
+#topMenuList li:last-child,
+#activeCustomers li:last-child {
+  border-bottom: none;
+}
+
+#topMenuList li:hover,
+#activeCustomers li:hover {
+  background: #f9f9f9;
+  transform: translateX(10px);
+}
+
+#topMenuList li::before,
+#activeCustomers li::before {
+  content: '•';
+  color: #007bff;
+  display: inline-block;
+  width: 1em;
+  margin-left: -1em;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  #topMenuItems {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+footer {
+  text-align: center;
+  padding: 10px;
+  background-color: #333;
+  color: white;
+}
+
+/* Responsive Styles */
+@media (max-width: 875px) {
+  nav{
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .nav-links {
+      display: none;
+      flex-direction: column;
+      width: 100%;
+      background-color: #333;
+  }
+
+  .nav-links.active {
+      display: flex;
+  }
+
+  .icon2 {
+      display: flex;
+      right: 0;
+      width: 100%;
+      justify-content: flex-end;
+  }
+
+  .nav-links li {
+      margin: 10px 0;
+      text-align: left;
+  }
+  header h1{
+    font-size: 20px;
+  }
+}

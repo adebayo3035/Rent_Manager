@@ -1,0 +1,12 @@
+CREATE TABLE agents (
+    agent_id INT AUTO_INCREMENT PRIMARY KEY,
+    agent_code VARCHAR(50) NOT NULL UNIQUE,
+    firstname VARCHAR(100) NOT NULL,
+    lastname VARCHAR(100) NOT NULL,
+    email VARCHAR(150) NOT NULL UNIQUE,
+    phone VARCHAR(20) NOT NULL,
+    address VARCHAR(255),
+    status TINYINT(1) DEFAULT 1,  -- 1 = active, 0 = inactive
+    date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    date_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

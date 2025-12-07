@@ -1,0 +1,264 @@
+body {
+    font-family: 'Nunito', 'Roboto', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f4f4f4;
+    max-height: 100vh;
+}
+
+.nav-header {
+    background-color: #fff;
+    border-bottom: 1px solid #ccc;
+}
+
+main {
+    padding: 20px;
+}
+main h1, h2{
+    text-align: center;
+    margin-top: 10px;
+}
+#customer-form {
+    margin: 20px auto;
+    display: flex;
+    justify-content: space-between;
+    width: 90%
+  }
+  #customer-form #manageRevenueBtn{
+    background-color: #A020F0;
+  }
+  #customer-form button{
+    padding: 8px;
+    font-size: 16px;
+    background-color: green;
+    color: #fff;
+    cursor: pointer;
+    border-radius: 5px;
+    border: none;
+    outline: none;
+    align-self: center;
+  }
+ 
+
+.dashboard-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-gap: 20px;
+    justify-content: center;
+    align-items: center;
+}
+
+.stat-card {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    flex: 1;
+    margin: 0 10px;
+    
+}
+.stat-card h2 {
+    font-size: 16px;
+    color: #555;
+    margin-bottom: 10px;
+}
+
+.stat-card p {
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+}
+
+
+.summary-card {
+    border-top: 4px solid #3498db;
+}
+
+.average-card {
+    border-top: 4px solid #f39c12; /* orange */
+}
+
+.top-card {
+    border-top: 4px solid #2ecc71; /* green */
+}
+
+.low-card {
+    border-top: 4px solid #e74c3c; /* red */
+}
+
+#revenueTable, #ratingTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+#revenueTable th,
+#revenueTable td, #ratingTable th, #ratingTable td {
+    padding: 12px;
+    border: 1px solid #ccc;
+    text-align: left;
+}
+
+#revenueTable th, #ratingTable th {
+    background-color: #3457D5;
+    color: #fff;
+}
+
+.dashboard-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-gap: 20px;
+    max-height: fit-content;
+    margin-bottom: 20px;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.dashboard-charts canvas {
+    max-width: 300px;
+    margin: 0 auto;
+    max-height: 300px;
+}
+
+/* Modal styles */
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4); /* Black with opacity */
+}
+
+.modal-content {
+    background-color: #fff;
+    margin: 15% auto;
+    padding: 20px;
+    border-radius: 8px;
+    width: 80%;
+    max-width: 400px;
+}
+
+.modal-content h2 {
+    margin-top: 0;
+}
+
+.modal-content input,
+.modal-content textarea {
+    width: 100%;
+    padding: 8px;
+    margin: 10px 0;
+}
+
+.modal-content button {
+    padding: 10px;
+    background-color: green;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.close {
+    color: red;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+    color: #000;
+    cursor: pointer;
+}
+
+@media (max-width: 810px){
+    #customer-form {
+       flex-direction: column;
+        justify-content: space-between;
+    }
+    #customer-form button{
+        padding: 8px;
+        font-size: 16px;
+        margin: 10px;
+        width: 300px;
+      }
+}
+
+/* Media query for smaller screens */
+@media (max-width: 770px) {
+
+    .navbar a:not(:first-child),
+    .dropdown {
+        display: none;
+    }
+
+    .navbar a.icon {
+        display: block;
+    }
+
+    .navbar.responsive a,
+    .navbar.responsive .dropdown {
+        display: block;
+    }
+    
+    main h1{
+        font-size: 20px;
+    }
+    #customer-form {
+        display: flex;
+        justify-content: center;
+    }
+    #revenueTable, #ratingTable{
+        overflow-x: scroll;
+    }
+    #revenueTable th, 
+    #revenueTable td, #ratingTable th, #ratingTable td {
+        font-size: 12px;
+        padding: 8px;
+    }
+    .stat-card{
+        padding: 10px;
+        margin: 0 5px;
+    }
+    .stat-card h2 {
+       font-size: 10px;
+    }
+    .stat-card p{
+        font-size: 15px;
+     }
+}
+@media (max-width: 660px) {
+    .dashboard-charts {
+        grid-template-columns: 1fr;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .dashboard-charts canvas {
+        max-width: 70%;
+        width: 50%;
+        max-height: none;
+    }
+    main h1{
+        font-size: 16px;
+        color: blue;
+    }
+    #revenueTable th,
+#revenueTable td, #ratingTable th, #ratingTable td{
+    padding: 4px;
+    font-size: 11px;
+}
+}
+@media (max-width: 480px) {
+    #revenueTable th, 
+    #revenueTable td, #ratingTable th, #ratingTable td {
+        font-size: 12px;
+        padding: 6px;
+    }
+}
+

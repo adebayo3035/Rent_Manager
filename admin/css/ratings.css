@@ -1,0 +1,120 @@
+
+/* Container for the two-column layout */
+.rating-details-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 15px;
+}
+
+/* Ratings Table Styles */
+.ratings-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.ratings-data-table th {
+    background-color: #f5f5f5;
+    padding: 12px;
+    text-align: left;
+    color: #000;
+}
+
+.ratings-data-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.detail-label {
+    font-weight: 500;
+    color: #555;
+    width: 40%;
+}
+
+.detail-value {
+    color: #333;
+}
+
+/* User Details Fragment Styles */
+.user-details-fragment {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.user-card {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.user-card h3 {
+    margin-top: 0;
+    color: #2c3e50;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.user-avatar {
+    text-align: center;
+    margin: 10px 0;
+}
+
+.user-avatar img {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #3498db;
+}
+
+.user-info p {
+    margin: 8px 0;
+}
+
+/* Comments Section */
+.comments-section {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.comment-box {
+    background-color: #f9f9f9;
+    border-left: 3px solid #3498db;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 0 4px 4px 0;
+}
+
+.comment-box h4 {
+    margin-top: 0;
+    color: #3498db;
+}
+
+.comment-box p {
+    white-space: pre-wrap;
+    margin-bottom: 0;
+}
+
+/* Star Ratings */
+.star-rating {
+    color: red;
+    font-size: 1.1em;
+    letter-spacing: 2px;
+}
+#customer-form {
+    display: flex;
+    justify-content: center;
+}
+/* Responsive Design */
+@media (max-width: 768px) {
+    .rating-details-container {
+        grid-template-columns: 1fr;
+    }
+}

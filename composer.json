@@ -1,0 +1,23 @@
+{
+    "name": "abdul/transaction_manager",
+    "description": "A food vending web application, that has different modules.",
+    "type": "project",
+    "require": {
+        "phpmailer/phpmailer": "*",
+        "dompdf/dompdf": "dev-master",
+        "tecnickcom/tcpdf": "dev-main"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Abdul\\TransactionManager\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "adebayo3035",
+            "email": "adebayoabdulrahmon@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev"
+}

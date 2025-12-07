@@ -1,0 +1,14 @@
+#discount-div{
+    display : none;
+}
+/* .filter-section{
+    display: flex;
+    justify-content: space-around;
+    width: fit-content;
+    gap: 10px;
+}
+.status, .delete{
+    display: flex;
+    flex-direction: column;
+    border: 2px solid red;
+} */

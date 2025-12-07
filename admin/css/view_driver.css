@@ -1,0 +1,376 @@
+.ordersTable th,
+.ordersTable td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+tbody tr td input[type="text"],
+input[type="date"],
+tbody tr td input[type="email"],
+tbody tr td input[type="number"],
+tbody tr td input[type="month"],
+tbody tr td input[type="password"],
+tbody tr td input[type="datetime-local"],
+tbody tr td select {
+    width: 100%;
+    padding: 10px;
+    margin: 5px 0 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    outline: none;
+}
+
+tbody tr td input[type="email"] {
+    text-transform: lowercase;
+}
+td.action-buttons {
+    text-align: center;
+}
+
+
+
+.photo-container {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.driver-photo {
+    width: 150px;
+    height: 150px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 2px solid #ddd;
+}
+
+#deleteDriverBtn {
+    background-color: #a72828;
+    color: #fff;
+}
+
+#deleteDriverBtn:hover {
+    background-color: #000;
+
+}
+
+#updateDriverBtn {
+    background-image: #FFA500;
+    color: #fff;
+}
+
+#updateDriverBtn:hover {
+    background-color: #FFA500;
+    color: #fff;
+}
+#photo_container{
+    margin: 10px 0px; 
+    align-self: center; 
+}
+#photo_container img{
+    display: none; 
+    /* max-width: 100%; 
+    height: auto; */
+    width: 150px;
+    height: auto;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 2px solid #ddd;
+
+}
+.masking{
+    display: flex;
+    
+}
+.masking label{
+    padding-left: 10px;
+}
+/* Groupsa and Unit Icons */
+.edit-icon, .delete-icon {
+    cursor: pointer;
+    font-weight: 900;
+    margin: 3px;
+    cursor: pointer;
+  }
+  .edit-icon{
+    color: #f0ad4e;
+  }
+  .delete-icon{
+    color: #d9534f;
+  }
+  #customer-form{
+    display: flex;
+    justify-content: center;
+  }
+  .delete-btn {
+    padding: 10px;
+    background-color: #a72828; /* Green background */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    max-width: fit-content;
+    align-self: center;
+    text-decoration: none;
+}
+
+.delete-btn:hover {
+    /* background-color: #45a049; Darker green on hover */
+    background-color: #4caF50;
+}
+.spinner {
+    margin: 100px auto;
+    width: 50px;
+    height: 40px;
+    text-align: center;
+    font-size: 10px;
+  }
+  #reactivationComment{
+    font-size: 14px;
+    border: none;
+    outline: none;
+    padding: 10px;
+    background-color: #ccc;
+    border-radius: 4px;
+  }
+  
+  .spinner > div {
+    background-color: #333;
+    height: 100%;
+    width: 6px;
+    display: inline-block;
+    
+    -webkit-animation: sk-stretchdelay 1.2s infinite ease-in-out;
+    animation: sk-stretchdelay 1.2s infinite ease-in-out;
+  }
+  
+  .spinner .rect2 {
+    -webkit-animation-delay: -1.1s;
+    animation-delay: -1.1s;
+  }
+  
+  .spinner .rect3 {
+    -webkit-animation-delay: -1.0s;
+    animation-delay: -1.0s;
+  }
+  
+  .spinner .rect4 {
+    -webkit-animation-delay: -0.9s;
+    animation-delay: -0.9s;
+  }
+  
+  .spinner .rect5 {
+    -webkit-animation-delay: -0.8s;
+    animation-delay: -0.8s;
+  }
+  
+  @-webkit-keyframes sk-stretchdelay {
+    0%, 40%, 100% { -webkit-transform: scaleY(0.4) }  
+    20% { -webkit-transform: scaleY(1.0) }
+  }
+  
+  @keyframes sk-stretchdelay {
+    0%, 40%, 100% { 
+      transform: scaleY(0.4);
+      -webkit-transform: scaleY(0.4);
+    }  20% { 
+      transform: scaleY(1.0);
+      -webkit-transform: scaleY(1.0);
+    }
+  }
+  .restricted-badge {
+    font-weight: bold;
+    color: #d32f2f;
+    background-color: #ffebee;
+    padding: 3px 8px;
+    border-radius: 12px;
+    display: inline-block;
+}
+
+.not-restricted-badge {
+    color: #388e3c;
+    padding: 3px 8px;
+    display: inline-block;
+}
+.restricted-badge::before {
+    content: "⚠ ";
+}
+
+.not-restricted-badge::before {
+    content: "✓ ";
+}
+.restore-icon {
+  display: inline-block;
+  font-size: 15px;              /* Larger size for visibility */
+  color: #4CAF50;               /* Fresh green color */
+  background-color: #e8f5e9;   /* Light green background */
+  padding: 3px 5px;
+  border-radius: 3px;           /* Rounded corners */
+  box-shadow: 0 2px 5px rgba(76, 175, 80, 0.3); /* subtle shadow */
+  cursor: pointer;
+  transition: 
+    background-color 0.3s ease, 
+    color 0.3s ease, 
+    transform 0.2s ease;
+  user-select: none;            /* prevent text selection */
+}
+
+.restore-icon:hover {
+  color: #2e7d32;               /* Darker green on hover */
+  background-color: #c8e6c9;   /* Slightly darker background */
+  transform: scale(1.1);        /* Slightly enlarge on hover */
+  box-shadow: 0 4px 10px rgba(46, 125, 50, 0.4);
+}
+
+.restore-icon:active {
+  transform: scale(0.95);       /* Press effect */
+  box-shadow: 0 1px 3px rgba(46, 125, 50, 0.6);
+}
+
+/* Pagination buttons */
+#pagination button {
+    padding: 6px 12px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    color: #333;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 14px;
+}
+
+/* Hover effect */
+#pagination button:hover:not(.active):not(:disabled) {
+    background-color: #e0e0e0;
+}
+
+/* Active page */
+#pagination button.active {
+    background-color: #3498db;
+    color: white;
+    font-weight: bold;
+    border-color: #2980b9;
+}
+
+/* Disabled buttons (e.g., Prev on page 1) */
+#pagination button:disabled {
+    background-color: #ddd;
+    color: #999;
+    cursor: not-allowed;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.delete-promo{
+  color: #fff;
+  background-color: #DC2626;
+  font-weight: 900;
+}
+.delete-promo:hover {
+  background-color: #B91C1C;
+}
+
+.update-promo{
+  color: #FFFFFF;
+  background-color: #2563EB;
+}
+.update-promo:hover{
+  background-color: #1E40AF;
+}
+
+/* Filter section container */
+.filter-section{
+    margin: 15px 0;
+    padding: 12px 16px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    /* display: flex;
+    justify-content: space-around;
+    max-width: fit-content; */
+    align-self: center;
+    
+}
+
+/* Flexbox for responsiveness */
+#driverFilters, .filters, .promoFilters  {
+    display: flex;
+    /* flex-wrap: wrap; */
+    gap: 12px;
+    align-items: center;
+    justify-content: space-around;
+}
+
+/* Dropdown styling */
+.filter-select, #availabilityFilter, #statusFilter, #deleteFilter {
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+    min-width: 160px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.filter-select:focus, #availabilityFilter:focus, #statusFilter:focus, #deleteFilter:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.3);
+    outline: none;
+}
+
+/* Button styling */
+.filter-btn, #applyFiltersBtn, #applyPromoFilters {
+    padding: 10px 20px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    
+}
+#applyFilters, #applyFiltersBtn, #applyPromoFilters{
+  min-width: fit-content;
+}
+
+.filter-btn:hover {
+    background: #1e40af;
+}
+
+/* Responsive: stack on small screens */
+@media (max-width: 600px) {
+    #driverFilters, .filters, .promoFilters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .filter-select,
+    .filter-btn, #availabilityFilter, #applyFiltersBtn, #applyPromoFilters {
+        width: 100%;
+    }
+}
+
+
+@media screen and (max-width: 900px){
+    #customer-form{
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        margin: 10px 0px;
+    }
+    #customer-form button{
+        padding: 10px;
+        font-size: 13px;
+    }
+    #customer-form button, #customer-form a{
+        margin-bottom: 20px;
+    }
+}

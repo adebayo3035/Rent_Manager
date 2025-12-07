@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Camera Capture</title>
+  <style>
+    #cameraPreview {
+      width: 100%;
+      max-width: 400px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<div>
+  <h2>Camera Capture</h2>
+
+  <video id="cameraPreview" autoplay></video>
+  <button onclick="takePicture()">Take Picture</button>
+
+  <label for="imageName">Image Name: </label>
+  <input type="text" id="imageName">
+
+  <button onclick="savePicture()">Save Picture</button>
+
+  <div id="imageContainer"></div>
+</div>
+
+<script>
+  let videoStream;
+  const video = document.getElementById('cameraPreview');
+  const imageNameInput = document.getElementById('imageName');
+  const imageContainer = document.getElementById('imageContainer');
+
+  async function startCamera() {
+    try {
+      videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = videoStream;
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+    }
+  }
+
+  function stopCamera() {
+    if (videoStream) {
+      const tracks = videoStream.getTracks();
+      tracks.forEach(track => track.stop());
+      video.srcObject = null;
+    }
+  }
+
+  async function takePicture() {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const imageUrl = canvas.toDataURL('image/png');
+    video.style.display = 'none';
+
+    const imgElement = document.createElement('img');
+    imgElement.src = imageUrl;
+    imgElement.style.width = '100%';
+
+    imageContainer.innerHTML = '';
+    imageContainer.appendChild(imgElement);
+  }
+
+  function savePicture() {
+    const imageName = imageNameInput.value.trim();
+    if (!imageName) {
+      alert('Please enter a name for the image.');
+      return;
+    }
+
+    const imgElement = imageContainer.querySelector('img');
+    if (imgElement) {
+      const savedImage = document.createElement('img');
+      savedImage.src = imgElement.src;
+      savedImage.alt = imageName;
+      savedImage.style.maxWidth = '100px';
+
+      imageContainer.innerHTML = '';
+      imageContainer.appendChild(savedImage);
+      imageNameInput.value = '';
+    } else {
+      alert('Please take a picture before saving.');
+    }
+  }
+
+  // Start the camera when the page loads
+  document.addEventListener('DOMContentLoaded', startCamera);
+
+  // Stop the camera when the page is closed or navigated away
+  window.addEventListener('beforeunload', stopCamera);
+</script>
+
+</body>
+</html>

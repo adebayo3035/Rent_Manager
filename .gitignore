@@ -1,0 +1,6 @@
+/vendor/
+# Ignore all activity log files in any folder
+**/activity_log.txt
+# Ignore all secret files in any folder
+**/secrets.php
+secrets.php

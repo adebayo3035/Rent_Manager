@@ -1,0 +1,195 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+}
+
+body {
+    background-color: #f0f2f5;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    width: 90%;
+    max-width: 1200px;
+    margin: 20px auto;
+    background-color: white;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.header h1 {
+    font-size: 24px;
+    color: #333;
+}
+
+.mark-read-btn {
+    padding: 10px 20px;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+.mark-read-btn:hover {
+    background-color: #333; 
+}
+.mark-as-read-btn {
+    padding: 0.3em 0.8em; /* Smaller padding for a compact size */
+    background-color: #4CAF50; /* Green background */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px; /* Slightly smaller text */
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.mark-as-read-btn:hover {
+    background-color: #45a049; /* Darker green on hover */
+}
+
+.mark-as-read-btn:active {
+    background-color: #3e8e41; /* Even darker when clicked */
+    box-shadow: 0 2px #666;
+    transform: translateY(2px);
+}
+
+/* Ensure proper alignment inside the notification card */
+.notification .mark-as-read-btn {
+    align-self: flex-end;
+    margin-top: 8px;
+}
+
+@media screen and (max-width: 600px) {
+    .mark-as-read-btn {
+        font-size: 11px;
+        padding: 0.25em 0.6em; /* Adjust size for smaller screens */
+    }
+}
+
+
+.notification-section {
+    margin-top: 20px;
+}
+
+.notifications-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.notification {
+    display: flex;
+    flex-direction: column;
+    background-color: #fff;
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    transition: background-color 0.3s;
+    border-left: 4px solid #007bff;
+}
+
+.notification:hover {
+    background-color: #007bff;
+    color: white;
+}
+
+.notification .event-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+    font-size: 18px;
+}
+
+.notification .event-details {
+    font-size: 14px;
+    color: #555;
+}
+
+.refresh-btn {
+    display: block;
+    margin: 20px auto;
+    padding: 10px 20px;
+    background-color: #ffc107;
+    color: black;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+
+.refresh-btn:hover {
+    background-color: #e0a800;
+}
+
+/* Pagination controls */
+.pagination-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 20px;
+    gap: 15px;
+    font-size: 14px;
+}
+
+.pagination-btn {
+    padding: 10px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.pagination-btn:hover {
+    background-color: #0056b3;
+}
+
+.pagination-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+#current-page {
+    font-size: 16px;
+    font-weight: 500;
+    color: #333;
+}
+
+@media screen and (max-width: 800px) {
+    .notification {
+        padding: 10px;
+    }
+
+    .notification .event-title {
+        font-size: 16px;
+    }
+
+    .notification .event-details {
+        font-size: 12px;
+    }
+
+    .mark-read-btn, .refresh-btn {
+        padding: 8px 15px;
+        font-size: 12px;
+    }
+}

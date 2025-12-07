@@ -1,0 +1,274 @@
+.ordersTable th,
+.ordersTable td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.modal .reassign-form {
+    margin-top: 20px;
+    padding: 20px;
+    border: 1px solid #ccc;
+    background-color: #f9f9f9;
+    display: flex;
+
+}
+
+.reassign-form h3 {
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.reassign-form label,
+.reassign-form select,
+.reassign-form button {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.reassign-form select {
+    width: 100%;
+    padding: 10px;
+    margin: 5px 0 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    outline: none;
+}
+
+.reassign-form button {
+    font-size: 14px;
+    padding: 10px;
+    background-color: #0275d8;
+    cursor: pointer;
+}
+
+.actionBtn {
+    display: flex;
+    justify-content: space-around;
+}
+
+.actionBtn button:hover {
+    background-color: #000;
+}
+
+#repayAmountLabel,
+#repayAmountInput,
+#submitRepayment {
+    display: none;
+}
+
+.extraButtons {
+    display: flex;
+    justify-content: space-around;
+}
+
+.extraButtons #repayment-history {
+    background-color: #c82333;
+}
+/* Style for repayment history modal */
+#repaymentHistoryModal .modal-content {
+    max-width: 900px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+#repaymentHistoryTable {
+    width: 80%;
+    margin-top: 20px;
+}
+
+#repaymentHistoryTable th {
+    background-color: #c82333;
+    padding: 10px;
+    text-align: center;
+}
+
+#repaymentHistoryTable td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: center;
+}
+/* .pagination-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 20px;
+    gap: 15px;
+}
+
+.pagination-controls button {
+    padding: 5px 15px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.pagination-controls button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+.pagination-controls span {
+    font-weight: bold;
+} */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+/* Pagination buttons */
+#pagination button {
+    padding: 6px 12px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    color: #333;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 14px;
+}
+
+/* Hover effect */
+#pagination button:hover:not(.active):not(:disabled) {
+    background-color: #e0e0e0;
+}
+
+/* Active page */
+#pagination button.active {
+    background-color: #3498db;
+    color: white;
+    font-weight: bold;
+    border-color: #2980b9;
+}
+
+/* Disabled buttons (e.g., Prev on page 1) */
+#pagination button:disabled {
+    background-color: #ddd;
+    color: #999;
+    cursor: not-allowed;
+}
+/* Pagination buttons */
+#repaymentPagination button {
+    padding: 6px 12px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    color: #333;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 14px;
+}
+
+/* Hover effect */
+#repaymentPagination button:hover:not(.active):not(:disabled) {
+    background-color: #e0e0e0;
+}
+
+/* Active page */
+#repaymentPagination button.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+#repaymentPagination button.active {
+    font-weight: bold;
+    background-color: #3498db;
+    color: white;
+    border-radius: 4px;
+}
+
+
+@media screen and (max-width:700px) {
+    .extraButtons button {
+        padding: 5px 10px;
+        font-size: 12px;
+        border-radius: 2px;
+    }
+}
+@media screen and (max-width:400px) {
+    .extraButtons {
+        justify-content: space-between;
+    }
+}
+@media screen and (max-width:300px) {
+    .extraButtons {
+        flex-direction: column;
+    }
+    .extraButtons button{
+        margin-top: 4px;
+    }
+}
+
+/* Filter section container */
+.filters{
+    margin: 15px 0;
+    padding: 12px 16px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    align-self: center;
+    
+}
+
+/* Flexbox for responsiveness */
+.applyFilters  {
+    display: flex;
+    /* flex-wrap: wrap; */
+    gap: 12px;
+    align-items: center;
+    justify-content: space-around;
+}
+
+/* Dropdown styling */
+#repaymentStatus, #dueStatus {
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+    min-width: 160px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#dueStatus:focus, #repaymentStatus:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.3);
+    outline: none;
+}
+
+/* Button styling */
+#applyFilters {
+    padding: 10px 20px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    
+}
+#applyFilters{
+  min-width: fit-content;
+}
+
+#applyFilters:hover {
+    background: #1e40af;
+}
+
+/* Responsive: stack on small screens */
+@media (max-width: 600px) {
+   .applyFilters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    #dueStatus:focus, #repaymentStatus:focus{
+        width: 100%;
+    }
+}

@@ -1,0 +1,314 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #f9f9f9;
+}
+
+h1 {
+    text-align: center;
+    margin-top: 20px;
+    color: #333;
+}
+
+table {
+    width: 90%;
+    margin: 20px auto;
+    border-collapse: collapse;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+th,
+td {
+    padding: 10px;
+    text-align: center;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background-color: #333;
+    color: #fff;
+
+}
+
+tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1;
+    padding-top: 60px;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgb(0, 0, 0);
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+#modalButtons {
+    display: flex;
+    justify-content: center;
+}
+
+.btn {
+    padding: 10px 20px;
+    margin: 5px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    border-radius: 5px;
+    /* transition: background-color 0.3s ease; */
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.btn-approve {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.btn-approve:hover {
+    background-color: #45a049;
+}
+
+.btn-decline {
+    background-color: #f44336;
+    color: white;
+}
+
+.btn-decline:hover {
+    background-color: #da190b;
+}
+
+.view-details-btn {
+    padding: 5px 10px;
+    margin: 2px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+    background-color: #0275d8;
+    font-size: 13px;
+    color: #fff;
+    font-weight: 500;
+}
+#selectAllContainer, #bulk-approve-btn, #bulk-decline-btn{
+    display: none;
+}
+
+.view-details-btn:hover {
+    background-color: #292b2c;
+}
+
+.container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+}
+
+.container h1 {
+    text-align: center;
+    padding-top: 6px;
+}
+
+.container .livesearch {
+    /* border: 2px solid yellow; */
+    display: flex;
+    width: 80%;
+    margin: auto;
+    justify-content: center;
+
+}
+
+.container .livesearch input {
+    width: 50%;
+    border-radius: 5px;
+    padding: 10px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    outline: none;
+    background-color: transparent;
+    margin-right: 20px;
+}
+
+.container .livesearch button {
+    padding: 11px 20px;
+    font-size: 16px;
+    background-color: blue;
+    color: #fff;
+    cursor: pointer;
+    border-radius: 5px;
+    border: none;
+    outline: none;
+}
+
+.select {
+    display: flex;
+    padding: 10px;
+    justify-content: center;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: pointer;
+    width: 50%;
+    margin: 10px auto;
+    align-self: center;
+}
+
+.select:hover, .btn:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.select label {
+    margin-right: 20px;
+    cursor: pointer;
+}
+
+.select input[type="checkbox"] {
+    cursor: pointer;
+}
+.pagination{
+    display: flex;
+    justify-content: center;
+    margin-top: 5px;
+}
+/* Pagination buttons */
+#pagination button {
+    padding: 6px 12px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    color: #333;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 14px;
+}
+
+/* Hover effect */
+#pagination button:hover:not(.active):not(:disabled) {
+    background-color: #e0e0e0;
+}
+
+/* Active page */
+#pagination button.active {
+    background-color: #3498db;
+    color: white;
+    font-weight: bold;
+    border-color: #2980b9;
+}
+
+/* Disabled buttons (e.g., Prev on page 1) */
+#pagination button:disabled {
+    background-color: #ddd;
+    color: #999;
+    cursor: not-allowed;
+}
+
+@media (max-width: 800px) {
+
+    table,
+    th,
+    td {
+        font-size: 11px;
+    }
+
+    th,
+    td {
+        padding: 10px;
+        text-align: center;
+        width: fit-content;
+    }
+
+    th::before {
+        content: attr(data-title);
+        float: left;
+        font-weight: bold;
+    }
+
+    .view-details-btn {
+        padding: 1px 2px;
+        margin: 2px;
+        border: none;
+        cursor: pointer;
+        border-radius: 2px;
+        transition: background-color 0.3s ease;
+        background-color: #0275d8;
+        font-size: 10px;
+        color: #fff;
+        font-weight: 500;
+    }
+
+    #customer-table {
+        /* display: block; */
+        overflow-x: auto;
+    }
+}
+
+@media (max-width: 500px) {
+
+    .container .livesearch,
+    #modalButtons {
+        flex-direction: column;
+        width: 80%;
+        margin: auto;
+        justify-content: center;
+        align-items: center;
+
+    }
+
+    .container .livesearch input {
+        margin: 10px 0px;
+        padding: 5px;
+        width: 100%;
+    }
+
+    .container .livesearch button {
+        padding: 5px 10px;
+        font-size: 12px;
+
+    }
+
+    .btn {
+        font-size: 12px;
+        padding: 5px auto;
+    }
+}

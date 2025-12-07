@@ -1,0 +1,21 @@
+.card-chart {
+            height: 300px;
+        }
+        .rating-table {
+            font-size: 0.9rem;
+        }
+        .rating-badge {
+            width: 24px;
+            height: 24px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+        }
+        .bg-rating-5 { background-color: #28a745; }
+        .bg-rating-4 { background-color: #5cb85c; }
+        .bg-rating-3 { background-color: #ffc107; color: #212529; }
+        .bg-rating-2 { background-color: #fd7e14; }
+        .bg-rating-1 { background-color: #dc3545; }

@@ -1,0 +1,113 @@
+#admin-actions-container {
+    display: flex;
+    justify-content: space-between;
+}
+
+#admin-actions-container a {
+    font-size: 13px;
+    display: inline-block;
+    padding: 5px 7px;
+    margin: 0 10px 10px 0;
+    border-radius: 4px;
+    color: white;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    text-align: center;
+}
+
+#admin-actions-container > a.admin-action-btn.btn-view-deactivated:hover{
+    color: #fff;
+    background-color: #fff;
+    
+}
+.loader-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.roller-loader {
+    width: 50px;
+    height: 50px;
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.deactivated-label {
+    color: #dc3545;
+    font-weight: bolder;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.deactivated-label i {
+    font-size: 16px;
+}
+/* Pagination buttons */
+#pagination button {
+    padding: 6px 12px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    color: #333;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 14px;
+}
+
+/* Hover effect */
+#pagination button:hover:not(.active):not(:disabled) {
+    background-color: #e0e0e0;
+}
+
+/* Active page */
+#pagination button.active {
+    background-color: #3498db;
+    color: white;
+    font-weight: bold;
+    border-color: #2980b9;
+}
+
+/* Disabled buttons (e.g., Prev on page 1) */
+#pagination button:disabled {
+    background-color: #ddd;
+    color: #999;
+    cursor: not-allowed;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@media screen and (max-width: 900px) {
+    #admin-actions-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        margin: 10px 0px;
+    }
+}
+
+@media screen and (max-width: 700px) {
+    #admin-actions-container a {
+        font-size: 11px;
+    }
+}
