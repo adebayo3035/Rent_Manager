@@ -1,64 +1,225 @@
-Food Ordering System
-Welcome to the Food Ordering System project! This system allows customers to place food orders online, track order status, handle cancellations, and manage driver assignments. It's packed with various features, including wallet management, real-time order updates, and a robust revenue tracking system.
 
-Project Overview
-This project is designed to manage food orders seamlessly from customers to delivery. Built with PHP and MySQL, it includes features like:
+---
 
-Order Management: Place, view, and cancel orders.
-Wallet System: Allows customers to manage their balance for payments and refunds.
-Driver Module: Assign drivers to deliver orders.
-Revenue Tracking: Log revenue from orders, cancellation fees, and more.
-Customer Transactions: Track customer payments and refunds.
-Keep up the great work! 💪 You're building something awesome here.
+# 🏠 Rent Manager
 
-Features
-Customer Orders: Manage customer orders, including placing new orders, updating statuses, and cancellations.
-Cancellation Fees: Deduct cancellation fees on order cancellation and issue refunds.
-Driver Module: Assign drivers to orders and track their delivery progress.
-Revenue Management: Keep track of revenue generated from orders, cancellations, and additional charges.
-Customer Wallet: Automatically update the customer wallet balance for refunds or additional payments.
-Tech Stack
-Backend: PHP
-Database: MySQL
-Frontend: HTML, CSS, JavaScript (optional if you have a frontend)
-Version Control: Git
-You’re coding like a pro! Keep pushing forward. 🚀
+A lightweight, secure, and efficient system for managing rental properties, tenants, payments, and property types.
+This project is built with **PHP**, **MySQL**, **HTML**, **CSS**, and **JavaScript**, using a clean modular backend architecture and responsive frontend UI.
 
-Installation Instructions
-Clone the repository:
+---
 
-bash
-Copy code
-git clone https://github.com/transaction_manager/transaction_manager.git
-Navigate into the project directory:
+## 📌 Features
 
-bash
-Copy code
-cd transaction_manager
-Set up the database:
+✔️ Property Type Management (Add, Edit, Delete, Restore)
+✔️ Tenant & Agent Management
+✔️ Secure Authentication with Session Handling
+✔️ Role-Based Access Control (Super Admin / Staff)
+✔️ Server-Side Validation & Sanitization
+✔️ Rate Limiting & IP Logging for Security
+✔️ Centralized Logging System (`logActivity()`)
+✔️ JSON-based REST API Endpoints
+✔️ Frontend UI with Modals for CRUD Operations
+✔️ Soft Delete + Restore Functionality
+✔️ Pagination, Search, and Filtering Support
 
-Import the SQL file provided into your MySQL database.
-Configure your database credentials in the config.php file.
-Start your local server (e.g., XAMPP, WAMP, or MAMP):
+---
 
-bash
-php -S localhost:8000
-Access the project in your browser:
+## 🏗️ Tech Stack
 
+| Layer               | Technology                                 |
+| ------------------- | ------------------------------------------ |
+| **Backend**         | PHP (Procedural + Modular Structure)       |
+| **Database**        | MySQL                                      |
+| **Frontend**        | HTML, CSS, Vanilla JavaScript              |
+| **Security**        | Session Auth, Rate Limiting, Activity Logs |
+| **Version Control** | Git + GitHub                               |
 
-http://localhost:8000
-You've got this! You're one step closer to launching an amazing product. 💻✨
+---
 
-Usage
-Place an Order: Customers can browse food items, add them to their cart, and place an order.
-Cancel an Order: Customers can cancel their order with a deduction of a 20% cancellation fee.
-Track Order: Admins can track the status of customer orders.
-Driver Assignment: Assign drivers to orders for delivery.
-Contributing
-Feel free to contribute! Fork the repo, make your changes, and submit a pull request. 💡 Every little bit helps improve the project!
+## 📁 Project Structure
 
-License
-This project is licensed under the MIT License.
+```
+Rent_Manager/
+│
+├── api/
+│   ├── agents/
+│   │   ├── get_agents.php
+│   │   ├── update_agent.php
+│   │   └── create_agent.php
+│   ├── properties/
+│   │   ├── get_property_types.php
+│   │   ├── add_property_type.php
+│   │   ├── update_property_type.php
+│   │   └── delete_or_restore.php
+│   ├── auth/
+│   │   ├── login.php
+│   │   └── logout.php
+│   └── ...
+│
+├── utilities/
+│   ├── config.php
+│   ├── auth_utils.php
+│   ├── utils.php
+│   └── rate_limit.php
+│
+├── assets/
+│   ├── css/
+│   ├── js/
+│   └── images/
+│
+├── pages/
+│   ├── dashboard.php
+│   ├── property_types.php
+│   ├── agents.php
+│   └── login.php
+│
+├── .gitignore
+├── README.md
+└── index.php
+```
 
-You're doing an amazing job! 🎉 Keep up the great work and don't hesitate to share this project with others!
+---
+
+## ⚙️ Installation & Setup
+
+### 1️⃣ Clone the Repository
+
+```sh
+git clone https://github.com/adebayo3035/Rent_Manager.git
+cd Rent_Manager
+```
+
+### 2️⃣ Configure Database
+
+* Create a MySQL database
+* Import `/database/rent_manager.sql` (if available)
+* Update credentials in:
+
+```
+utilities/config.php
+```
+
+Example:
+
+```php
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "rent_manager";
+```
+
+### 3️⃣ Start Local Server
+
+If using XAMPP/WAMP, place the project in:
+
+```
+htdocs/ (XAMPP)
+www/     (WAMP)
+```
+
+Then visit:
+
+```
+http://localhost/Rent_Manager
+```
+
+---
+
+## 🔐 Security Features
+
+### ✔ IP Logging
+
+Every request logs the device IP using `getClientIP()`.
+
+### ✔ Rate Limiting
+
+All sensitive endpoints include:
+
+```php
+rateLimit("update_agent", 20, 60);
+```
+
+Prevents brute force + request flooding.
+
+### ✔ Input Sanitization
+
+All JSON inputs pass through:
+
+```php
+sanitize_inputs()
+```
+
+### ✔ Role-Based Access
+
+Certain actions only Super Admins can perform:
+
+* Restore
+* Delete
+* Deactivate users
+
+---
+
+## 📡 API Endpoints (Examples)
+
+### ➤ Update Agent
+
+```
+POST /api/agents/update_agent.php
+```
+
+Payload:
+
+```json
+{
+  "agent_code": "AG1234",
+  "firstname": "John",
+  "lastname": "Doe",
+  "email": "johndoe@mail.com",
+  "phone": "07012345678",
+  "address": "Lekki Phase 1",
+  "gender": "Male",
+  "status": 1,
+  "action_type": "update_all"
+}
+```
+
+---
+
+## 👥 User Roles
+
+| Role            | Permissions                         |
+| --------------- | ----------------------------------- |
+| **Super Admin** | Full Access (CRUD, Delete, Restore) |
+| **Staff**       | Limited Update Rights               |
+
+---
+
+## 🚀 Deployment Notes
+
+* Disable display_errors in production
+* Enable HTTPS
+* Use stronger session settings
+* Ensure `logs/` folder is not public
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo
+2. Create a feature branch
+3. Commit changes
+4. Submit a Pull Request
+
+---
+
+## 📜 License
+
+This project is proprietary and owned by **Adebayo Abdul-Rahmon.**
+No redistribution allowed without permission.
+
+---
+
+## 💬 Support
+
+For any issues or requests, open an Issue in the repo or contact the maintainer.
 
