@@ -21,7 +21,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // === Business Logic ===
     itemName: 'propertyType',
     itemNamePlural: 'propertyTypes',
-    idField: 'id',
+    idField: 'type_id',
     nameField: 'type_name',
     statusField: 'status',
     detailsKey: "property_type_details",
@@ -65,30 +65,42 @@ document.addEventListener("DOMContentLoaded", () => {
         <td>${status}</td>`;
       
       // Check if status is a number or string
-      const isActive = parseInt(item.status) === 1;
+      // const isActive = parseInt(item.status) === 1;
       
-      if (isActive) {
-        rowHTML += `
-          <td><span class="edit-icon" data-id="${item.type_id}" title="Edit">✏️</span></td>`;
+      // if (isActive) {
+      //   rowHTML += `
+      //     <td><span class="edit-icon" data-id="${item.type_id}" title="Edit">✏️</span></td>`;
         
-        if (userRole === "Super Admin") {
-          rowHTML += `
-            <td><span class="delete-icon" data-id="${item.type_id}" title="Delete">🗑️</span></td>`;
-        } else {
-          rowHTML += `<td></td>`;
-        }
-      } else {
-        if (userRole === "Super Admin") {
-          rowHTML += `
-            <td colspan="2" style="text-align:center;">
-              <span class="restore-icon" data-id="${item.type_id}" title="Restore">↻ Restore</span>
-            </td>`;
-        } else {
-          rowHTML += `<td></td><td></td>`;
-        }
-      }
+      //   if (userRole === "Super Admin") {
+      //     rowHTML += `
+      //       <td><span class="delete-icon" data-id="${item.type_id}" title="Delete">🗑️</span></td>`;
+      //   } else {
+      //     rowHTML += `<td></td>`;
+      //   }
+      // } else {
+      //   if (userRole === "Super Admin") {
+      //     rowHTML += `
+      //       <td colspan="2" style="text-align:center;">
+      //         <span class="restore-icon" data-id="${item.type_id}" title="Restore">↻ Restore</span>
+      //       </td>`;
+      //   } else {
+      //     rowHTML += `<td></td><td></td>`;
+      //   }
+      // }
       
-      return rowHTML;
+      // return rowHTML;
+      if (item.status == 1) {
+                rowHTML += `
+                    <td><span class="edit-icon" data-id="${item.type_id}">✏️</span></td>
+                    <td><span class="delete-icon" data-id="${item.type_id}">🗑️</span></td>`;
+            } else {
+                rowHTML += `
+                    <td colspan="2" style="text-align:center;">
+                        <span class="restore-icon" data-id="${item.type_id}">↻ Restore</span>
+                    </td>`;
+            }
+
+            return rowHTML;
     },
     
     // === Custom Details Population ===

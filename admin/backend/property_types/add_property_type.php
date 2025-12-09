@@ -1,97 +1,156 @@
 <?php
-// create_property_type.php
-// Endpoint to insert a new property type with full logging
+// create_property_type.php (Optimized with Transaction, Try/Catch, Rate Limiting & Status Code Logging)
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
-require_once __DIR__ . '/../utilities/utils.php'; // contains json_success, json_error, logActivity()
+require_once __DIR__ . '/../utilities/utils.php';
+
 session_start();
-// Validate request method
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
+logActivity("==== New Create Property Type Request Received ====");
+
+// ------------------------------
+// RATE LIMITING
+// ------------------------------
+rateLimit("create_property_type", 10, 60);  
+logActivity("Rate limit check passed for create_property_type");
+
+// ------------------------------
+// METHOD VALIDATION
+// ------------------------------
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    logActivity("Invalid request method used on create_property_type");
-    json_error("Invalid request method. Use POST.", 405);
+    $code = 405;
+    logActivity("Invalid request method {$code}: " . $_SERVER['REQUEST_METHOD']);
+    json_error("Invalid request method. Use POST.", $code);
 }
 
- if (!isset($_SESSION['unique_id'])) {
-        logActivity("Unauthorized attempt to add property");
-        json_error("Not logged in", 401);
-    }
+// ------------------------------
+// SESSION VALIDATION
+// ------------------------------
+if (!isset($_SESSION['unique_id'])) {
+    $code = 401;
+    logActivity("Unauthorized access attempt ({$code}) — no active session");
+    json_error("Not logged in", $code);
+}
 
-    $userId  = $_SESSION['unique_id'];
-    $userRole = $_SESSION['role'] ?? null;
+$userId   = $_SESSION['unique_id'];
+$userRole = $_SESSION['role'] ?? 'UNKNOWN';
 
-// Collect JSON input
-$input = json_decode(file_get_contents("php://input"), true);
+logActivity("Authenticated request. UserID={$userId} | Role={$userRole}");
 
-// $type_name   = trim($input['add_property_type_name'] ?? '');
-// $description = trim($input['add_property_type_description'] ?? '');
-// $status      = $input['status'] ?? 1; // default = Active
-
-$type_name = trim($_POST['add_property_type_name'] ?? '');
+// ------------------------------
+// INPUT COLLECTION
+// ------------------------------
+$type_name   = trim($_POST['add_property_type_name'] ?? '');
 $description = trim($_POST['add_property_type_description'] ?? '');
-$status      = $_POST['status'] ?? 1; // default = Active
+$status      = isset($_POST['status']) ? intval($_POST['status']) : 1;
 $created_by  = $userId;
 
-// Basic validation
+logActivity("Received inputs: " . json_encode([
+    "type_name" => $type_name,
+    "description" => $description,
+    "status" => $status,
+    "created_by" => $created_by
+]));
+
+// ------------------------------
+// BASIC VALIDATION
+// ------------------------------
 if ($type_name === '') {
-    logActivity("Validation error: type_name missing");
-    json_error("Property type name is required.", 400);
+    $code = 400;
+    logActivity("Validation failed ({$code}): Missing type_name");
+    json_error("Property type name is required.", $code);
 }
 
-if (!in_array($status, [0, 1])) {
-    logActivity("Validation error: invalid status '$status' provided");
-    json_error("Status must be 0 (Inactive) or 1 (Active).", 400);
+if (!in_array($status, [0, 1], true)) {
+    $code = 400;
+    logActivity("Validation failed ({$code}): Invalid status '{$status}'");
+    json_error("Status must be 0 or 1.", $code);
 }
 
-if (!$created_by) {
-    logActivity("Validation error: created_by missing");
-    json_error("Missing created_by.", 400);
-}
+logActivity("Basic validation passed.");
 
-// Prevent duplicate type names
-$check = $conn->prepare("
-    SELECT type_id 
-    FROM property_type 
-    WHERE type_name = ?
-");
-$check->bind_param("s", $type_name);
-$check->execute();
-$check->store_result();
+// =====================================================
+// TRY–CATCH + TRANSACTION
+// =====================================================
+try {
+    logActivity("Starting DB transaction.");
+    $conn->begin_transaction();
 
-if ($check->num_rows > 0) {
-    logActivity("Duplicate property type attempted: '$type_name'");
-    json_error("Property type already exists.", 409);
-}
+    // ------------------------------
+    // DUPLICATE CHECK
+    // ------------------------------
+    $duplicateSQL = "SELECT type_id FROM property_type WHERE type_name = ? LIMIT 1";
+    $checkStmt = $conn->prepare($duplicateSQL);
+    $checkStmt->bind_param("s", $type_name);
+    $checkStmt->execute();
+    $checkStmt->store_result();
 
-$check->close();
+    if ($checkStmt->num_rows > 0) {
+        $code = 409;
+        logActivity("Duplicate detected ({$code}) for type_name '{$type_name}'");
+        $conn->rollback();
+        json_error("Property type already exists.", $code);
+    }
 
-// Insert query
-$stmt = $conn->prepare("
-    INSERT INTO property_type 
-        (type_name, description, status, created_by, created_at) 
-    VALUES (?, ?, ?, ?, NOW())
-");
+    $checkStmt->close();
+    logActivity("No duplicate property type found.");
 
-if (!$stmt) {
-    logActivity("Failed to prepare insert statement: " . $conn->error);
-    json_error("Failed to prepare statement: " . $conn->error, 500);
-}
+    // ------------------------------
+    // INSERT OPERATION
+    // ------------------------------
+    $insertSQL = "
+        INSERT INTO property_type 
+            (type_name, description, status, created_by, created_at)
+        VALUES (?, ?, ?, ?, NOW())
+    ";
 
-$stmt->bind_param("ssis", $type_name, $description, $status, $created_by);
+    $stmt = $conn->prepare($insertSQL);
+    $stmt->bind_param("ssis", $type_name, $description, $status, $created_by);
 
-if ($stmt->execute()) {
-    logActivity("Property type created successfully: $type_name by user $created_by");
+    logActivity("Executing property type insert for '{$type_name}'");
+
+    if (!$stmt->execute()) {
+        throw new Exception("Insert failed: " . $stmt->error);
+    }
+
+    $newTypeID = $stmt->insert_id;
+    $stmt->close();
+
+    // ------------------------------
+    // COMMIT
+    // ------------------------------
+    $conn->commit();
+    logActivity("Transaction committed successfully. New type_id={$newTypeID}");
+
+    // ------------------------------
+    // SUCCESS RESPONSE
+    // ------------------------------
+    $code = 201;
+    logActivity("Success response ({$code}) returned for new property type '{$type_name}'");
 
     json_success([
         "message" => "Property type created successfully.",
-        "type_id" => $stmt->insert_id
-    ], 201);
+        "type_id" => $newTypeID
+    ], $code);
 
-} else {
-    logActivity("Insert failed: " . $stmt->error);
-    json_error("Failed to insert property type: " . $stmt->error, 500);
+} catch (Exception $e) {
+
+    // ------------------------------
+    // ROLLBACK & ERROR LOGGING
+    // ------------------------------
+    logActivity("Exception caught: " . $e->getMessage());
+    logActivity("Rolling back transaction due to error.");
+
+    $conn->rollback();
+
+    $code = 500;
+    logActivity("Error response ({$code}) returned: " . $e->getMessage());
+
+    json_error("Failed to create property type. Error: " . $e->getMessage(), $code);
 }
 
-$stmt->close();
 $conn->close();
+logActivity("==== Create Property Type Request Finished ====");

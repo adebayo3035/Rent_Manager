@@ -28,7 +28,7 @@
         <a href="rent_payments.php">Rent Payments</a>
         <a href="reports.php">Reports</a>
         <a href="account_history.php">My Account History</a>
-        <a href="property_types.php">Property Types</a>
+        <a href="property_type.php">Property Types</a>
 
         <div class="dropdown">
             <button class="dropbtn" id="welcomeMessage">Welcome!  <i class="fa fa-caret-down"></i></button>

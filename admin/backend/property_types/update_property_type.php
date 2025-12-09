@@ -1,10 +1,10 @@
 <?php
 // update_property_type.php
-
 header('Content-Type: application/json; charset=utf-8');
+
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
-require_once __DIR__ . '/../utilities/utils.php'; // json_success, json_error, logActivity()
+require_once __DIR__ . '/../utilities/utils.php';
 
 session_start();
 
@@ -12,14 +12,13 @@ session_start();
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 try {
-
     // ================= AUTH CHECK =================
     if (!isset($_SESSION['unique_id'])) {
         logActivity("SECURITY: Unauthorized access attempt to update_property_type");
         json_error("Not logged in.", 401);
     }
 
-    $adminId  = $_SESSION['unique_id'];
+    $adminId = (int)$_SESSION['unique_id'];
     $adminRole = $_SESSION['role'] ?? null;
 
     // =============== VALIDATE JSON INPUT =================
@@ -29,14 +28,13 @@ try {
         json_error("Invalid JSON input.", 400);
     }
 
-    $type_id = $input['id'] ?? null;
-    $type_name = trim($input['type_name'] ?? '');
-    $description = trim($input['description'] ?? '');
-    $status = $input['status'] ?? null;
+    $type_id = isset($input['type_id']) ? (int)$input['type_id'] : null;
+    $type_name = isset($input['type_name']) ? trim($input['type_name']) : '';
+    $description = isset($input['description']) ? trim($input['description']) : '';
+    $status = isset($input['status']) ? (int)$input['status'] : null;
     $action_type = $input['action_type'] ?? 'update_all';
-    $class_type = $input['class_type'] ?? null;
 
-    logActivity("REQUEST RECEIVED: Property type update | Action=$action_type | ID=$type_id | User=$adminId (Role=$adminRole)");
+    logActivity("REQUEST: Property type update | Action=$action_type | ID=$type_id | User=$adminId | Role=$adminRole");
 
     // Validate type_id
     if (!$type_id) {
@@ -46,72 +44,86 @@ try {
 
     // ================= START TRANSACTION =================
     $conn->begin_transaction();
-    logActivity("TRANSACTION STARTED for property_type update (ID=$type_id) by user $adminId");
+    logActivity("TRANSACTION STARTED for property_type update (ID=$type_id)");
 
     // Check if type exists
-    $check = $conn->prepare("SELECT type_id, status FROM property_type WHERE type_id = ?");
+    $check = $conn->prepare("SELECT type_id, status FROM property_type WHERE type_id = ? FOR UPDATE");
+    if (!$check) {
+        throw new Exception("DB prepare failed (check): " . $conn->error);
+    }
     $check->bind_param("i", $type_id);
     $check->execute();
     $check->bind_result($existing_id, $existing_status);
-
+    
     if (!$check->fetch()) {
-        logActivity("ERROR: Property type $type_id does not exist (User $adminId)");
+        $check->close();
         $conn->rollback();
+        logActivity("ERROR: Property type $type_id does not exist (User $adminId)");
         json_error("Property type not found.", 404);
     }
     $check->close();
 
     // Process actions
+    $resultMessage = '';
+    
     switch ($action_type) {
-
         case 'update_all':
-            fullUpdate($conn, $type_id, $type_name, $description, $status, $adminId, $adminRole);
+            $resultMessage = handleFullUpdate($conn, $type_id, $type_name, $description, $status, $adminId, $adminRole);
             break;
 
         case 'delete':
-            statusUpdate($conn, $type_id, 0, $adminId, $adminRole, "delete");
+            $resultMessage = handleStatusUpdate($conn, $type_id, 0, $adminId, $adminRole, "delete");
             break;
 
         case 'restore':
-            statusUpdate($conn, $type_id, 1, $adminId, $adminRole, "restore");
+            $resultMessage = handleStatusUpdate($conn, $type_id, 1, $adminId, $adminRole, "restore");
             break;
 
         default:
-            logActivity("ERROR: Invalid action type '$action_type' by user $adminId");
             $conn->rollback();
+            logActivity("ERROR: Invalid action type '$action_type' by user $adminId");
             json_error("Invalid action type.", 400);
     }
 
     // ================= COMMIT TRANSACTION =================
-    $conn->commit();
-    logActivity("TRANSACTION COMMITTED successfully for property_type ID=$type_id by user $adminId");
+    if (!$conn->commit()) {
+        throw new Exception("Transaction commit failed: " . $conn->error);
+    }
+    
+    logActivity("TRANSACTION COMMITTED: Property type ID=$type_id updated by user $adminId");
+    
+    // Send success response
+    json_success($resultMessage, null, 200);
 
 } catch (Throwable $e) {
-
-    // Roll back anything pending
-    if ($conn->errno !== 0) {
-        $conn->rollback();
+    // Rollback if transaction is active
+    if (isset($conn) && $conn->errno !== 0) {
+        try {
+            $conn->rollback();
+            logActivity("TRANSACTION ROLLED BACK due to error");
+        } catch (Throwable $rollbackError) {
+            logActivity("ROLLBACK ERROR: " . $rollbackError->getMessage());
+        }
     }
 
-    logActivity("EXCEPTION CAUGHT: " . $e->getMessage() . " | File: " . $e->getFile() . " | Line: " . $e->getLine());
+    logActivity("EXCEPTION: " . $e->getMessage() . " | File: " . $e->getFile() . " | Line: " . $e->getLine());
     json_error("An internal error occurred while processing the request.", 500);
 }
 
-
-/** ============================================================
- *  FULL UPDATE HANDLER
- * ============================================================
-*/
-function fullUpdate($conn, $type_id, $type_name, $description, $status, $adminId, $adminRole)
+/**
+ * Full update handler
+ * Returns: success message string
+ */
+function handleFullUpdate($conn, $type_id, $type_name, $description, $status, $adminId, $adminRole)
 {
     // Validate fields
     if (empty($type_name)) {
-        logActivity("ERROR: Missing type_name in full update (ID=$type_id, User $adminId)");
+        logActivity("ERROR: Missing type_name in full update (ID=$type_id)");
         json_error("type_name is required.", 400);
     }
 
     if (!in_array($status, [0, 1], true)) {
-        logActivity("ERROR: Invalid status '$status' for ID=$type_id (User $adminId)");
+        logActivity("ERROR: Invalid status '$status' for ID=$type_id");
         json_error("Invalid status. Must be 0 or 1.", 400);
     }
 
@@ -121,42 +133,61 @@ function fullUpdate($conn, $type_id, $type_name, $description, $status, $adminId
         json_error("You do not have permission to deactivate property types.", 403);
     }
 
-    // Duplicate check
+    // Duplicate check (exclude current record and soft-deleted records)
     $dup = $conn->prepare("
-        SELECT type_id FROM property_type
+        SELECT type_id FROM property_type 
         WHERE type_name = ? AND type_id != ? AND deleted_at IS NULL
+        LIMIT 1
     ");
+    if (!$dup) {
+        throw new Exception("DB prepare failed (dup check): " . $conn->error);
+    }
     $dup->bind_param("si", $type_name, $type_id);
     $dup->execute();
     $dup->store_result();
 
     if ($dup->num_rows > 0) {
-        logActivity("ERROR: Duplicate type_name '$type_name' during update (ID=$type_id)");
+        $dup->close();
+        logActivity("ERROR: Duplicate type_name '$type_name' (ID=$type_id)");
         json_error("Another property type already uses this name.", 409);
     }
     $dup->close();
 
-    // Update
+    // Perform update
     $stmt = $conn->prepare("
-        UPDATE property_type
-        SET type_name = ?, description = ?, status = ?, updated_by = ?, updated_at = NOW()
+        UPDATE property_type 
+        SET type_name = ?, description = ?, status = ?, updated_by = ?, updated_at = NOW() 
         WHERE type_id = ?
+        LIMIT 1
     ");
-    $stmt->bind_param("ssisi", $type_name, $description, $status, $adminId, $type_id);
-    $stmt->execute();
+    if (!$stmt) {
+        throw new Exception("DB prepare failed (update): " . $conn->error);
+    }
+
+    $stmt->bind_param("ssiii", $type_name, $description, $status, $adminId, $type_id);
+    
+    if (!$stmt->execute()) {
+        $err = $stmt->error;
+        $stmt->close();
+        throw new Exception("DB execute failed: " . $err);
+    }
+
+    $affected = $stmt->affected_rows;
     $stmt->close();
 
-    logActivity("SUCCESS: Full update completed for property type ID=$type_id by User $adminId");
+    logActivity("SUCCESS: Full update for property type ID=$type_id | Affected rows: $affected");
 
-    json_success("Property type updated successfully!", 200);
+    // Log the actual update for debugging
+    logActivity("UPDATE DETAILS: ID=$type_id, name='$type_name', status=$status, by user=$adminId");
+
+    return "Property type updated successfully!";
 }
 
-
-/** ============================================================
- *  STATUS UPDATE HANDLER  (delete / restore)
- * ============================================================
-*/
-function statusUpdate($conn, $type_id, $new_status, $adminId, $adminRole, $action)
+/**
+ * Status update handler (delete/restore)
+ * Returns: success message string
+ */
+function handleStatusUpdate($conn, $type_id, $new_status, $adminId, $adminRole, $action)
 {
     // Permission check
     if ($adminRole !== "Super Admin") {
@@ -164,26 +195,40 @@ function statusUpdate($conn, $type_id, $new_status, $adminId, $adminRole, $actio
         json_error("You do not have permission to $action property types.", 403);
     }
 
-    // Prepare query
+    // Prepare appropriate query
     if ($action === "delete") {
-        $stmt = $conn->prepare("
-            UPDATE property_type
-            SET status = 0, updated_by = ?, updated_at = NOW(), deleted_at = NOW()
+        $query = "
+            UPDATE property_type 
+            SET status = 0, updated_by = ?, updated_at = NOW(), deleted_at = NOW() 
             WHERE type_id = ?
-        ");
-    } else {
-        $stmt = $conn->prepare("
-            UPDATE property_type
-            SET status = 1, updated_by = ?, updated_at = NOW(), deleted_at = NULL
+            LIMIT 1
+        ";
+    } else { // restore
+        $query = "
+            UPDATE property_type 
+            SET status = 1, updated_by = ?, updated_at = NOW(), deleted_at = NULL 
             WHERE type_id = ?
-        ");
+            LIMIT 1
+        ";
+    }
+
+    $stmt = $conn->prepare($query);
+    if (!$stmt) {
+        throw new Exception("DB prepare failed (status update): " . $conn->error);
     }
 
     $stmt->bind_param("ii", $adminId, $type_id);
-    $stmt->execute();
+    
+    if (!$stmt->execute()) {
+        $err = $stmt->error;
+        $stmt->close();
+        throw new Exception("DB execute failed (status update): " . $err);
+    }
+
+    $affected = $stmt->affected_rows;
     $stmt->close();
 
-    logActivity("SUCCESS: Property type ID=$type_id $action successfully by user $adminId");
+    logActivity("SUCCESS: Property type ID=$type_id $action by user $adminId | Affected rows: $affected");
 
-    json_success("Property type " . ($action === "delete" ? "deactivated" : "restored") . " successfully!", 200);
+    return "Property type " . ($action === "delete" ? "deactivated" : "restored") . " successfully!";
 }

@@ -72,6 +72,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // === Row Rendering Logic ===
         renderRow: function (agent, userRole) {
+            console.log("UserRole inside renderRow:", userRole);
+
             const statusHTML =
                 agent.status == 1
                     ? `<span style="color: green;">Active</span>`

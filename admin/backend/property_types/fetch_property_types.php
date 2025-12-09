@@ -80,7 +80,7 @@ try {
             'total_pages' => ceil($totalCount / $limit)
         ],
         'requested_by' => $userId,
-        'user_role' => $userRole,
+        'logged_in_user_role' => $userRole,
         'timestamp' => date('c'),
         'data_scope' => ($userRole === 'Admin') ? 'active_only' : 'all_records'
     ]);

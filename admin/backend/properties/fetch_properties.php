@@ -1,69 +1,179 @@
 <?php
-header('Content-Type: application/json');
-require_once __DIR__ . '../utilities/config.php';
-require_once __DIR__ . '../utilities/auth_utils.php';
-require_once __DIR__ . '../utilities/utils.php';
-session_start();
+require_once __DIR__ . '/../utilities/config.php';
+require_once __DIR__ . '/../utilities/auth_utils.php';
+require_once __DIR__ . '/../utilities/utils.php';
 
-logActivity("Properties listing fetch process started");
+session_start();
 
 try {
 
-    // -----------------------------
-    // AUTHENTICATION CHECK
-    // -----------------------------
+    // -----------------------------------------------------
+    //  RATE LIMIT
+    // -----------------------------------------------------
+    rateLimit("fetch_properties", 60, 60);
+
+
+    // -----------------------------------------------------
+    //  AUTH CHECK
+    // -----------------------------------------------------
     if (!isset($_SESSION['unique_id'])) {
-        logActivity("Access denied - not logged in");
-        json_error('Not logged in', 401);
+        logActivity("Unauthorized access | No session | IP: " . getClientIP());
+        echo json_encode(["success" => false, "message" => "Not logged in"]);
+        exit();
     }
 
-    $userId = $_SESSION['unique_id'];
-    $userRole = $_SESSION['role'] ?? 'Unknown';
+    $adminId = $_SESSION['unique_id'];
+    $loggedInUserRole = $_SESSION['role'] ?? 'Unknown';
 
-    logActivity("Fetch initiated by user ID: $userId (Role: $userRole)");
+    logActivity("Fetch Properties | AdminID: {$adminId} | Role: {$loggedInUserRole} | IP: " . getClientIP());
 
-    // -----------------------------
-    // FETCH PROPERTIES
-    // -----------------------------
-    $query = "SELECT id, property_code, name 
-              FROM properties 
-              WHERE status = 'Active'
-              ORDER BY id ASC";
+
+    // -----------------------------------------------------
+    //  PAGINATION
+    // -----------------------------------------------------
+    $page = max(1, (int) ($_GET['page'] ?? 1));
+    $limit = max(1, (int) ($_GET['limit'] ?? 10));
+    $offset = ($page - 1) * $limit;
+
+    logActivity("Pagination | Page={$page} | Limit={$limit} | Offset={$offset}");
+
+
+    // -----------------------------------------------------
+    //  DB CONNECTION CHECK
+    // -----------------------------------------------------
+    if (!$conn || $conn->connect_errno) {
+        logActivity("DB Connection Failure | IP: " . getClientIP());
+        echo json_encode(["success" => false, "message" => "Database connection error"]);
+        exit();
+    }
+
+
+    // -----------------------------------------------------
+    //  FILTER INPUTS
+    // -----------------------------------------------------
+    $property_type = isset($_GET['property_type']) ? trim($_GET['property_type']) : null;
+    $status = isset($_GET['status']) ? trim($_GET['status']) : null;
+
+    $allowedStatus = ['0', '1'];
+
+    logActivity("Filters | property_type={$property_type}, status={$status}");
+
+
+    // -----------------------------------------------------
+    //  WHERE CLAUSE
+    // -----------------------------------------------------
+    $whereClauses = [];
+    $params = [];
+    $types = '';
+
+    if ($property_type !== null && $property_type !== "") {
+        $whereClauses[] = "p.property_type_id = ?";
+        $params[] = $property_type;
+        $types .= 's';
+    }
+
+    if ($status !== null && in_array($status, $allowedStatus, true)) {
+        $whereClauses[] = "p.status = ?";
+        $params[] = $status;
+        $types .= 's';
+    }
+
+    $whereSQL = count($whereClauses) ? "WHERE " . implode(" AND ", $whereClauses) : "";
+
+    logActivity("Generated WHERE | {$whereSQL} | Params=" . json_encode($params));
+
+
+    // -----------------------------------------------------
+    //  TOTAL COUNT
+    // -----------------------------------------------------
+    $totalQuery = "SELECT COUNT(*) AS total FROM properties p {$whereSQL}";
+    logActivity("Total Count Query: {$totalQuery}");
+
+    $countStmt = $conn->prepare($totalQuery);
+    if (!$countStmt) {
+        throw new Exception("Failed to prepare total count query: " . $conn->error);
+    }
+
+    if (!empty($params)) {
+        $countStmt->bind_param($types, ...$params);
+    }
+
+    $countStmt->execute();
+    $totalResult = $countStmt->get_result();
+    $totalProperties = $totalResult->fetch_assoc()['total'] ?? 0;
+    $countStmt->close();
+
+    logActivity("Total Properties: {$totalProperties}");
+
+
+    // -----------------------------------------------------
+    //  MAIN QUERY
+    // -----------------------------------------------------
+    $query = "
+        SELECT 
+            p.*,
+            pt.type_name AS property_type_name,
+            CONCAT(a.firstname, ' ', a.lastname) AS agent_fullname
+        FROM 
+            properties p
+        LEFT JOIN 
+            property_type pt ON p.property_type_id = pt.type_id
+        LEFT JOIN 
+            agents a ON p.agent_code = a.agent_code
+        {$whereSQL}
+        ORDER BY 
+            p.status ASC, p.id DESC
+        LIMIT ? OFFSET ?
+    ";
+
+    logActivity("Properties Query: {$query}");
 
     $stmt = $conn->prepare($query);
-
     if (!$stmt) {
-        logActivity("Prepare failed: " . $conn->error);
-        json_error("Failed to prepare database query", 500);
+        throw new Exception("Failed to prepare properties fetch query: " . $conn->error);
     }
 
-    if (!$stmt->execute()) {
-        logActivity("Execute failed: " . $stmt->error);
-        json_error("Failed to fetch properties", 500);
-    }
+    // Bind pagination
+    $paramsWithPagination = $params;
+    $paramsWithPagination[] = $limit;
+    $paramsWithPagination[] = $offset;
 
+    $stmtTypes = $types . "ii";
+    $stmt->bind_param($stmtTypes, ...$paramsWithPagination);
+
+    logActivity("Executing Query | Params=" . json_encode($paramsWithPagination));
+
+    $stmt->execute();
     $result = $stmt->get_result();
+
     $properties = [];
-    
     while ($row = $result->fetch_assoc()) {
+        $row['status_display'] = ((int)$row['status'] === "1") ? 'Deactivated' : 'Activated';
         $properties[] = $row;
     }
 
-    logActivity("Fetched " . count($properties) . " properties successfully");
+    $stmt->close();
+    $conn->close();
 
-    // -----------------------------
-    // SUCCESS RESPONSE
-    // -----------------------------
-    json_success("Properties retrieved successfully", [
+    logActivity("Fetch Success | Returned " . count($properties) . " properties");
+
+
+    echo json_encode([
+        "success" => true,
         "properties" => $properties,
-        "count" => count($properties),
-        "requested_by" => $userId,
-        "user_role" => $userRole,
-        "timestamp" => date('c')
+        "pagination" => [
+            "page" => $page,
+            "limit" => $limit,
+            "total" => $totalProperties,
+            "total_pages" => ceil($totalProperties / $limit)
+        ],
+        "logged_in_user_role" => $loggedInUserRole
     ]);
 
 } catch (Exception $e) {
-    logActivity("Fatal error: " . $e->getMessage());
-    json_error("Unexpected server error occurred", 500);
-}
 
+    logActivity("EXCEPTION | " . $e->getMessage() . " | IP: " . getClientIP());
+
+    echo json_encode(["success" => false, "message" => "An unexpected error occurred"]);
+    exit();
+}

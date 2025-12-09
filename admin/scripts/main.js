@@ -192,7 +192,7 @@ class DataManager {
       if (data.success && data[this.config.itemNamePlural]?.length > 0) {
         const items = data[this.config.itemNamePlural];
 
-        this.updateTable(items, data.user_role || this.config.userRole);
+        this.updateTable(items, data.logged_in_user_role || this.config.userRole);
         this.updatePagination(
           data.pagination.total,
           data.pagination.page,

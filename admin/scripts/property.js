@@ -1,173 +1,377 @@
-// property-type-manager.js
-document.addEventListener("DOMContentLoaded", () => {
-  // Create and initialize the manager
-  const propertyTypeManager = new DataManager({
-    // === DOM Element IDs ===
-    tableId: 'propertyTypeSummary',
-    tableBodyId: 'propertyTypeSummaryBody',
-    modalId: 'propertyTypeModal',
-    addModalId: 'addNewPropertyTypeModal',
-    formId: 'addPropertyTypeForm',
-    paginationId: 'propertyTypePagination',
-    searchInputId: 'propertyTypeLiveSearch',
-    addButtonId: 'addNewPropertyTypeBtn',
-    
-    // === API Endpoints ===
-    fetchUrl: '../backend/property_types/fetch_property_types.php',
-    addUrl: '../backend/property_types/add_property_type.php',
-    updateUrl: '../backend/property_types/update_property_type.php',
-    fetchDetailsUrl: '../backend/property_types/fetch_property_type_details.php',
-    
-    // === Business Logic ===
-    itemName: 'propertyType',
-    itemNamePlural: 'propertyTypes',
-    idField: 'id',
-    nameField: 'type_name',
-    statusField: 'status',
-    detailsKey: "property_type_details",
+// property.js
+document.getElementById("propertyPhoto").addEventListener("change", function (e) {
+    const file = e.target.files[0];
+    const preview = document.getElementById("photoPreview");
 
-    
-    // === Columns Configuration ===
-    // IMPORTANT: These columns should match what's in your HTML table header
-    columns: [
-      { 
-        field: 'type_id', 
-        label: 'Type ID',
-        render: (item) => `<strong>${item.type_id}</strong>`
-      },
-      { 
-        field: 'type_name', 
-        label: 'Type Name',
-        render: (item) => item.type_name
-      },
-    // ,
-    //   { 
-    //     field: 'description', 
-    //     label: 'Description',
-    //     render: (item) => item.description || '<em>No description</em>'
-    //   }
-    ],
-    
-    // === Custom Row Rendering ===
-    renderRow: function(item, userRole) {
-      // Debug: Check what data you're receiving
-      console.log('Property Type Item:', item);
-      console.log('User Role:', userRole);
-      
-      const status = item.status == 1 ? 
-        '<span style="color: green;">Active</span>' : 
-        '<span style="color: red;">Inactive</span>';
-      
-      let rowHTML = `
-        <td>${item.type_id}</td>
-        <td>${item.type_name}</td>
-        
-        <td>${status}</td>`;
-      
-      // Check if status is a number or string
-      const isActive = parseInt(item.status) === 1;
-      
-      if (isActive) {
-        rowHTML += `
-          <td><span class="edit-icon" data-id="${item.type_id}" title="Edit">✏️</span></td>`;
-        
-        if (userRole === "Super Admin") {
-          rowHTML += `
-            <td><span class="delete-icon" data-id="${item.type_id}" title="Delete">🗑️</span></td>`;
-        } else {
-          rowHTML += `<td></td>`;
-        }
-      } else {
-        if (userRole === "Super Admin") {
-          rowHTML += `
-            <td colspan="2" style="text-align:center;">
-              <span class="restore-icon" data-id="${item.type_id}" title="Restore">↻ Restore</span>
-            </td>`;
-        } else {
-          rowHTML += `<td></td><td></td>`;
-        }
-      }
-      
-      return rowHTML;
-    },
-    
-    // === Custom Details Population ===
-    populateDetails: function(propertyType) {
-      console.log('Populating details for:', propertyType);
-      
-      const tableBody = document.querySelector("#propertyTypeDetailsTable tbody");
-      if (!tableBody) {
-        console.error('Details table body not found!');
+    if (!file) {
+        preview.innerHTML = "<span style='font-size:12px;color:#777;'>No image</span>";
         return;
-      }
+    }
 
-      tableBody.innerHTML = `
-        <tr>
-          <td><strong>Type ID:</strong></td>
-          <td><input type="text" id="edit_type_id" value="${propertyType.type_id || ''}" readonly></td>
-        </tr>
-        <tr>
-          <td><strong>Property Type Name:</strong></td>
-          <td><input type="text" id="edit_type_name" value="${propertyType.type_name || ''}"></td>
-        </tr>
-        <tr>
-          <td><strong>Description:</strong></td>
-          <td><textarea id="edit_description" rows="3">${propertyType.description || ''}</textarea></td>
-        </tr>
-        <tr>
-          <td><strong>Status:</strong></td>
-          <td>
-            <select id="edit_status">
-              <option value="1" ${propertyType.status == 1 ? 'selected' : ''}>Active</option>
-              <option value="0" ${propertyType.status == 0 ? 'selected' : ''}>Inactive</option>
-            </select>
-          </td>
-        </tr>
-        <tr>
-          <td colspan="2" style="text-align:center;">
-            <button id="updatePropertyTypeBtn" class="btn btn-primary">Update Property Type</button>
-          </td>
-        </tr>`;
+    const reader = new FileReader();
+    reader.onload = function (event) {
+        preview.innerHTML = `<img src="${event.target.result}" 
+                                style="width:100%;height:100%;object-fit:cover;">`;
+    };
+    reader.readAsDataURL(file);
+});
+document.addEventListener("DOMContentLoaded", () => {
+  loadCountries();
+  loadSupportData();
+  const propertyManager = new DataManager({
+    // ============================
+    // DOM ELEMENTS
+    // ============================
+    tableId: "propertySummary",
+    tableBodyId: "propertySummaryBody",
+    modalId: "propertyModal",
+    addModalId: "addNewPropertyModal",
+    formId: "addPropertyForm",
+    paginationId: "propertyPagination",
+    searchInputId: "propertyLiveSearch",
+    addButtonId: "addNewPropertyBtn",
 
-      // Remove any existing event listeners first
-      const oldBtn = document.getElementById('updatePropertyTypeBtn');
-      if (oldBtn) {
-          oldBtn.replaceWith(oldBtn.cloneNode(true));
-      }
+    // ============================
+    // API ENDPOINTS
+    // ============================
+    fetchUrl: "../backend/properties/fetch_properties.php",
+    addUrl: "../backend/properties/add_property.php",
+    updateUrl: "../backend/properties/update_property.php",
+    fetchDetailsUrl: "../backend/properties/fetch_property_details.php",
 
-      document.getElementById("updatePropertyTypeBtn").addEventListener("click", () => {
-        UI.confirm(
-          "Are you sure you want to update this property type?",
-          () => {
-            this.updateItem(propertyType.type_id, {
-              type_id: propertyType.type_id,
-              type_name: document.getElementById("edit_type_name").value,
-              description: document.getElementById("edit_description").value,
-              status: document.getElementById("edit_status").value,
-              action_type: "update_all"
-            });
-          }
-        );
+    // ============================
+    // BUSINESS LOGIC
+    // ============================
+    itemName: "property",
+    itemNamePlural: "properties",
+    idField: "property_id",
+    nameField: "property_name",
+    statusField: "status",
+    detailsKey: "property_details",
+
+    // ============================
+    // TABLE COLUMNS
+    // Must match your HTML table
+    // ============================
+    columns: [
+      {
+        field: "property_code",
+        label: "Property ID",
+        render: (item) => `<strong>${item.property_code}</strong>`,
+      },
+      {
+        field: "name",
+        label: "Property Name",
+        render: (item) => item.name,
+      },
+      {
+        field: "property_type_name",
+        label: "Type",
+        render: (item) => item.property_type_name,
+      },
+      {
+        field: "agent_fullname",
+        label: "Agent",
+        render: (item) => item.agent_fullname,
+      },
+      {
+        field: "location",
+        label: "Location",
+        render: (item) => item.address,
+      },
+    ],
+
+    // ============================
+    // ROW RENDERING
+    // ============================
+    renderRow: function (item, userRole) {
+      console.log("UserRole inside renderRow:", userRole);
+
+
+    const isActive = Number(item.status) === 1;
+
+    const statusLabel = isActive
+        ? `<span style="color: green;">Active</span>`
+        : `<span style="color: red;">Inactive</span>`;
+
+    let html = `
+        <td>${item.property_code}</td>
+        <td>${item.name}</td>
+        <td>${item.property_type_name}</td>
+        <td>${item.agent_fullname}</td>
+        <td>${item.address}</td>
+        <td>${statusLabel}</td>
+    `;
+
+    if (isActive) {
+        html += `<td><span class="edit-icon" data-id="${item.property_code}" title="Edit">✏️</span></td>`;
+
+        if (userRole === "Super Admin") {
+            html += `<td><span class="delete-icon" data-id="${item.property_code}" title="Delete">🗑️</span></td>`;
+        } else {
+            html += `<td></td>`;
+        }
+
+    } else {
+        if (userRole === "Super Admin") {
+            html += `
+                <td colspan="2" style="text-align:center;">
+                    <span class="restore-icon" data-id="${item.property_code}" title="Restore">↻ Restore</span>
+                </td>
+            `;
+        } else {
+            html += `<td></td><td></td>`;
+        }
+    }
+
+    return html;
+}
+,
+
+    // ============================
+    // POPULATE DETAILS MODAL
+    // ============================
+    populateDetails: function (property) {
+      const body = document.querySelector("#propertyDetailsTable tbody");
+      if (!body) return;
+
+      body.innerHTML = `
+                <tr>
+                    <td><strong>Property ID:</strong></td>
+                    <td><input type="text" id="edit_property_id" value="${
+                      property.property_id
+                    }" readonly></td>
+                </tr>
+
+                <tr>
+                    <td><strong>Name:</strong></td>
+                    <td><input type="text" id="edit_property_name" value="${
+                      property.property_name
+                    }"></td>
+                </tr>
+
+                <tr>
+                    <td><strong>Agent:</strong></td>
+                    <td>
+                        <select id="edit_agent_code"></select>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><strong>Property Type:</strong></td>
+                    <td>
+                        <select id="edit_property_type_id"></select>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><strong>Location:</strong></td>
+                    <td><input type="text" id="edit_location" value="${
+                      property.location
+                    }"></td>
+                </tr>
+
+                <tr>
+                    <td><strong>Status:</strong></td>
+                    <td>
+                        <select id="edit_status">
+                            <option value="1" ${
+                              property.status == 1 ? "selected" : ""
+                            }>Active</option>
+                            <option value="0" ${
+                              property.status == 0 ? "selected" : ""
+                            }>Inactive</option>
+                        </select>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td colspan="2" style="text-align:center;">
+                        <button id="updatePropertyBtn" class="btn btn-primary">Update Property</button>
+                    </td>
+                </tr>
+            `;
+
+      loadSelectOptions(
+        "#edit_agent_code",
+        "../backend/agents/fetch_agents.php",
+        property.agent_code
+      );
+      loadSelectOptions(
+        "#edit_property_type_id",
+        "../backend/property_types/fetch_property_types.php",
+        property.property_type_id
+      );
+
+      // Attach update handler
+      const btn = document.getElementById("updatePropertyBtn");
+      btn.addEventListener("click", () => {
+        UI.confirm("Are you sure you want to update this property?", () => {
+          this.updateItem(property.property_id, {
+            property_id: property.property_id,
+            property_name: document.getElementById("edit_property_name").value,
+            agent_code: document.getElementById("edit_agent_code").value,
+            property_type_id: document.getElementById("edit_property_type_id")
+              .value,
+            location: document.getElementById("edit_location").value,
+            status: document.getElementById("edit_status").value,
+            action_type: "update_all",
+          });
+        });
       });
     },
-    
-    // === Custom Initialization ===
-    onInit: function() {
-      console.log('Property Type Manager initialized successfully');
-      
-      // You can access the manager instance using 'this'
-      // For example, if you need to expose it globally:
-      window.propertyTypeManager = this;
-      
-      // Add any custom initialization here
-    }
+
+    // ============================
+    // INIT
+    // ============================
+    onInit: function () {
+      console.log("Property Manager Initialized");
+      window.propertyManager = this;
+    },
   });
-  
-  // The variable IS being used - it holds the DataManager instance
-  // You can use it later if needed:
-  // propertyTypeManager.fetchData(); // To manually refresh
-  
-  // Or expose it to the window for debugging:
-  window.ptm = propertyTypeManager;
-  console.log('Property Type Manager instance created:', propertyTypeManager);
+
+  window.pm = propertyManager;
+
+  async function loadSupportData() {
+    try {
+        const res = await fetch("../backend/properties/fetch_agent_property_type.php");
+        const data = await res.json();
+
+        if (data.response_code !== 200) {
+            console.error("Failed loading support data");
+            return;
+        }
+
+        populateSelect("#agent_code", data.data.agents, "agent_code", (item) => `${item.firstname} ${item.lastname}`);
+        populateSelect("#property_type_id", data.data.property_types, "type_id", "type_name");
+    } catch (err) {
+        console.error("Error fetching support data:", err);
+    }
+}
+
+function populateSelect(selector, list, valueKey, labelKey) {
+    const select = document.querySelector(selector);
+    if (!select) return;
+
+    select.innerHTML = `<option value="">Select...</option>`;
+
+    list.forEach(item => {
+        const option = document.createElement("option");
+        option.value = item[valueKey];
+        option.textContent = typeof labelKey === "function" ? labelKey(item) : item[labelKey];
+        select.appendChild(option);
+    });
+}
+
+async function loadCountries() {
+    const res = await fetch("https://countriesnow.space/api/v0.1/countries/");
+    const json = await res.json();
+
+    const countries = json.data.map(c => ({
+        code: c.country,
+        name: c.country
+    }));
+
+    populateSelect("#property_country", countries, "name", "code");
+    populateSelect("#edit_country", countries, "name", "code");
+}
+
+
+async function loadStates(countryName, selector) {
+    try {
+        const res = await fetch("https://countriesnow.space/api/v0.1/countries/states", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ country: countryName })
+        });
+
+        const json = await res.json();
+
+        if (!json.data || !json.data.states) {
+            console.error("No states found:", json);
+            populateSelect(selector, [], "code", "name");
+            return;
+        }
+
+        const states = json.data.states.map(s => ({
+            code: s.name,
+            name: s.name
+        }));
+
+        populateSelect(selector, states, "code", "name");
+    } catch (err) {
+        console.error("Load states error:", err);
+    }
+}
+
+
+async function loadCities(countryName, stateName, selector) {
+    try {
+        const res = await fetch("https://countriesnow.space/api/v0.1/countries/state/cities", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ country: countryName, state: stateName })
+        });
+
+        const json = await res.json();
+
+        if (!json.data) {
+            console.error("No cities found:", json);
+            populateSelect(selector, [], "id", "name");
+            return;
+        }
+
+        const cities = json.data.map(city => ({
+            id: city,
+            name: city
+        }));
+
+        populateSelect(selector, cities, "id", "name");
+    } catch (err) {
+        console.error("Load cities error:", err);
+    }
+}
+
+
+
+// ADD PROPERTY
+document.querySelector("#property_country")?.addEventListener("change", function () {
+    loadStates(this.value, "#property_state");
+    document.querySelector("#property_city").innerHTML = "";
+});
+
+document.querySelector("#property_state")?.addEventListener("change", function () {
+    const country = document.querySelector("#property_country").value;
+    loadCities(country, this.value, "#property_city");
+});
+
+// EDIT PROPERTY
+document.querySelector("#edit_country")?.addEventListener("change", function () {
+    loadStates(this.value, "#edit_state");
+    document.querySelector("#edit_city").innerHTML = "";
+});
+
+document.querySelector("#edit_state")?.addEventListener("change", function () {
+    const country = document.querySelector("#edit_country").value;
+    loadCities(country, this.value, "#edit_city");
+});
+
+
+
+  // function loadSelectOptions(selectId, apiUrl, selectedValue = "") {
+  //   fetch(apiUrl)
+  //     .then((res) => res.json())
+  //     .then((data) => {
+  //       const select = document.querySelector(selectId);
+  //       select.innerHTML = "";
+
+  //       data.forEach((item) => {
+  //         const option = document.createElement("option");
+  //         option.value = item.id || item.agent_code || item.type_id;
+  //         option.textContent = item.name || item.type_name || item.fullname;
+  //         if (option.value == selectedValue) option.selected = true;
+  //         select.appendChild(option);
+  //       });
+  //     });
+  // }
 });
