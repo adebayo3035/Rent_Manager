@@ -44,7 +44,7 @@
     border: none;
     outline: none;
 }
-.container .addNewBtn, .addNewBtn, .updateBtn{
+.addNewBtnModal, .updateBtn{
     padding: 10px 15px;
     font-size: 16px;
     background-color: green;
@@ -55,6 +55,18 @@
     outline: none;
     margin: 15px auto;
     display: block;
+}
+.addNewBtn{
+    padding: 10px 15px;
+    font-size: 16px;
+    background-color: green;
+    color: #fff;
+    cursor: pointer;
+    border-radius: 5px;
+    border: none;
+    outline: none;
+    margin: 15px auto;
+    display:none;
 }
 .updateBtn{
     background-color: orange;
@@ -644,6 +656,7 @@ tr:nth-child(even) {
 .btn-primary {
     background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
     color: white;
+    align-self: center;
 }
 
 .btn-primary:hover {
@@ -763,6 +776,20 @@ textarea{
     border-top-color: #3498db;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+}
+.photoPreview{
+            width:120px;
+            height:120px;
+            border:1px solid #ccc;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            overflow:hidden;
+            margin:auto; 
+}
+.photoPreviewText{
+    font-size:12px;
+    color:#777;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 

@@ -16,7 +16,7 @@
     <h1>Manage Properties</h1>
     
     <!-- Add New Property Button -->
-    <button id="addNewPropertyBtn" class="addNewBtn">
+    <button id="addNewPropertyBtn" class="addNewBtnModal">
         <i class="fa fa-plus" aria-hidden="true"></i> Add New Property
     </button>
 
@@ -77,53 +77,53 @@
 
             <div class="form-input">
                 <label for="property_name">Property Name:</label>
-                <input type="text" id="property_name" name="property_name" required>
+                <input type="text" id="property_name" name="property_name" class ="validate" data-type ="text" required>
             </div>
 
             <div class="form-input">
                 <label for="agent_code">Agent:</label>
-                <select id="agent_code" name="property_agent_code" required>
+                <select id="agent_code" name="property_agent_code" class ="validate" data-type ="text" required>
                     <!-- Filled from API -->
                 </select>
             </div>
 
             <div class="form-input">
                 <label for="property_type_id">Property Type:</label>
-                <select id="property_type_id" name="property_type" required>
+                <select id="property_type_id" name="property_type" class ="validate" data-type ="select" required>
                     <!-- Filled from API -->
                 </select>
             </div>
             <div class="form-input">
                 <label for="property_country">Country:</label>
-                <select id="property_country" name="property_country" required>
+                <select id="property_country" name="property_country" class ="validate" data-type ="select" required>
                     <!-- Filled from API -->
                 </select>
             </div>
             <div class="form-input">
                 <label for="property_state">State:</label>
-                <select id="property_state" name="property_state" required>
+                <select id="property_state" name="property_state" class ="validate" data-type ="select" required>
                     <!-- Filled from API -->
                 </select>
             </div>
             <div class="form-input">
                 <label for="property_city">City:</label>
-                <select id="property_city" name="property_city" required>
+                <select id="property_city" name="property_city" class ="validate" data-type ="select" required>
                     <!-- Filled from API -->
                 </select>
             </div>
 
             <div class="form-input">
                 <label for="property_address">Address:</label>
-                <input type="text" id="location" name="property_address" required>
+                <input type="text" id="location" name="property_address" class ="validate" data-type ="text" required>
             </div>
 
             <div class="form-input">
                 <label for="property_contact_name">Contact Name:</label>
-                <input type="text" id="property_contact_name" name="property_contact_name" required>
+                <input type="text" id="property_contact_name" name="property_contact_name" class ="validate" data-type ="text" required>
             </div>
             <div class="form-input">
                 <label for="property_contact_phone">Contact Phone Number:</label>
-                <input type="text" id="property_contact_phone" name="property_contact_phone" required>
+                <input type="number" id="property_contact_phone" name="property_contact_phone" class ="validate" data-type ="phone" required>
             </div>
             <div class="form-input">
                 <label for="property_note">Additional Notes:</label>
@@ -182,6 +182,7 @@
 <script src="../scripts/property.js"></script>
 <script src="../scripts/main.js"></script>
 <script src="../../ui.js"></script>
+<script src = "../../validator.js"></script>
 
 </body>
 </html>

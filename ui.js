@@ -1,5 +1,7 @@
 const UI = {
+    // =======================
     // Toast
+    // =======================
     toast(message, type = "info", duration = 3000) {
         const container = document.getElementById("toastContainer");
         const toast = document.createElement("div");
@@ -14,7 +16,9 @@ const UI = {
         }, duration);
     },
 
+    // =======================
     // Alert Modal
+    // =======================
     alert(message, title = "Alert") {
         document.getElementById("alertTitle").innerText = title;
         document.getElementById("alertMessage").innerText = message;
@@ -27,7 +31,9 @@ const UI = {
         };
     },
 
+    // =======================
     // Confirm Modal
+    // =======================
     confirm(message, onConfirm, title = "Confirm Action") {
         document.getElementById("confirmTitle").innerText = title;
         document.getElementById("confirmMessage").innerText = message;
@@ -45,7 +51,9 @@ const UI = {
         };
     },
 
+    // =======================
     // Loader
+    // =======================
     loader: {
         show() {
             document.getElementById("uiLoaderOverlay").style.display = "flex";
@@ -53,5 +61,6 @@ const UI = {
         hide() {
             document.getElementById("uiLoaderOverlay").style.display = "none";
         }
-    }
+    },
+
 };

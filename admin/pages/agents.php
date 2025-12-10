@@ -14,7 +14,7 @@
     <div class="container">
         <h1>Manage Agents</h1>
 
-        <button id="addNewAgentBtn" class="addNewBtn">
+        <button id="addNewAgentBtn" class="addNewBtnModal">
             <i class="fa fa-plus" aria-hidden="true"></i> Add New Agent
         </button>
 
@@ -60,32 +60,32 @@
             <form id="addAgentForm" enctype="multipart/form-data">
                 <div class="form-group">
                     <label>First Name</label>
-                    <input type="text" id="agentFirstName" placeholder="Enter first name" name ="agent_firstname">
+                    <input type="text" id="agentFirstName" placeholder="Enter first name" name="agent_firstname" class ="validate" data-type ="text" required>
                 </div>
 
                 <div class="form-group">
                     <label>Last Name</label>
-                    <input type="text" id="agentLastName" placeholder="Enter last name" name ="agent_lastname">
+                    <input type="text" id="agentLastName" placeholder="Enter last name" name="agent_lastname" class ="validate" data-type ="text" required>
                 </div>
 
                 <div class="form-group">
                     <label>Email</label>
-                    <input type="email" id="agentEmail" placeholder="Enter email address" name ="agent_email">
+                    <input type="email" id="agentEmail" placeholder="Enter email address" name="agent_email" class ="validate" data-type ="email" required>
                 </div>
 
                 <div class="form-group">
                     <label>Phone</label>
-                    <input type="text" id="agentPhone" placeholder="Enter phone number" name ="agent_phone_number">
+                    <input type="text" id="agentPhone" placeholder="Enter phone number" name="agent_phone_number" class ="validate" data-type ="phone" required>
                 </div>
 
                 <div class="form-group">
                     <label>Address</label>
-                    <textarea id="agentAddress" placeholder="Enter address" name = "agent_address"></textarea>
+                    <textarea id="agentAddress" placeholder="Enter address" name="agent_address" class ="validate" data-type ="textarea" required></textarea>
                 </div>
 
                 <div class="form-group">
                     <label>Gender</label>
-                    <select id="agentGender" name ="agent_gender">
+                    <select id="agentGender" name="agent_gender" class ="validate" data-type ="select" required>
                         <option value="">Select gender</option>
                         <option value="male">Male</option>
                         <option value="female">Female</option>
@@ -94,19 +94,19 @@
 
                 <div class="form-group">
                     <label>Photo</label>
-                    <input type="file" id="agentPhoto" name="agent_photo" accept="image/*">
+                    <input type="file" id="agentPhoto" name="agent_photo" accept="image/*" required>
                 </div>
 
                 <div class="form-group">
                     <label>Preview</label>
-                    <div id="photoPreview" style="width:120px;height:120px;border:1px solid #ccc;display:flex;
-                        align-items:center;justify-content:center;overflow:hidden;">
-                        <span style="font-size:12px;color:#777;">No image</span>
+                    <div id="photoPreview" class ="photoPreview">
+                        <span id="defaultText" class = "photoPreviewText">No image</span>
                     </div>
                 </div>
+                <button id="saveAgentBtn" class="btn-primary addNewBtn">Save Agent</button>
 
-                <button id="saveAgentBtn" class="btn-primary">Save Agent</button>
             </form>
+             <div id="addAgentMessage"></div>
         </div>
     </div>
 
@@ -139,6 +139,7 @@
     <script src="../scripts/agent.js"></script>
     <script src="../scripts/main.js"></script>
     <script src="../../ui.js"></script>
+    <script src = "../../validator.js"></script>
 
 </body>
 

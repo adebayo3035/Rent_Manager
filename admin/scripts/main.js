@@ -10,6 +10,8 @@ class DataManager {
       formId: "",
       paginationId: "",
       searchInputId: "",
+      addsubmitBtnId: "",
+      
 
       // API endpoints
       fetchUrl: "",
@@ -44,6 +46,7 @@ class DataManager {
       // Merge with provided config
       ...config,
     };
+    
 
     this.currentPage = 1;
     this.init();
@@ -110,6 +113,7 @@ class DataManager {
   }
 
   /** ------------------------- Form Submission ------------------------- **/
+
   setupAddForm() {
     const form = document.getElementById(this.config.formId);
     if (!form) return;

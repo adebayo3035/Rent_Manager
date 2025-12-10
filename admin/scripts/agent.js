@@ -4,7 +4,7 @@ document.getElementById("agentPhoto").addEventListener("change", function (e) {
     const preview = document.getElementById("photoPreview");
 
     if (!file) {
-        preview.innerHTML = "<span style='font-size:12px;color:#777;'>No image</span>";
+        preview.innerHTML = "<span class = 'photoPreviewText'>No image</span>";
         return;
     }
 
@@ -18,6 +18,10 @@ document.getElementById("agentPhoto").addEventListener("change", function (e) {
 
 // agent.js
 document.addEventListener("DOMContentLoaded", () => {
+     initFormValidation('addAgentForm', 'saveAgentBtn', 'addAgentMessage', {
+    maxFileSizeMB: 2, // Override default
+    allowedFileTypes: ['jpg', 'jpeg', 'png'] // Override default
+});
     const agentManager = new DataManager({
 
         // === DOM Element IDs ===
@@ -102,8 +106,25 @@ document.addEventListener("DOMContentLoaded", () => {
         // === Populate Edit Modal ===
         populateDetails: function (agent) {
             const body = document.querySelector("#agentDetailsTable tbody");
+             const photoUrl = `../backend/agents/agent_photos/${agent.photo}`;
 
             body.innerHTML = `
+                <tr>
+            <td colspan="2" style="text-align:center;">
+                <img 
+                    src="${photoUrl}" 
+                    alt="Agent Photo" 
+                    style="
+                        width:120px;
+                        height:120px;
+                        object-fit:cover;
+                        border-radius:8px;
+                        border:1px solid #ccc;
+                        margin-bottom:10px;
+                    "
+                >
+            </td>
+        </tr>
                 <tr>
                     <td><strong>Agent Code</strong></td>
                     <td><input type="text" id="edit_agent_code" value="${agent.agent_code}" readonly></td>
@@ -187,7 +208,7 @@ document.addEventListener("DOMContentLoaded", () => {
             window.agentManager = this;
 
             // Load initial data
-            this.fetchData();
+            // this.fetchData();
 
             // Handle photo preview
             const photoInput = document.getElementById("agentPhoto");

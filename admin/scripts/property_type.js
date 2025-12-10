@@ -1,5 +1,6 @@
 // property-type-manager.js
 document.addEventListener("DOMContentLoaded", () => {
+  initFormValidation("addPropertyTypeForm", "submitBtnAddPropertyType", "addPropertyTypeMessage");
   // Create and initialize the manager
   const propertyTypeManager = new DataManager({
     // === DOM Element IDs ===
@@ -8,6 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
     modalId: 'propertyTypeModal',
     addModalId: 'addNewPropertyTypeModal',
     formId: 'addPropertyTypeForm',
+    addSubmitBtnId: 'submitBtnAddPropertyType',
     paginationId: 'propertyTypePagination',
     searchInputId: 'propertyTypeLiveSearch',
     addButtonId: 'addNewPropertyTypeBtn',

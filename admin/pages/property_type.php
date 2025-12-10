@@ -15,7 +15,7 @@
         <h1>Manage Property Types</h1>
         <!-- Separate row for "Add New Customer" button -->
         
-            <button id="addNewPropertyTypeBtn" class ="addNewBtn"><i class="fa fa-plus" aria-hidden="true"></i> Add New
+            <button id="addNewPropertyTypeBtn" class ="addNewBtnModal"><i class="fa fa-plus" aria-hidden="true"></i> Add New
                 Property Type</button>
      
         <div class="livesearch">
@@ -65,14 +65,14 @@
             <form id="addPropertyTypeForm">
                 <div class="form-input">
                     <label for="add_property_type_name">Property Type Name:</label>
-                    <input type="text" id="add_property_type_name" name="add_property_type_name" required>
+                    <input type="text" id="add_property_type_name" class ="validate" data-type ="text" name="add_property_type_name" required>
                 </div>
                 <div class="form-input">
                     <label for="add_property_type_description">Property Type Description:</label>
-                    <input type="text" id="add_property_type_description" name="add_property_type_description" required>
+                    <input type="text" id="add_property_type_description" class="validate" data-type ="text" name="add_property_type_description" required>
                 </div>
                 
-                <button type="submit" id="submitBtnAddPropertyType" class="addNewBtn">Add Property Type</button>
+                <button type="submit" id="submitBtnAddPropertyType" class="addNewBtn btnSubmitAdd">Add Property Type</button>
             </form>
 
             <div id="addPropertyTypeMessage"></div>
@@ -113,6 +113,7 @@
     <script src="../scripts/property_type.js"></script>
     <script src="../scripts/main.js"></script>
     <script src = "../../ui.js"></script>
+    <script src = "../../validator.js"></script>
     <!-- <script src="scripts/group.js"></script> -->
 </body>
 

@@ -16,6 +16,11 @@ document.getElementById("propertyPhoto").addEventListener("change", function (e)
     reader.readAsDataURL(file);
 });
 document.addEventListener("DOMContentLoaded", () => {
+    // initFormValidation("addPropertyForm", "submitBtnAddProperty", "addPropertyMessage");
+    initFormValidation('addPropertyForm', 'submitBtnAddProperty', 'addPropertyMessage', {
+    maxFileSizeMB: 2, // Override default
+    allowedFileTypes: ['jpg', 'jpeg', 'png'] // Override default
+});
   loadCountries();
   loadSupportData();
   const propertyManager = new DataManager({
@@ -27,6 +32,7 @@ document.addEventListener("DOMContentLoaded", () => {
     modalId: "propertyModal",
     addModalId: "addNewPropertyModal",
     formId: "addPropertyForm",
+    addSubmitBtnId: 'submitBtnAddProperty',
     paginationId: "propertyPagination",
     searchInputId: "propertyLiveSearch",
     addButtonId: "addNewPropertyBtn",
