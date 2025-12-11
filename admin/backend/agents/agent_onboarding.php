@@ -148,7 +148,7 @@ try {
     logActivity("Image moved successfully: {$upload_path}");
 
     // ------------------------- DB INSERT -------------------------
-    $agent_code = random_unique_id();
+    $agent_code = "AGENT" . random_unique_id();
     logActivity("Generated unique agent code: {$agent_code}");
 
     $insert_sql = "

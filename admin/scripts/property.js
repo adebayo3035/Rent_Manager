@@ -15,6 +15,24 @@ document.getElementById("propertyPhoto").addEventListener("change", function (e)
     };
     reader.readAsDataURL(file);
 });
+function showEditLoader() {
+    const loader = document.getElementById("editModalLoader");
+    loader.style.display = "flex";
+
+    // disable all inputs & buttons
+    document.querySelector("#propertyDetailsTable").style.pointerEvents = "none";
+    document.querySelector("#propertyDetailsTable").style.opacity = "0.4";
+}
+
+function hideEditLoader() {
+    const loader = document.getElementById("editModalLoader");
+    loader.style.display = "none";
+
+    // re-enable inputs
+    document.querySelector("#propertyDetailsTable").style.pointerEvents = "auto";
+    document.querySelector("#propertyDetailsTable").style.opacity = "1";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     // initFormValidation("addPropertyForm", "submitBtnAddProperty", "addPropertyMessage");
     initFormValidation('addPropertyForm', 'submitBtnAddProperty', 'addPropertyMessage', {
@@ -137,89 +155,163 @@ document.addEventListener("DOMContentLoaded", () => {
     // ============================
     // POPULATE DETAILS MODAL
     // ============================
-    populateDetails: function (property) {
-      const body = document.querySelector("#propertyDetailsTable tbody");
-      if (!body) return;
+   populateDetails: async function (property) {
+    showEditLoader(); // 🔥 Disable modal + show spinner
+    const body = document.querySelector("#propertyDetailsTable tbody");
+const photoUrl = `../backend/properties/property_photos/${property.photo}`;
+if (!body) return;
 
-      body.innerHTML = `
-                <tr>
-                    <td><strong>Property ID:</strong></td>
-                    <td><input type="text" id="edit_property_id" value="${
-                      property.property_id
-                    }" readonly></td>
-                </tr>
+// Build the form UI
+body.innerHTML = `
+<tr>
+    <td colspan="2" style="text-align:center;">
+        <img src="${photoUrl}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #ccc;margin-bottom:10px;">
+    </td>
+</tr>
 
-                <tr>
-                    <td><strong>Name:</strong></td>
-                    <td><input type="text" id="edit_property_name" value="${
-                      property.property_name
-                    }"></td>
-                </tr>
+<tr>
+    <td><strong>Property ID:</strong></td>
+    <td><input type="text" id="edit_property_id" value="${property.property_code}" readonly></td>
+</tr>
 
-                <tr>
-                    <td><strong>Agent:</strong></td>
-                    <td>
-                        <select id="edit_agent_code"></select>
-                    </td>
-                </tr>
+<tr>
+    <td><strong>Name:</strong></td>
+    <td><input type="text" id="edit_property_name" value="${property.name}"></td>
+</tr>
 
-                <tr>
-                    <td><strong>Property Type:</strong></td>
-                    <td>
-                        <select id="edit_property_type_id"></select>
-                    </td>
-                </tr>
+<tr>
+    <td><strong>Agent:</strong></td>
+    <td><select id="edit_agent_code" class="select2"></select></td>
+</tr>
 
-                <tr>
-                    <td><strong>Location:</strong></td>
-                    <td><input type="text" id="edit_location" value="${
-                      property.location
-                    }"></td>
-                </tr>
+<tr>
+    <td><strong>Property Type:</strong></td>
+    <td><select id="edit_property_type_id" class="select2"></select></td>
+</tr>
 
-                <tr>
-                    <td><strong>Status:</strong></td>
-                    <td>
-                        <select id="edit_status">
-                            <option value="1" ${
-                              property.status == 1 ? "selected" : ""
-                            }>Active</option>
-                            <option value="0" ${
-                              property.status == 0 ? "selected" : ""
-                            }>Inactive</option>
-                        </select>
-                    </td>
-                </tr>
+<tr>
+    <td><strong>Country:</strong></td>
+    <td><select id="edit_country" class="select2"></select></td>
+</tr>
 
-                <tr>
-                    <td colspan="2" style="text-align:center;">
-                        <button id="updatePropertyBtn" class="btn btn-primary">Update Property</button>
-                    </td>
-                </tr>
-            `;
+<tr>
+    <td><strong>State:</strong></td>
+    <td><select id="edit_state" class="select2" disabled></select></td>
+</tr>
 
-      loadSelectOptions(
-        "#edit_agent_code",
-        "../backend/agents/fetch_agents.php",
-        property.agent_code
-      );
-      loadSelectOptions(
-        "#edit_property_type_id",
-        "../backend/property_types/fetch_property_types.php",
-        property.property_type_id
-      );
+<tr>
+    <td><strong>City:</strong></td>
+    <td><select id="edit_city" class="select2" disabled></select></td>
+</tr>
+
+<tr>
+    <td><strong>Address</strong></td>
+    <td><input type="text" id="edit_location" value="${property.address}"></td>
+</tr>
+
+<tr>
+    <td><strong>Contact Name</strong></td>
+    <td><input type="text" id="edit_contact_name" value="${property.contact_name}"></td>
+</tr>
+
+<tr>
+    <td><strong>Contact Phone Number</strong></td>
+    <td><input type="number" id="edit_contact_phone" value="${property.contact_phone}"></td>
+</tr>
+
+<tr>
+    <td><strong>Status:</strong></td>
+    <td>
+        <select id="edit_status" class="select2">
+            <option value="1" ${property.status == 1 ? "selected" : ""}>Active</option>
+            <option value="0" ${property.status == 0 ? "selected" : ""}>Inactive</option>
+        </select>
+    </td>
+</tr>
+
+<tr>
+    <td colspan="2" style="text-align:center;">
+        <button id="updatePropertyBtn" class="btn btn-primary">Update Property</button>
+    </td>
+</tr>
+`;
+
+// -------------------------------------------------------
+// INIT SELECT2 ON ALL SELECTS
+// -------------------------------------------------------
+$(".select2").select2({
+    width: "100%",
+    placeholder: "Select an option",
+    allowClear: true
+});
+
+// -------------------------------------------------------
+// COUNTRY → STATE (auto-clear + disable + reload)
+// -------------------------------------------------------
+$("#edit_country").on("change", async function () {
+    const country = this.value;
+
+    $("#edit_state").prop("disabled", true).empty().trigger("change");
+    $("#edit_city").prop("disabled", true).empty().trigger("change");
+
+    if (!country) return;
+
+    await loadStates(country, "#edit_state");
+
+    $("#edit_state").prop("disabled", false).trigger("change");
+});
+
+// -------------------------------------------------------
+// STATE → CITY (auto-clear + disable + reload)
+// -------------------------------------------------------
+$("#edit_state").on("change", async function () {
+    const state = this.value;
+    const country = $("#edit_country").val();
+
+    $("#edit_city").prop("disabled", true).empty().trigger("change");
+
+    if (!state) return;
+
+    await loadCities(country, state, "#edit_city");
+
+    $("#edit_city").prop("disabled", false).trigger("change");
+});
+
+// ----------------------------------------------------------
+// After DOM is ready, load support data for selects
+// ----------------------------------------------------------
+await loadSupportData();
+await loadCountries();
+
+// Apply default values AFTER loading
+$("#edit_agent_code").val(property.agent_code).trigger("change");
+$("#edit_property_type_id").val(property.property_type_id).trigger("change");
+
+$("#edit_country").val(property.country).trigger("change");
+await loadStates(property.country, "#edit_state");
+
+$("#edit_state").val(property.state).trigger("change");
+await loadCities(property.country, property.state, "#edit_city");
+
+$("#edit_city").val(property.city).trigger("change");
+
+ hideEditLoader(); // 🔥 All done — show form & enable modal
 
       // Attach update handler
       const btn = document.getElementById("updatePropertyBtn");
       btn.addEventListener("click", () => {
         UI.confirm("Are you sure you want to update this property?", () => {
-          this.updateItem(property.property_id, {
-            property_id: property.property_id,
+          this.updateItem(property.property_code, {
+            property_id: property.property_code,
             property_name: document.getElementById("edit_property_name").value,
             agent_code: document.getElementById("edit_agent_code").value,
-            property_type_id: document.getElementById("edit_property_type_id")
-              .value,
-            location: document.getElementById("edit_location").value,
+            property_type_id: document.getElementById("edit_property_type_id").value,
+            country: document.getElementById("edit_country").value,
+            state: document.getElementById("edit_state").value,
+            city: document.getElementById("edit_city").value,
+            address: document.getElementById("edit_location").value,
+            contact_name: document.getElementById("edit_contact_name").value,
+            contact_phone: document.getElementById("edit_contact_phone").value,
             status: document.getElementById("edit_status").value,
             action_type: "update_all",
           });
@@ -250,6 +342,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         populateSelect("#agent_code", data.data.agents, "agent_code", (item) => `${item.firstname} ${item.lastname}`);
         populateSelect("#property_type_id", data.data.property_types, "type_id", "type_name");
+        populateSelect("#edit_agent_code", data.data.agents, "agent_code", (item) => `${item.firstname} ${item.lastname}`);
+        populateSelect("#edit_property_type_id", data.data.property_types, "type_id", "type_name");
     } catch (err) {
         console.error("Error fetching support data:", err);
     }
@@ -351,33 +445,4 @@ document.querySelector("#property_state")?.addEventListener("change", function (
     loadCities(country, this.value, "#property_city");
 });
 
-// EDIT PROPERTY
-document.querySelector("#edit_country")?.addEventListener("change", function () {
-    loadStates(this.value, "#edit_state");
-    document.querySelector("#edit_city").innerHTML = "";
-});
-
-document.querySelector("#edit_state")?.addEventListener("change", function () {
-    const country = document.querySelector("#edit_country").value;
-    loadCities(country, this.value, "#edit_city");
-});
-
-
-
-  // function loadSelectOptions(selectId, apiUrl, selectedValue = "") {
-  //   fetch(apiUrl)
-  //     .then((res) => res.json())
-  //     .then((data) => {
-  //       const select = document.querySelector(selectId);
-  //       select.innerHTML = "";
-
-  //       data.forEach((item) => {
-  //         const option = document.createElement("option");
-  //         option.value = item.id || item.agent_code || item.type_id;
-  //         option.textContent = item.name || item.type_name || item.fullname;
-  //         if (option.value == selectedValue) option.selected = true;
-  //         select.appendChild(option);
-  //       });
-  //     });
-  // }
 });
