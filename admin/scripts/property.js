@@ -190,6 +190,11 @@ body.innerHTML = `
 </tr>
 
 <tr>
+    <td><strong>No. Of Units:</strong></td>
+    <td><input type="text" id="edit_property_type_unit" value="${property.property_type_unit}"></td>
+</tr>
+
+<tr>
     <td><strong>Country:</strong></td>
     <td><select id="edit_country" class="select2"></select></td>
 </tr>
@@ -306,6 +311,7 @@ $("#edit_city").val(property.city).trigger("change");
             property_name: document.getElementById("edit_property_name").value,
             agent_code: document.getElementById("edit_agent_code").value,
             property_type_id: document.getElementById("edit_property_type_id").value,
+            property_type_unit: document.getElementById("edit_property_type_unit").value,
             country: document.getElementById("edit_country").value,
             state: document.getElementById("edit_state").value,
             city: document.getElementById("edit_city").value,

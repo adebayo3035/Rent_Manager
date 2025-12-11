@@ -104,6 +104,10 @@
                     </select>
                 </div>
                 <div class="form-input">
+                    <label for="property_type_unit">No. Of Units:</label>
+                    <input id="property_type_unit" name="property_type_unit" class="validate" data-type="number" required>
+                </div>
+                <div class="form-input">
                     <label for="property_country">Country:</label>
                     <select id="property_country" name="property_country" class="validate" data-type="select" required>
                         <!-- Filled from API -->

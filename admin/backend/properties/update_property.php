@@ -33,6 +33,7 @@ try {
     $property_name     = isset($input['property_name']) ? trim($input['property_name']) : '';
     $agent_code        = isset($input['agent_code']) ? trim($input['agent_code']) : '';
     $property_type_id  = isset($input['property_type_id']) ? (int)$input['property_type_id'] : 0;
+    $property_type_unit  = isset($input['property_type_unit']) ? (int)$input['property_type_unit'] : 0;
     $country           = isset($input['country']) ? trim($input['country']) : '';
     $state             = isset($input['state']) ? trim($input['state']) : '';
     $city              = isset($input['city']) ? trim($input['city']) : '';
@@ -107,6 +108,7 @@ $transactionStarted = true;
                 $property_name,
                 $agent_code,
                 $property_type_id,
+                $property_type_unit,
                 $address,
                 $city,
                 $state,
@@ -168,7 +170,7 @@ $transactionStarted = true;
  * @param string $adminRole
  * @return string
  */
-function handleFullUpdate($conn, $property_code, $property_name, $agent_code, $property_type_id, $address, $city, $state, $country, $contact_name, $contact_phone, $adminId, $status, $adminRole)
+function handleFullUpdate($conn, $property_code, $property_name, $agent_code, $property_type_id, $property_type_unit, $address, $city, $state, $country, $contact_name, $contact_phone, $adminId, $status, $adminRole)
 {
     // Validate fields
     if (empty($property_name)) {
@@ -261,7 +263,7 @@ function handleFullUpdate($conn, $property_code, $property_name, $agent_code, $p
     // Perform update
     $stmt = $conn->prepare("
         UPDATE properties 
-        SET agent_code = ?, property_type_id = ?, name = ?, address = ?, city = ?, state = ?, country = ?, contact_name = ?, contact_phone = ?, updated_at = NOW(), last_updated_by = ?, status = ?
+        SET agent_code = ?, property_type_id = ?, property_type_unit = ?, name = ?, address = ?, city = ?, state = ?, country = ?, contact_name = ?, contact_phone = ?, updated_at = NOW(), last_updated_by = ?, status = ?
         WHERE property_code = ?
         LIMIT 1
     ");
@@ -270,11 +272,12 @@ function handleFullUpdate($conn, $property_code, $property_name, $agent_code, $p
     }
 
     // Bind types: agent_code(s), property_type_id(i), name(s), address(s), city(s), state(s), country(s), contact_name(s), contact_phone(s), adminId(i), status(i), property_code(s)
-    $types = "sisssssssiis";
+    $types = "siisssssssiis";
     $stmt->bind_param(
         $types,
         $agent_code,
         $property_type_id,
+        $property_type_unit,
         $property_name,
         $address,
         $city,

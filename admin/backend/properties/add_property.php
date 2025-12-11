@@ -41,6 +41,7 @@ try {
     $inputs = sanitize_inputs([
         'agent_code' => $_POST['property_agent_code'] ?? '',
         'property_type'  => $_POST['property_type'] ?? '',
+        'property_type_unit' => $_POST['property_type_unit'],
         'property_name'     => $_POST['property_name'] ?? '',
         'property_address'     => $_POST['property_address'] ?? '',
         'property_city'   => $_POST['property_city'] ?? '',
@@ -58,6 +59,7 @@ try {
     $required = [
         'agent_code',
         'property_type',
+        'property_type_unit',
         'property_name',
         'property_address',
         'property_city',
@@ -157,11 +159,12 @@ try {
 
     // Ensure property_type id is integer
     $property_type_id = (int) $inputs['property_type'];
+    $property_type_unit = (int) $inputs['property_type_unit'];
 
     $insert_sql = "
         INSERT INTO properties
-        (agent_code, property_code, property_type_id, name, address, city, state, country, contact_name, contact_phone, photo, notes, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (agent_code, property_code, property_type_id, property_type_unit, name, address, city, state, country, contact_name, contact_phone, photo, notes, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ";
 
     $stmt = $conn->prepare($insert_sql);
@@ -174,11 +177,12 @@ try {
     // agent_code (s), property_code (s), property_type_id (i),
     // name (s), address (s), city (s), state (s), country (s),
     // contact_name (s), contact_phone (s), photo (s), notes (s), created_by (i)
-    $bindTypes = "ssisssssssssi";
+    $bindTypes = "ssiisssssssssi";
 
     $bindAgentCode   = $inputs['agent_code'];
     $bindPropertyCode = $property_code;
     $bindTypeId      = $property_type_id;
+    $bindTypeUnit   = $property_type_unit;
     $bindName        = $inputs['property_name'];
     $bindAddress     = $inputs['property_address'];
     $bindCity        = $inputs['property_city'];
@@ -195,6 +199,7 @@ try {
         $bindAgentCode,
         $bindPropertyCode,
         $bindTypeId,
+        $bindTypeUnit,
         $bindName,
         $bindAddress,
         $bindCity,
