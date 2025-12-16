@@ -22,7 +22,7 @@
         <a href="homepage.php" class="active">Home</a>
         <a href="admin.php">Admin Portal</a>
         <a href="agent.php">Agents</a>
-        <a href="tenants.php">Tenants</a>
+        <a href="tenant.php">Tenant</a>
         <a href="dashboard.php">Dashboard</a>
         <a href="property.php">Properties</a>
         <a href="rent_payments.php">Rent Payments</a>
@@ -30,6 +30,7 @@
         <a href="account_history.php">My Account History</a>
         <a href="property_type.php">Property Types</a>
          <a href="tenant_new.php">New Tenant</a>
+         <a href="apartment.php">Apartments</a>
 
         <div class="dropdown">
             <button class="dropbtn" id="welcomeMessage">Welcome!  <i class="fa fa-caret-down"></i></button>

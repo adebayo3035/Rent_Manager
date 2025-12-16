@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage Agents</title>
+    <title>Manage Tenants</title>
     <link rel="stylesheet" href="../../styles.css">
 </head>
 
@@ -12,101 +12,184 @@
     <?php include('navbar.php'); ?>
 
     <div class="container">
-        <h1>Manage Agents</h1>
+        <h1>Manage Tenants</h1>
 
-        <button id="addNewAgentBtn" class="addNewBtnModal">
-            <i class="fa fa-plus" aria-hidden="true"></i> Add New Agent
+        <button id="addNewTenantBtn" class="addNewBtnModal">
+            <i class="fa fa-plus" aria-hidden="true"></i> Add New Tenant
         </button>
 
         <div class="livesearch">
-            <input type="text" id="agentLiveSearch" placeholder="Search for Agent...">
+            <input type="text" id="tenantLiveSearch" placeholder="Search for Tenant...">
         </div>
     </div>
 
-    <table id="agentSummary" class="summaryTable">
+    <table id="tenantSummary" class="summaryTable">
         <thead>
             <tr>
-                <th>Agent ID</th>
-                <th>Agent Name</th>
+                <th>Tenant ID</th>
+                <th>Tenant Name</th>
                 <th>Email</th>
+                <th>Phone Number</th>
                 <th>Status</th>
                 <th colspan="2">Actions</th>
             </tr>
         </thead>
-        <tbody id="agentSummaryBody" class="summaryTableBody">
+        <tbody id="tenantSummaryBody" class="summaryTableBody">
             <!-- Data loads dynamically -->
         </tbody>
     </table>
 
-    <div id="agentPagination" class="pagination"></div>
+    <div id="tenantPagination" class="pagination"></div>
 
     <!-- View/Edit Modal -->
-    <div id="agentModal" class="modal">
+    <div id="tenantModal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
-            <h2>Edit Agent Information</h2>
+            <h2>Edit Tenant Information</h2>
 
-            <table class="summaryTable" id="agentDetailsTable">
+            <table class="summaryTable" id="tenantDetailsTable">
                 <tbody></tbody>
             </table>
         </div>
     </div>
 
-    <!-- Add New Agent Modal -->
-    <div id="addAgentModal" class="modal">
+    <!-- Add New Tenant Modal -->
+    <div id="addTenantModal" class="modal">
         <div class="modal-content">
-            <span class="close" id="addAgentClose">&times;</span>
-            <h2>Add New Agent</h2>
-            <form id="addAgentForm" enctype="multipart/form-data">
+            <span class="close" id="addTenantClose">&times;</span>
+            <h2>Add New Tenant</h2>
+            <form id="addTenantForm" enctype="multipart/form-data">
+
+                <!-- PERSONAL INFORMATION -->
+                <h3 class="section-title">Personal Information</h3>
+
                 <div class="form-group">
-                    <label>First Name</label>
-                    <input type="text" id="agentFirstName" placeholder="Enter first name" name="agent_firstname" class ="validate" data-type ="text" required>
+                    <label for="tenantFirstName">First Name</label>
+                    <input type="text" id="tenantFirstName" name="tenant_firstname" placeholder="Enter first name"
+                        class="validate" data-type="text" required>
                 </div>
 
                 <div class="form-group">
-                    <label>Last Name</label>
-                    <input type="text" id="agentLastName" placeholder="Enter last name" name="agent_lastname" class ="validate" data-type ="text" required>
+                    <label for="tenantLastName">Last Name</label>
+                    <input type="text" id="tenantLastName" name="tenant_lastname" placeholder="Enter last name"
+                        class="validate" data-type="text" required>
                 </div>
 
                 <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="agentEmail" placeholder="Enter email address" name="agent_email" class ="validate" data-type ="email" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Phone</label>
-                    <input type="text" id="agentPhone" placeholder="Enter phone number" name="agent_phone_number" class ="validate" data-type ="phone" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Address</label>
-                    <textarea id="agentAddress" placeholder="Enter address" name="agent_address" class ="validate" data-type ="textarea" required></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label>Gender</label>
-                    <select id="agentGender" name="agent_gender" class ="validate" data-type ="select" required>
+                    <label for="tenantGender">Gender</label>
+                    <select id="tenantGender" name="tenant_gender" class="validate" data-type="select" required>
                         <option value="">Select gender</option>
                         <option value="male">Male</option>
                         <option value="female">Female</option>
                     </select>
                 </div>
 
+
+                <!-- CONTACT INFORMATION -->
+                <h3 class="section-title">Contact Information</h3>
+
                 <div class="form-group">
-                    <label>Photo</label>
-                    <input type="file" id="agentPhoto" name="agent_photo" accept="image/*" required>
+                    <label for="tenantEmail">Email</label>
+                    <input type="email" id="tenantEmail" name="tenant_email" placeholder="Enter email address"
+                        class="validate" data-type="email" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="tenantPhone">Phone Number</label>
+                    <input type="text" id="tenantPhone" name="tenant_phone_number" placeholder="Enter phone number"
+                        class="validate" data-type="phone" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="tenantAddress">Address</label>
+                    <textarea id="tenantAddress" name="tenant_address" placeholder="Enter address" class="validate"
+                        data-type="textarea" required></textarea>
+                </div>
+
+
+                <!-- PROPERTY ALLOCATION -->
+                <h3 class="section-title">Allocated Property</h3>
+
+                <div class="form-group">
+                    <label for="tenantProperty">Select Allocated Property</label>
+                    <select id="tenantProperty" name="tenant_property" class="validate" data-type="select" required>
+                        <option value="">-- Select Property --</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="tenantPropertyUnit">Select Property Unit</label>
+                    <select id="tenantPropertyUnit" name="tenant_property_unit" class="validate" data-type="select"
+                        required>
+                        <option value="">-- Select Unit --</option>
+                    </select>
+                </div>
+
+
+                <!-- LEASE INFORMATION -->
+                <h3 class="section-title">Lease Details</h3>
+
+                <div class="form-group">
+                    <label for="leaseStartDate">Lease Start Date</label>
+                    <input type="date" id="leaseStartDate" name="lease_start_date" class="validate" data-type="date"
+                        required>
+                </div>
+
+                <div class="form-group">
+                    <label for="rentAmount">Rent Amount</label>
+                    <input type="number" id="rentAmount" name="rent_amount" placeholder="Enter rent fee"
+                        class="validate" data-type="number" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="securityDeposit">Security / Damages Deposit</label>
+                    <input type="number" id="securityDeposit" name="security_deposit" placeholder="Enter deposit amount"
+                        class="validate" data-type="number" required>
+                </div>
+
+
+                <!-- PAYMENT STRUCTURE -->
+                <h3 class="section-title">Payment Structure</h3>
+
+                <div class="form-group">
+                    <label for="rentPaymentFrequency">Rent Payment Frequency</label>
+                    <select id="rentPaymentFrequency" name="rent_payment_frequency" class="validate" data-type="select"
+                        required>
+                        <option value="">-- Select Frequency --</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="nextPayment">Next Rent Payment Date</label>
+                    <input type="date" id="nextPayment" name="next_payment" class="validate" data-type="date" required>
+                </div>
+
+
+                <!-- PHOTO UPLOAD -->
+                <h3 class="section-title">Tenant Photo</h3>
+
+                <div class="form-group">
+                    <label for="tenantPhoto">Upload Photo</label>
+                    <input type="file" id="tenantPhoto" name="tenant_photo" accept="image/*" required>
                 </div>
 
                 <div class="form-group">
                     <label>Preview</label>
-                    <div id="photoPreview" class ="photoPreview">
-                        <span id="defaultText" class = "photoPreviewText">No image</span>
+                    <div id="photoPreview" class="photoPreview">
+                        <span id="defaultText" class="photoPreviewText">No image</span>
                     </div>
                 </div>
-                <button id="saveAgentBtn" class="btn-primary addNewBtn">Save Agent</button>
+
+
+                <!-- SUBMIT BUTTON -->
+                <button id="saveTenantBtn" class="btn-primary addNewBtn">Save Tenant</button>
 
             </form>
-             <div id="addAgentMessage"></div>
+
+            <div id="addTenantMessage"></div>
         </div>
     </div>
 
@@ -136,10 +219,10 @@
         <div class="ui-loader"></div>
     </div>
 
-    <script src="../scripts/agent.js"></script>
+    <script src="../scripts/tenant.js"></script>
     <script src="../scripts/main.js"></script>
     <script src="../../ui.js"></script>
-    <script src = "../../validator.js"></script>
+    <script src="../../validator.js"></script>
 
 </body>
 

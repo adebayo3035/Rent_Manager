@@ -105,7 +105,7 @@
                 </div>
                 <div class="form-input">
                     <label for="property_type_unit">No. Of Units:</label>
-                    <input id="property_type_unit" name="property_type_unit" class="validate" data-type="number" required>
+                    <input id="property_type_unit" type ="number" name="property_type_unit" class="validate" data-type="number" required>
                 </div>
                 <div class="form-input">
                     <label for="property_country">Country:</label>
