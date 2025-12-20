@@ -62,7 +62,7 @@
         <div class="modal-content" id="card-form">
             <span class="close2 close">&times;</span>
             <h2>Add New Property Type</h2>
-            <form id="addPropertyTypeForm">
+            <form id="addPropertyTypeForm" name = "add_property_type_form">
                 <div class="form-input">
                     <label for="add_property_type_name">Property Type Name:</label>
                     <input type="text" id="add_property_type_name" class ="validate" data-type ="text" name="add_property_type_name" required>

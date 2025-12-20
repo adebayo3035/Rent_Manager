@@ -63,7 +63,7 @@ function validate_phone(string $phone) : bool {
 
 function random_unique_id() {
     // 16 hex chars (8 bytes) - enough for uniqueness
-     return strtoupper(bin2hex(random_bytes(4)));
+     return strtoupper(bin2hex(random_bytes(2)));
 }
 // =========================================================
 //  SECURITY UTILITIES WITH RATE LIMITING + IP LOGGING

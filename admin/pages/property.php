@@ -82,7 +82,7 @@
             <span class="close2 close">&times;</span>
             <h2>Add New Property</h2>
 
-            <form id="addPropertyForm" enctype="multipart/form-data">
+            <form id="addPropertyForm" name ="add_property_form" enctype="multipart/form-data">
 
                 <div class="form-input">
                     <label for="property_name">Property Name:</label>
@@ -152,7 +152,7 @@
 
                 <div class="form-group">
                     <label>Preview</label>
-                    <div id="photoPreview" style="width:120px;height:120px;border:1px solid #ccc;display:flex;
+                    <div id="photoPreview" class="photoPreview" style="width:120px;height:120px;border:1px solid #ccc;display:flex;
                         align-items:center;justify-content:center;overflow:hidden;">
                         <span style="font-size:12px;color:#777;">No image</span>
                     </div>

@@ -57,7 +57,7 @@
         <div class="modal-content">
             <span class="close" id="addAgentClose">&times;</span>
             <h2>Add New Agent</h2>
-            <form id="addAgentForm" enctype="multipart/form-data">
+            <form id="addAgentForm" name = "add_agent_form" enctype="multipart/form-data">
                 <div class="form-group">
                     <label>First Name</label>
                     <input type="text" id="agentFirstName" placeholder="Enter first name" name="agent_firstname" class ="validate" data-type ="text" required>

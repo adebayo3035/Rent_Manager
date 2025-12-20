@@ -33,6 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
         paginationId: "agentPagination",
         searchInputId: "agentLiveSearch",
         addButtonId: "addNewAgentBtn",
+        csrfTokenName: "add_agent_form",
 
         // === API Endpoints ===
         fetchUrl: "../backend/agents/get_agent.php",

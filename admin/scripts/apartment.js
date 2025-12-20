@@ -40,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
     paginationId: "apartmentPagination",
     searchInputId: "apartmentLiveSearch",
     addButtonId: "addNewApartmentBtn",
+    csrfTokenName: "add_apartment_form",
 
     // ============================
     // API ENDPOINTS

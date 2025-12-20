@@ -1,42 +1,40 @@
 <?php
 // create_property_type.php (Optimized with Transaction, Try/Catch, Rate Limiting & Status Code Logging)
 
-header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
-require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/auth_utils.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';   // added for centralized auth using requireAuth function
 
-session_start();
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+$auth = requireAuth([
+    'method' => 'POST',
+    'rate_key' => 'add_property_type',
+    'rate_limit' => [10, 60],
+    'csrf' => [
+        'enabled' => true,
+        'form_name' => 'add_property_type_form'
+    ],
+    'roles' => ['Super Admin', 'Admin']
+]);
 
-logActivity("==== New Create Property Type Request Received ====");
+$userId = $auth['user_id'];
+$userRole = $auth['role'];
 
-// ------------------------------
-// RATE LIMITING
-// ------------------------------
-rateLimit("create_property_type", 10, 60);  
-logActivity("Rate limit check passed for create_property_type");
+logActivity("Authenticated user: {$userId} | Role: {$userRole}");
 
-// ------------------------------
-// METHOD VALIDATION
-// ------------------------------
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    $code = 405;
-    logActivity("Invalid request method {$code}: " . $_SERVER['REQUEST_METHOD']);
-    json_error("Invalid request method. Use POST.", $code);
-}
+// Continue business logic...
 
 // ------------------------------
 // SESSION VALIDATION
 // ------------------------------
-if (!isset($_SESSION['unique_id'])) {
-    $code = 401;
-    logActivity("Unauthorized access attempt ({$code}) — no active session");
-    json_error("Not logged in", $code);
-}
+// if (!isset($_SESSION['unique_id'])) {
+//     $code = 401;
+//     logActivity("Unauthorized access attempt ({$code}) — no active session");
+//     json_error("Not logged in", $code);
+// }
 
-$userId   = $_SESSION['unique_id'];
-$userRole = $_SESSION['role'] ?? 'UNKNOWN';
+// $userId   = $_SESSION['unique_id'];
+// $userRole = $_SESSION['role'] ?? 'UNKNOWN';
 
 logActivity("Authenticated request. UserID={$userId} | Role={$userRole}");
 

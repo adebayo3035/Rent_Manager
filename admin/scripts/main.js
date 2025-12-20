@@ -11,13 +11,16 @@ class DataManager {
       paginationId: "",
       searchInputId: "",
       addsubmitBtnId: "",
-      
+      csrfTokenName: "",
 
       // API endpoints
       fetchUrl: "",
       addUrl: "",
       updateUrl: "",
       fetchDetailsUrl: "",
+      // CSRF configuration
+      csrfTokenEndpoint: "../backend/utilities/get_token.php", // Token endpoint
+      csrfToken: "", // Will store the token
 
       // Labels
       itemName: "Item",
@@ -46,13 +49,15 @@ class DataManager {
       // Merge with provided config
       ...config,
     };
-    
 
     this.currentPage = 1;
     this.init();
   }
 
-  init() {
+  async init() {
+    // FIRST: Get CSRF token before doing anything then initialize other things
+    await this.fetchCsrfToken();
+
     this.initModalControls();
     this.setupAddForm();
     this.fetchData();
@@ -62,6 +67,35 @@ class DataManager {
     if (typeof this.config.onInit === "function") {
       this.config.onInit.call(this);
     }
+  }
+
+  /** ------------------------- CSRF Token Management ------------------------- **/
+  async fetchCsrfToken() {
+    try {
+      const response = await fetch(
+        `${this.config.csrfTokenEndpoint}?form=${this.config.csrfTokenName}`,
+        {
+          credentials: "include",
+        }
+      );
+      const data = await response.json();
+
+      if (data.success) {
+        this.csrfToken = data.token;
+        console.log("CSRF token fetched successfully");
+      } else {
+        console.error("Failed to fetch CSRF token:", data.message);
+        // You might want to retry or show error
+      }
+    } catch (error) {
+      console.error("Error fetching CSRF token:", error);
+      // Retry after delay
+      setTimeout(() => this.fetchCsrfToken(), 3000);
+    }
+  }
+
+  getCsrfToken() {
+    return this.csrfToken;
   }
 
   /** ------------------------- Modal Controls ------------------------- **/
@@ -114,6 +148,67 @@ class DataManager {
 
   /** ------------------------- Form Submission ------------------------- **/
 
+  // setupAddForm() {
+  //   const form = document.getElementById(this.config.formId);
+  //   if (!form) return;
+
+  //   const messageDiv =
+  //     form.querySelector(".message") || document.createElement("div");
+  //   if (!form.querySelector(".message")) {
+  //     form.appendChild(messageDiv);
+  //   }
+
+  //   const photoPreview = form.querySelector(".photoPreview");
+
+  //   form.addEventListener("submit", (event) => {
+  //     event.preventDefault();
+  //     UI.confirm(
+  //       `Are you sure you want to add a new ${this.config.itemName}?`,
+  //       async () => {
+  //         try {
+  //           const formData = new FormData(form);
+  //           const response = await fetch(this.config.addUrl, {
+  //             method: "POST",
+  //             body: formData,
+  //           });
+
+  //           const data = await response.json();
+
+  //           if (data.success) {
+  //             this.showSuccessMessage(
+  //               messageDiv,
+  //               `New ${this.config.itemName} has been successfully added!`
+  //             );
+  //             UI.toast(
+  //               `New ${this.config.itemName} added successfully!`,
+  //               "success"
+  //             );
+  //             form.reset();
+  //             photoPreview.innerHTML = `<span style="font-size:12px;color:#777;">No image</span>`;
+  //             document.getElementById(this.config.addModalId).style.display =
+  //               "none";
+  //             this.fetchData();
+  //           } else {
+  //             UI.toast(
+  //               `Failed to add ${this.config.itemName}: ${data.message}`,
+  //               "danger"
+  //             );
+  //             this.showErrorMessage(messageDiv, data.message);
+  //           }
+  //         } catch (error) {
+  //           console.error("Error:", error);
+  //           UI.toast("An error occurred. Please try again later.", "danger");
+  //           this.showErrorMessage(
+  //             messageDiv,
+  //             "An error occurred. Please try again later."
+  //           );
+  //         }
+  //       }
+  //     );
+  //   });
+  // }
+
+  /** ------------------------- Form Submission (UPDATED) ------------------------- **/
   setupAddForm() {
     const form = document.getElementById(this.config.formId);
     if (!form) return;
@@ -124,16 +219,34 @@ class DataManager {
       form.appendChild(messageDiv);
     }
 
-    form.addEventListener("submit", (event) => {
+    const photoPreview = form.querySelector(".photoPreview");
+
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
+
+      // Validate CSRF token exists
+      if ((!this.csrfToken) && 9(!this.config.csrfTokenName)) {
+        UI.toast("Security token missing. Please refresh the page.", "danger");
+        await this.fetchCsrfToken(); // Try to get token
+        return;
+      }
+
       UI.confirm(
         `Are you sure you want to add a new ${this.config.itemName}?`,
         async () => {
           try {
+            // Create FormData
             const formData = new FormData(form);
+
+            // ADD CSRF TOKEN to FormData
+            formData.append("csrf_token", this.csrfToken);
+            formData.append("token_id", this.config.csrfTokenName);
+
             const response = await fetch(this.config.addUrl, {
               method: "POST",
               body: formData,
+              // Important: Include credentials for sessions
+              credentials: "include",
             });
 
             const data = await response.json();
@@ -147,8 +260,38 @@ class DataManager {
                 `New ${this.config.itemName} added successfully!`,
                 "success"
               );
+
+              // Reset form
               form.reset();
+              if (photoPreview) {
+                photoPreview.innerHTML = `<span style="font-size:12px;color:#777;">No image</span>`;
+              }
+
+              // Close modal
+              document.getElementById(this.config.addModalId).style.display =
+                "none";
+
+              // Get new CSRF token for next submission (one-time token)
+              await this.fetchCsrfToken();
+
+              // Refresh data
               this.fetchData();
+            } else if (
+              response.status === 403 &&
+              data.message.includes("CSRF")
+            ) {
+              // CSRF token expired - get new one and retry
+              UI.toast(
+                "Session expired. Getting new security token...",
+                "warning"
+              );
+              await this.fetchCsrfToken();
+
+              // You could automatically retry here or prompt user to try again
+              this.showErrorMessage(
+                messageDiv,
+                "Security token expired. Please try again."
+              );
             } else {
               UI.toast(
                 `Failed to add ${this.config.itemName}: ${data.message}`,
@@ -196,7 +339,10 @@ class DataManager {
       if (data.success && data[this.config.itemNamePlural]?.length > 0) {
         const items = data[this.config.itemNamePlural];
 
-        this.updateTable(items, data.logged_in_user_role || this.config.userRole);
+        this.updateTable(
+          items,
+          data.logged_in_user_role || this.config.userRole
+        );
         this.updatePagination(
           data.pagination.total,
           data.pagination.page,

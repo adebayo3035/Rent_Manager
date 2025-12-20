@@ -4,35 +4,27 @@
 
 header('Content-Type: application/json; charset=utf-8');
 
+// define('CSRF_FORM_NAME', 'add_property_type_form');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';   // added for centralized auth using requireAuth function
 
-// ------------------------- SESSION -------------------------
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-    logActivity("Session started for new property onboarding.");
-}
+$auth = requireAuth([
+    'method' => 'POST',
+    'rate_key' => 'add_property',
+    'rate_limit' => [10, 60],
+    'csrf' => [
+        'enabled' => true,
+        'form_name' => 'add_property_form'
+    ],
+    'roles' => ['Super Admin', 'Admin']
+]);
 
-rateLimit("add_property", 10, 60);
-logActivity("Onboarding request initiated | IP: " . getClientIP());
+$userId = $auth['user_id'];
+$userRole = $auth['role'];
 
-// ------------------------- METHOD CHECK -------------------------
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    logActivity("Invalid request method attempted: " . $_SERVER['REQUEST_METHOD']);
-    json_error('Invalid request method. POST required.', 405);
-}
-
-// ------------------------- AUTH CHECK -------------------------
-if (!isset($_SESSION['unique_id'])) {
-    logActivity("Onboarding failed — no active user session.");
-    json_error('Not logged in', 401);
-}
-
-$logged_in_user = $_SESSION['unique_id'];
-$logged_in_role = $_SESSION['role'] ?? 'UNKNOWN';
-
-logActivity("Authenticated user: {$logged_in_user} | Role: {$logged_in_role}");
+logActivity("Authenticated user: {$userId} | Role: {$userRole}");
 
 // --------------------------- TRY / CATCH WRAPPER ---------------------------
 try {
@@ -154,7 +146,7 @@ try {
 
     // ------------------------- DB INSERT -------------------------
     // property_code generation
-    $property_code = "PROPERTY" . random_unique_id();
+    $property_code = "PROP" . random_unique_id();
     logActivity("Generated unique property code: {$property_code}");
 
     // Ensure property_type id is integer
@@ -192,7 +184,7 @@ try {
     $bindContactPhone= $inputs['property_contact_phone'];
     $bindPhoto       = $file_name;
     $bindNotes       = $inputs['property_note'] ?? null;
-    $bindCreatedBy   = is_numeric($logged_in_user) ? (int)$logged_in_user : $logged_in_user;
+    $bindCreatedBy   = is_numeric($userId) ? (int)$userId : $userId;
 
     $ok = $stmt->bind_param(
         $bindTypes,

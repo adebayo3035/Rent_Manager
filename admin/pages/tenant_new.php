@@ -58,128 +58,173 @@
         <div class="modal-content">
             <span class="close" id="addTenantClose">&times;</span>
             <h2>Add New Tenant</h2>
-            <form id="addTenantForm" enctype="multipart/form-data">
+            <form id="addTenantForm" name = "add_tenant_form" enctype="multipart/form-data">
 
                 <!-- PERSONAL INFORMATION -->
                 <h3 class="section-title">Personal Information</h3>
 
                 <div class="form-group">
-                    <label for="tenantFirstName">First Name</label>
-                    <input type="text" id="tenantFirstName" name="tenant_firstname" placeholder="Enter first name"
-                        class="validate" data-type="text" required>
+                    <label for="firstname">First Name</label>
+                    <input type="text" id="firstname" name="firstname" class="validate" data-type="text" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="tenantLastName">Last Name</label>
-                    <input type="text" id="tenantLastName" name="tenant_lastname" placeholder="Enter last name"
-                        class="validate" data-type="text" required>
+                    <label for="lastname">Last Name</label>
+                    <input type="text" id="lastname" name="lastname" class="validate" data-type="text" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="tenantGender">Gender</label>
-                    <select id="tenantGender" name="tenant_gender" class="validate" data-type="select" required>
+                    <label for="gender">Gender</label>
+                    <select id="gender" name="gender" class="validate" data-type="select" required>
                         <option value="">Select gender</option>
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
                     </select>
                 </div>
-
 
                 <!-- CONTACT INFORMATION -->
                 <h3 class="section-title">Contact Information</h3>
 
                 <div class="form-group">
-                    <label for="tenantEmail">Email</label>
-                    <input type="email" id="tenantEmail" name="tenant_email" placeholder="Enter email address"
-                        class="validate" data-type="email" required>
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" class="validate" data-type="email" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="tenantPhone">Phone Number</label>
-                    <input type="text" id="tenantPhone" name="tenant_phone_number" placeholder="Enter phone number"
-                        class="validate" data-type="phone" required>
+                    <label for="phone">Phone Number</label>
+                    <input type="text" id="phone" name="phone" class="validate" data-type="phone" required>
+                </div>
+
+               
+
+                <!-- EMERGENCY CONTACT -->
+                <h3 class="section-title">Emergency Contact</h3>
+
+                <div class="form-group">
+                    <label for="emergency_contact_name">Contact Name</label>
+                    <input type="text" id="emergency_contact_name" name="emergency_contact_name" class="validate"
+                        data-type="text" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="tenantAddress">Address</label>
-                    <textarea id="tenantAddress" name="tenant_address" placeholder="Enter address" class="validate"
-                        data-type="textarea" required></textarea>
+                    <label for="emergency_contact_phone">Contact Phone</label>
+                    <input type="text" id="emergency_contact_phone" name="emergency_contact_phone" class="validate"
+                        data-type="phone" required>
                 </div>
 
+                <!-- EMPLOYMENT DETAILS -->
+                <h3 class="section-title">Employment Information</h3>
+
+                <div class="form-group">
+                    <label for="occupation">Occupation</label>
+                    <input type="text" id="occupation" name="occupation" class="validate" data-type="text" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="name_of_employer">Employer Name</label>
+                    <input type="text" id="name_of_employer" name="name_of_employer" class="validate" data-type="text">
+                </div>
+
+                <div class="form-group">
+                    <label for="employer_address">Employer Address</label>
+                    <textarea id="employer_address" name="employer_address" class="validate"
+                        data-type="textarea"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="employer_contact">Employer Contact</label>
+                    <input type="text" id="employer_contact" name="employer_contact" class="validate" data-type="text">
+                </div>
 
                 <!-- PROPERTY ALLOCATION -->
-                <h3 class="section-title">Allocated Property</h3>
+                <h3 class="section-title">Property Allocation</h3>
 
                 <div class="form-group">
-                    <label for="tenantProperty">Select Allocated Property</label>
-                    <select id="tenantProperty" name="tenant_property" class="validate" data-type="select" required>
-                        <option value="">-- Select Property --</option>
+                    <label for="property_code">Property</label>
+                    <select id="property_code" name="property_code" class="validate" data-type="select" required>
+                        <option value="">Select Property</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label for="tenantPropertyUnit">Select Property Unit</label>
-                    <select id="tenantPropertyUnit" name="tenant_property_unit" class="validate" data-type="select"
-                        required>
-                        <option value="">-- Select Unit --</option>
+                    <label for="apartment_code">Apartment Unit</label>
+                    <select id="apartment_code" name="apartment_code" class="validate" data-type="select" required>
+                        <option value="">Select Apartment</option>
                     </select>
                 </div>
 
+                <div class="form-group">
+                    <label for="agent_code">Agent</label>
+                    <select id="agent_code" name="agent_code" class="validate" data-type="select" required>
+                        <option value="">Select Agent</option>
+                    </select>
+                </div>
 
-                <!-- LEASE INFORMATION -->
+                <!-- LEASE DETAILS -->
                 <h3 class="section-title">Lease Details</h3>
 
                 <div class="form-group">
-                    <label for="leaseStartDate">Lease Start Date</label>
-                    <input type="date" id="leaseStartDate" name="lease_start_date" class="validate" data-type="date"
+                    <label for="lease_start_date">Lease Start Date</label>
+                    <input type="date" id="lease_start_date" name="lease_start_date" class="validate" data-type="date"
                         required>
                 </div>
 
                 <div class="form-group">
-                    <label for="rentAmount">Rent Amount</label>
-                    <input type="number" id="rentAmount" name="rent_amount" placeholder="Enter rent fee"
-                        class="validate" data-type="number" required>
+                    <label for="lease_end_date">Lease End Date</label>
+                    <input type="date" id="lease_end_date" name="lease_end_date" class="validate" data-type="date">
                 </div>
 
                 <div class="form-group">
-                    <label for="securityDeposit">Security / Damages Deposit</label>
-                    <input type="number" id="securityDeposit" name="security_deposit" placeholder="Enter deposit amount"
-                        class="validate" data-type="number" required>
+                    <label for="rent_amount">Rent Amount</label>
+                    <input type="number" id="rent_amount" name="rent_amount" class="validate" data-type="number"
+                        required>
                 </div>
 
+                <div class="form-group">
+                    <label for="security_fee">Security Deposit</label>
+                    <input type="number" id="security_fee" name="security_fee" class="validate" data-type="number"
+                        required>
+                </div>
 
                 <!-- PAYMENT STRUCTURE -->
                 <h3 class="section-title">Payment Structure</h3>
 
                 <div class="form-group">
-                    <label for="rentPaymentFrequency">Rent Payment Frequency</label>
-                    <select id="rentPaymentFrequency" name="rent_payment_frequency" class="validate" data-type="select"
+                    <label for="payment_frequency">Payment Frequency</label>
+                    <select id="payment_frequency" name="payment_frequency" class="validate" data-type="select"
                         required>
-                        <option value="">-- Select Frequency --</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="yearly">Yearly</option>
+                        <option value="">Select Frequency</option>
+                        <option value="Monthly">Monthly</option>
+                        <option value="Quarterly">Quarterly</option>
+                        <option value="Yearly">Yearly</option>
                     </select>
                 </div>
 
+                <!-- REFEREE -->
+                <h3 class="section-title">Referee Information</h3>
+
                 <div class="form-group">
-                    <label for="nextPayment">Next Rent Payment Date</label>
-                    <input type="date" id="nextPayment" name="next_payment" class="validate" data-type="date" required>
+                    <label for="referee_name">Referee Name</label>
+                    <input type="text" id="referee_name" name="referee_name" class="validate" data-type="text">
                 </div>
 
+                <div class="form-group">
+                    <label for="referee_phone">Referee Phone</label>
+                    <input type="text" id="referee_phone" name="referee_phone" class="validate" data-type="phone">
+                </div>
 
-                <!-- PHOTO UPLOAD -->
+                <!-- PHOTO -->
                 <h3 class="section-title">Tenant Photo</h3>
 
                 <div class="form-group">
-                    <label for="tenantPhoto">Upload Photo</label>
-                    <input type="file" id="tenantPhoto" name="tenant_photo" accept="image/*" required>
+                    <label for="photo">Upload Photo</label>
+                    <input type="file" id="photo" name="photo" accept="image/*" required>
                 </div>
 
                 <div class="form-group">
                     <label>Preview</label>
                     <div id="photoPreview" class="photoPreview">
-                        <span id="defaultText" class="photoPreviewText">No image</span>
+                        <span class="photoPreviewText">No image</span>
                     </div>
                 </div>
 

@@ -81,7 +81,7 @@
             <span class="close2 close">&times;</span>
             <h2>Add New Apartment</h2>
 
-            <form id="addApartmentForm" enctype="multipart/form-data">
+            <form id="addApartmentForm" name = "add_apartment_form" enctype="multipart/form-data">
                 <div class="form-input">
                     <label for="property_code">Property Name:</label>
                     <select id="property_code" name="apartment_property_code" class="validate" data-type="text" required>

@@ -3,35 +3,27 @@
 
 header('Content-Type: application/json; charset=utf-8');
 
+// define('CSRF_FORM_NAME', 'add_agent_form');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';   // added for centralized auth using requireAuth function
 
-// ------------------------- SESSION -------------------------
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-    logActivity("Session started for new agent onboarding.");
-}
+$auth = requireAuth([
+    'method' => 'POST',
+    'rate_key' => 'agent_onboarding',
+    'rate_limit' => [10, 60],
+    'csrf' => [
+        'enabled' => true,
+        'form_name' => 'add_agent_form'
+    ],
+    'roles' => ['Super Admin', 'Admin']
+]);
 
-rateLimit("agent_onboarding", 10, 60);
-logActivity("Onboarding request initiated | IP: " . getClientIP());
+$userId = $auth['user_id'];
+$userRole = $auth['role'];
 
-// ------------------------- METHOD CHECK -------------------------
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    logActivity("Invalid request method attempted: " . $_SERVER['REQUEST_METHOD']);
-    json_error('Invalid request method. POST required.', 405);
-}
-
-// ------------------------- AUTH CHECK -------------------------
-if (!isset($_SESSION['unique_id'])) {
-    logActivity("Onboarding failed — no active user session.");
-    json_error('Not logged in', 401);
-}
-
-$logged_in_user = $_SESSION['unique_id'];
-$logged_in_role = $_SESSION['role'] ?? 'UNKNOWN';
-
-logActivity("Authenticated user: {$logged_in_user} | Role: {$logged_in_role}");
+logActivity("Authenticated user: {$userId} | Role: {$userRole}");
 
 
 // --------------------------- TRY / CATCH WRAPPER ---------------------------
@@ -173,7 +165,7 @@ try {
         $inputs['address'],
         $file_name,
         $inputs['gender'],
-        $logged_in_user
+        $userId
     );
 
     if (!$stmt->execute()) {

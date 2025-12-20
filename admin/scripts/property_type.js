@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
     paginationId: 'propertyTypePagination',
     searchInputId: 'propertyTypeLiveSearch',
     addButtonId: 'addNewPropertyTypeBtn',
+    csrfTokenName: "add_property_type_form",
     
     // === API Endpoints ===
     fetchUrl: '../backend/property_types/fetch_property_types.php',

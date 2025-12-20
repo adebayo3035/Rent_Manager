@@ -1,65 +1,29 @@
 <?php
-function hashPassword($password) {
-    $options = [
-        'memory_cost' => 1 << 17, // 128 MB
-        'time_cost'   => 4,
-        'threads'     => 2
-    ];
+// security_utils.php or add to auth_utils.php
 
-    return password_hash($password, PASSWORD_ARGON2ID, $options);
-}
-function passwordVerify($password, $hash) {
-    return password_verify($password, $hash);
-}
-function verifyAndRehashPassword($pdo, $adminId, $inputPassword, $storedHash) {
-
-    if (!passwordVerify($inputPassword, $storedHash)) {
-        return false; // Incorrect password
-    }
-
-    // If PHP recommends rehash, update it
-    if (password_needs_rehash($storedHash, PASSWORD_ARGON2ID)) {
-
-        $newHash = hashPassword($inputPassword);
-
-        $stmt = $pdo->prepare("UPDATE admin_tbl SET password = ? WHERE unique_id = ?");
-        $stmt->execute([$newHash, $adminId]);
-    }
-
-    return true;
-}
-function password_needsRehashPassword($pdo, $adminId, $inputPassword, $storedHash) {
-
-    // If PHP recommends rehash, update it
-    if (password_needs_rehash($storedHash, PASSWORD_ARGON2ID)) {
-
-        $newHash = hashPassword($inputPassword);
-
-        $stmt = $pdo->prepare("UPDATE admin_tbl SET password = ? WHERE unique_id = ?");
-        $stmt->execute([$newHash, $adminId]);
-    }
-}
-
-// Add to auth_utils.php
 /**
- * Generate and store CSRF token
+ * Generate a CSRF token and store it in session
+ * @param string $formName Optional form identifier
+ * @return string CSRF token
  */
 function generateCsrfToken($formName = 'default') {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
     
+    // Generate random token
     $token = bin2hex(random_bytes(32));
     
+    // Store in session with timestamp
     $_SESSION['csrf_tokens'][$formName] = [
         'token' => $token,
         'created' => time()
     ];
     
-    // Clean old tokens
+    // Clean up old tokens (older than 1 hour)
     if (isset($_SESSION['csrf_tokens'])) {
         foreach ($_SESSION['csrf_tokens'] as $key => $data) {
-            if (time() - $data['created'] > 3600) {
+            if (time() - $data['created'] > 3600) { // 1 hour expiration
                 unset($_SESSION['csrf_tokens'][$key]);
             }
         }
@@ -70,23 +34,31 @@ function generateCsrfToken($formName = 'default') {
 
 /**
  * Validate CSRF token
+ * @param string $token Token to validate
+ * @param string $formName Form identifier
+ * @param int $maxAge Maximum age in seconds (default 1 hour)
+ * @return bool True if valid, false otherwise
  */
 function validateCsrfToken($token, $formName = 'default', $maxAge = 3600) {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
     
+    // Check if token exists
     if (!isset($_SESSION['csrf_tokens'][$formName])) {
         return false;
     }
     
     $stored = $_SESSION['csrf_tokens'][$formName];
     
+    // Check token value
     if (!hash_equals($stored['token'], $token)) {
         return false;
     }
     
+    // Check token age
     if (time() - $stored['created'] > $maxAge) {
+        // Remove expired token
         unset($_SESSION['csrf_tokens'][$formName]);
         return false;
     }
@@ -95,7 +67,9 @@ function validateCsrfToken($token, $formName = 'default', $maxAge = 3600) {
 }
 
 /**
- * Get existing token or generate new one
+ * Get current CSRF token (generate if doesn't exist)
+ * @param string $formName Form identifier
+ * @return string CSRF token
  */
 function getCsrfToken($formName = 'default') {
     if (session_status() === PHP_SESSION_NONE) {
@@ -107,4 +81,18 @@ function getCsrfToken($formName = 'default') {
     }
     
     return $_SESSION['csrf_tokens'][$formName]['token'];
+}
+
+/**
+ * Clear used CSRF token (use for one-time tokens)
+ * @param string $formName Form identifier
+ */
+function clearCsrfToken($formName = 'default') {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    
+    if (isset($_SESSION['csrf_tokens'][$formName])) {
+        unset($_SESSION['csrf_tokens'][$formName]);
+    }
 }

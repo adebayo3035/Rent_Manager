@@ -54,6 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
     paginationId: "propertyPagination",
     searchInputId: "propertyLiveSearch",
     addButtonId: "addNewPropertyBtn",
+    csrfTokenName: "add_property_form",
 
     // ============================
     // API ENDPOINTS

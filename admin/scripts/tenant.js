@@ -202,6 +202,7 @@ document.addEventListener("DOMContentLoaded", () => {
         paginationId: "tenantPagination",
         searchInputId: "tenantLiveSearch",
         addButtonId: "addNewTenantBtn",
+        csrfTokenName: "add_tenant_form",
 
         // API endpoints (adjust to your backend paths)
         fetchUrl: "../backend/tenants/get_tenants.php",
