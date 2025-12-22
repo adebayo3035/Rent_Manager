@@ -85,6 +85,13 @@
             <form id="addPropertyForm" name ="add_property_form" enctype="multipart/form-data">
 
                 <div class="form-input">
+                    <label for="property_client">Client Name:</label>
+                    <select id="property_client" name="property_client" class="validate" data-type="select" required>
+                        <!-- Filled from API -->
+                    </select>
+                </div>
+
+                <div class="form-input">
                     <label for="property_name">Property Name:</label>
                     <input type="text" id="property_name" name="property_name" class="validate" data-type="text"
                         required>
@@ -103,8 +110,8 @@
                         <!-- Filled from API -->
                     </select>
                 </div>
-                <div class="form-input">
-                    <label for="property_type_unit">No. Of Units:</label>
+                <div class="form-input" id ="property_type_unit_div">
+                    <label for="property_type_unit">No. Of Apartments:</label>
                     <input id="property_type_unit" type ="number" name="property_type_unit" class="validate" data-type="number" required>
                 </div>
                 <div class="form-input">
