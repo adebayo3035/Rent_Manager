@@ -104,7 +104,19 @@
                 </div>
                 <div class="form-input">
                     <label for="apartment_type_unit">No. Of Units:</label>
-                    <input id="apartment_type_unit" type ="number" name="apartment_type_unit" class="validate" data-type="number" required>
+                    <input id="apartment_type_unit" type ="number" name="apartment_type_unit" class="validate" data-type="number" value ="1" readonly required>
+                </div>
+
+                <div class="form-input">
+                    <label for="apartment_rent_amount">Rent Amount</label>
+                    <input type="number" id="apartment_rent_amount" name="apartment_rent_amount" class="validate" data-type="number"
+                        required>
+                </div>
+
+                <div class="form-input">
+                    <label for="apartment_security_deposit">Security Deposit</label>
+                    <input type="number" id="apartment_security_deposit" name="apartment_security_deposit" class="validate" data-type="number"
+                        required>
                 </div>
                 
                 <button type="submit" id="submitBtnAddApartment" class="addNewBtn">

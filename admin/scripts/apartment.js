@@ -153,6 +153,18 @@ document.addEventListener("DOMContentLoaded", () => {
       apartment.property_code
     }" readonly></td>
 </tr>
+<tr>
+    <td><strong>Apartment No. :</strong></td>
+    <td><input type="text" id="edit_apartment_number" value="${
+      apartment.apartment_number
+    }" readonly></td>
+</tr>
+<tr>
+    <td><strong>Apartment Unit:</strong></td>
+    <td><input type="text" id="edit_apartment_type_unit" value="${
+      apartment.apartment_type_unit
+    }" readonly></td>
+</tr>
 
 <tr>
     <td><strong>Agent:</strong></td>
@@ -164,10 +176,19 @@ document.addEventListener("DOMContentLoaded", () => {
     <td><select id="edit_apartment_type_id" class="select2"></select></td>
 </tr>
 
+
+
 <tr>
-    <td><strong>Apartment No. :</strong></td>
-    <td><input type="text" id="edit_apartment_type_unit" value="${
-      apartment.apartment_type_unit
+    <td><strong>Rent Amount :</strong></td>
+    <td><input type="text" id="edit_apartment_rent_amount" value="${
+      apartment.rent_amount
+    }"></td>
+</tr>
+
+<tr>
+    <td><strong>Security Deposit :</strong></td>
+    <td><input type="text" id="edit_apartment_security_deposit" value="${
+      apartment.security_deposit
     }"></td>
 </tr>
 
@@ -224,11 +245,15 @@ document.addEventListener("DOMContentLoaded", () => {
             apartment_id: apartment.apartment_code,
             property_code: document.getElementById("edit_property_name")
               .value,
+              apartment_type_unit: document.getElementById('edit_apartment_type_unit').value,
             agent_code: document.getElementById("edit_agent_code").value,
             apartment_type_id: document.getElementById("edit_apartment_type_id")
               .value,
-            apartment_type_unit: document.getElementById(
-              "edit_apartment_type_unit"
+            rent_amount: document.getElementById(
+              "edit_apartment_rent_amount"
+            ).value,
+            security_deposit: document.getElementById(
+              "edit_apartment_security_deposit"
             ).value,
             status: document.getElementById("edit_status").value,
             action_type: "update_all",

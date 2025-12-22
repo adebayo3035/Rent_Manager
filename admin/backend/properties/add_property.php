@@ -190,23 +190,6 @@ try {
         json_error('Invalid image file. Please upload a valid image.', 400);
     }
 
-    // Remove EXIF data for privacy (for JPEG images)
-    // if ($ext === 'jpg' || $ext === 'jpeg') {
-    //     try {
-    //         $image = imagecreatefromjpeg($img_tmp);
-    //         if ($image) {
-    //             $clean_tmp = tempnam(sys_get_temp_dir(), 'clean_img_');
-    //             imagejpeg($image, $clean_tmp, 85); // 85% quality
-    //             imagedestroy($image);
-    //             $img_tmp = $clean_tmp;
-    //             logActivity("EXIF data stripped from JPEG image");
-    //         }
-    //     } catch (Exception $e) {
-    //         logActivity("Failed to process image: " . $e->getMessage());
-    //         // Continue with original image
-    //     }
-    // }
-
     // Generate unique filename
     $file_hash = hash_file('sha256', $img_tmp);
     $file_name = $file_hash . '.' . $ext;
