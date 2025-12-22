@@ -817,9 +817,9 @@ textarea{
     color:#777;
 }
 
-#property_type_unit_div{
+/* #property_type_unit_div{
     display:none;
-}
+} */
 @keyframes spin { to { transform: rotate(360deg); } }
 
 

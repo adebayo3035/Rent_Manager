@@ -10,7 +10,7 @@ rateLimit("fetch_agent_property_type", 10, 60);
 
 try {
     // Fetch all agents
-    $agentQuery = "SELECT agent_code, firstname, lastname FROM agents ORDER BY firstname ASC";
+    $agentQuery = "SELECT agent_code, firstname, lastname FROM agents WHERE status = 1 ORDER BY firstname ASC";
     $agentResult = $conn->query($agentQuery);
 
     $agents = [];
@@ -19,7 +19,7 @@ try {
     }
 
     // Fetch all clients
-    $clientQuery = "SELECT client_code, firstname, lastname FROM clients ORDER BY firstname ASC";
+    $clientQuery = "SELECT client_code, firstname, lastname FROM clients WHERE status = 1 ORDER BY firstname ASC";
     $clientResult = $conn->query($clientQuery);
 
     $clients = [];
@@ -28,7 +28,7 @@ try {
     }
 
     // Fetch all property types
-    $typeQuery = "SELECT type_id, type_name FROM property_type ORDER BY type_name ASC";
+    $typeQuery = "SELECT type_id, type_name FROM property_type where status = 1 ORDER BY type_name ASC";
     $typeResult = $conn->query($typeQuery);
 
     $property_types = [];

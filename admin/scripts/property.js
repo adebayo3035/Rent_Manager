@@ -86,8 +86,8 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       {
         field: "name",
-        label: "Property Name",
-        render: (item) => item.name,
+        label: "Client Name",
+        render: (item) => item.client_name,
       },
       {
         field: "property_type_name",
@@ -121,7 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let html = `
         <td>${item.property_code}</td>
-        <td>${item.name}</td>
+        <td>${item.client_name}</td>
         <td>${item.property_type_name}</td>
         <td>${item.agent_fullname}</td>
         <td>${item.address}</td>
@@ -176,8 +176,13 @@ body.innerHTML = `
 </tr>
 
 <tr>
-    <td><strong>Name:</strong></td>
+    <td><strong>Property Name:</strong></td>
     <td><input type="text" id="edit_property_name" value="${property.name}"></td>
+</tr>
+
+<tr>
+    <td><strong>Client Name:</strong></td>
+    <td><select id="edit_client_code" class="select2"></select></td>
 </tr>
 
 <tr>
@@ -291,6 +296,7 @@ await loadCountries();
 
 // Apply default values AFTER loading
 $("#edit_agent_code").val(property.agent_code).trigger("change");
+$("#edit_client_code").val(property.client_code).trigger("change");
 $("#edit_property_type_id").val(property.property_type_id).trigger("change");
 
 $("#edit_country").val(property.country).trigger("change");
@@ -312,6 +318,7 @@ $("#edit_city").val(property.city).trigger("change");
             property_name: document.getElementById("edit_property_name").value,
             agent_code: document.getElementById("edit_agent_code").value,
             property_type_id: document.getElementById("edit_property_type_id").value,
+            client_code: document.getElementById("edit_client_code").value,
             property_type_unit: document.getElementById("edit_property_type_unit").value,
             country: document.getElementById("edit_country").value,
             state: document.getElementById("edit_state").value,
@@ -351,6 +358,7 @@ $("#edit_city").val(property.city).trigger("change");
         populateSelect("#client_code", data.data.clients, "client_code", (item) => `${item.firstname} ${item.lastname}`);
         populateSelect("#property_type_id", data.data.property_types, "type_id", "type_name");
         populateSelect("#edit_agent_code", data.data.agents, "agent_code", (item) => `${item.firstname} ${item.lastname}`);
+         populateSelect("#edit_client_code", data.data.clients, "client_code", (item) => `${item.firstname} ${item.lastname}`);
         populateSelect("#edit_property_type_id", data.data.property_types, "type_id", "type_name");
     } catch (err) {
         console.error("Error fetching support data:", err);

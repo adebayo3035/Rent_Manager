@@ -113,13 +113,16 @@ try {
         SELECT 
             p.*,
             pt.type_name AS property_type_name,
-            CONCAT(a.firstname, ' ', a.lastname) AS agent_fullname
+            CONCAT(a.firstname, ' ', a.lastname) AS agent_fullname,
+            CONCAT(c.firstname, ' ', c.lastname) AS client_name
         FROM 
             properties p
         LEFT JOIN 
             property_type pt ON p.property_type_id = pt.type_id
         LEFT JOIN 
             agents a ON p.agent_code = a.agent_code
+        LEFT JOIN 
+            clients c ON p.client_code = c.client_code
         {$whereSQL}
         ORDER BY 
             p.status ASC, p.id DESC

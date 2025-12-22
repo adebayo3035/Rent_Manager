@@ -35,7 +35,7 @@
         <thead>
             <tr>
                 <th>Property ID</th>
-                <th>Property Name</th>
+                <th>Client Name</th>
                 <th>Type</th>
                 <th>Agent</th>
                 <th>Location</th>
