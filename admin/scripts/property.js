@@ -348,6 +348,7 @@ $("#edit_city").val(property.city).trigger("change");
         }
 
         populateSelect("#agent_code", data.data.agents, "agent_code", (item) => `${item.firstname} ${item.lastname}`);
+        populateSelect("#client_code", data.data.clients, "client_code", (item) => `${item.firstname} ${item.lastname}`);
         populateSelect("#property_type_id", data.data.property_types, "type_id", "type_name");
         populateSelect("#edit_agent_code", data.data.agents, "agent_code", (item) => `${item.firstname} ${item.lastname}`);
         populateSelect("#edit_property_type_id", data.data.property_types, "type_id", "type_name");

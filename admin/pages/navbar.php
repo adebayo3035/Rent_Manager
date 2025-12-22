@@ -29,6 +29,7 @@
         <a href="reports.php">Reports</a>
         <a href="account_history.php">My Account History</a>
         <a href="property_type.php">Property Types</a>
+        <a href="apartment_type.php">Apartment Types</a>
          <a href="tenant_new.php">New Tenant</a>
          <a href="client.php">Clients</a>
          <a href="apartment.php">Apartments</a>

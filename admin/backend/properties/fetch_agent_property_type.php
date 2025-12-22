@@ -18,6 +18,15 @@ try {
         $agents[] = $row;
     }
 
+    // Fetch all clients
+    $clientQuery = "SELECT client_code, firstname, lastname FROM clients ORDER BY firstname ASC";
+    $clientResult = $conn->query($clientQuery);
+
+    $clients = [];
+    while ($row = $clientResult->fetch_assoc()) {
+        $clients[] = $row;
+    }
+
     // Fetch all property types
     $typeQuery = "SELECT type_id, type_name FROM property_type ORDER BY type_name ASC";
     $typeResult = $conn->query($typeQuery);
@@ -27,12 +36,15 @@ try {
         $property_types[] = $row;
     }
 
+    
+
     // Final output
     echo json_encode([
         "response_code" => 200,
         "message" => "Success",
         "data" => [
             "agents" => $agents,
+            "clients" => $clients,
             "property_types" => $property_types
         ]
     ]);

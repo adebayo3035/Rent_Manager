@@ -85,8 +85,8 @@
             <form id="addPropertyForm" name ="add_property_form" enctype="multipart/form-data">
 
                 <div class="form-input">
-                    <label for="property_client">Client Name:</label>
-                    <select id="property_client" name="property_client" class="validate" data-type="select" required>
+                    <label for="client_code">Client Name:</label>
+                    <select id="client_code" name="property_client_code" class="validate" data-type="select" required>
                         <!-- Filled from API -->
                     </select>
                 </div>
@@ -99,7 +99,7 @@
 
                 <div class="form-input">
                     <label for="agent_code">Agent:</label>
-                    <select id="agent_code" name="property_agent_code" class="validate" data-type="text" required>
+                    <select id="agent_code" name="property_agent_code" class="validate" data-type="select" required>
                         <!-- Filled from API -->
                     </select>
                 </div>
