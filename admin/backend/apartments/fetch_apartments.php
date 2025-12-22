@@ -51,12 +51,12 @@ try {
     // -----------------------------------------------------
     //  FILTER INPUTS
     // -----------------------------------------------------
-    $property_type = isset($_GET['property_type']) ? trim($_GET['property_type']) : null;
+    $apartment_type = isset($_GET['apartment_type']) ? trim($_GET['apartment_type']) : null;
     $status = isset($_GET['status']) ? trim($_GET['status']) : null;
 
     $allowedStatus = ['0', '1'];
 
-    logActivity("Filters | property_type={$property_type}, status={$status}");
+    logActivity("Filters | apartment_type={$apartment_type}, status={$status}");
 
 
     // -----------------------------------------------------
@@ -66,9 +66,9 @@ try {
     $params = [];
     $types = '';
 
-    if ($property_type !== null && $property_type !== "") {
+    if ($apartment_type !== null && $apartment_type !== "") {
         $whereClauses[] = "p.apartment_type_id = ?";
-        $params[] = $property_type;
+        $params[] = $apartment_type;
         $types .= 's';
     }
 
@@ -112,13 +112,13 @@ try {
     $query = "
         SELECT 
             p.*,
-            pt.type_name AS property_type_name,
+            pt.type_name AS apartment_type_name,
             pr.name AS property_name,
             CONCAT(a.firstname, ' ', a.lastname) AS agent_fullname
         FROM 
             apartments p
         LEFT JOIN 
-            property_type pt ON p.apartment_type_id = pt.type_id
+            apartment_type pt ON p.apartment_type_id = pt.type_id
         LEFT JOIN 
             agents a ON p.agent_code = a.agent_code
         LEFT JOIN

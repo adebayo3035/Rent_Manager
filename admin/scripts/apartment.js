@@ -102,7 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
       let html = `
         <td>${item.apartment_code}</td>
         <td>${item.property_name}</td>
-        <td>${item.property_type_name}</td>
+        <td>${item.apartment_type_name}</td>
         <td>${item.agent_fullname}</td>
         <td>${statusLabel}</td>
     `;
@@ -268,7 +268,7 @@ document.addEventListener("DOMContentLoaded", () => {
       );
       populateSelect(
         "#apartment_type_id",
-        data.data.property_types,
+        data.data.apartment_types,
         "type_id",
         "type_name"
       );
@@ -286,7 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
       );
       populateSelect(
         "#edit_apartment_type_id",
-        data.data.property_types,
+        data.data.apartment_types,
         "type_id",
         "type_name"
       );

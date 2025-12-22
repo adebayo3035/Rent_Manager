@@ -26,18 +26,18 @@ try {
     }
 
     /* ==========================
-       Fetch Property Types
+       Fetch Apartment Types
     =========================== */
     $typeQuery = "
         SELECT type_id, type_name
-        FROM property_type WHERE status = '1'
+        FROM apartment_type WHERE status = '1'
         ORDER BY type_name ASC
     ";
     $typeResult = $conn->query($typeQuery);
 
-    $property_types = [];
+    $apartment_types = [];
     while ($row = $typeResult->fetch_assoc()) {
-        $property_types[] = $row;
+        $apartment_types[] = $row;
     }
 
     /* ==========================
@@ -73,7 +73,7 @@ try {
         "message" => "Success",
         "data" => [
             "agents" => $agents,
-            "property_types" => $property_types,
+            "apartment_types" => $apartment_types,
             "properties" => $properties
         ]
     ]);
