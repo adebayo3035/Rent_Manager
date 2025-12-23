@@ -57,7 +57,7 @@ function requireAuth(array $options = [])
         }
 
         // One-time token
-        unset($_SESSION['csrf_tokens'][$formName]);
+        //unset($_SESSION['csrf_tokens'][$formName]);
 
         logActivity("CSRF validation passed | Form={$formName}");
     }
@@ -85,3 +85,4 @@ function requireAuth(array $options = [])
         'role'    => $userRole
     ];
 }
+

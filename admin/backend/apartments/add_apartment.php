@@ -368,6 +368,9 @@ try {
         $conn->commit();
         logActivity("Transaction committed successfully.");
 
+        // Consume CSRF token after successful operation
+        consumeCsrfToken(CSRF_FORM_NAME);
+
         // ------------------------- SUCCESS RESPONSE -------------------------
         $response = [
             'success' => true,

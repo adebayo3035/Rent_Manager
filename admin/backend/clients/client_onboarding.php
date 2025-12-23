@@ -3,7 +3,7 @@
 
 header('Content-Type: application/json; charset=utf-8');
 
-// define('CSRF_FORM_NAME', 'add_client_form');
+define('CSRF_FORM_NAME', 'add_client_form');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
@@ -179,6 +179,8 @@ try {
     // ------------------------- COMMIT -------------------------
     $conn->commit();
     logActivity("Transaction committed successfully.");
+    // Consume CSRF token after successful operation
+    consumeCsrfToken(CSRF_FORM_NAME);
 
     // ------------------------- SUCCESS RESPONSE -------------------------
     json_success("New Client onboarded successfully!", [

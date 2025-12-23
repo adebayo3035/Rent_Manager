@@ -108,3 +108,12 @@ function getCsrfToken($formName = 'default') {
     
     return $_SESSION['csrf_tokens'][$formName]['token'];
 }
+
+function consumeCsrfToken(string $formName): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    unset($_SESSION['csrf_tokens'][$formName]);
+}

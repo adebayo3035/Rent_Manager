@@ -3,7 +3,7 @@
 // Secure, refactored onboarding endpoint with comprehensive validation
 
 header('Content-Type: application/json; charset=utf-8');
-
+define('CSRF_FORM_NAME', 'add_tenant_form');
 // Define constants
 define('MAX_FILE_SIZE', 500000); // 500KB
 define('MAX_FIELD_LENGTH', 255);
@@ -443,6 +443,8 @@ try {
     // Log success
     logActivity("Tenant {$tenant_code} ({$inputs['firstname']} {$inputs['lastname']}) onboarded successfully by user {$userId}");
     
+     // Consume CSRF token after successful operation
+        consumeCsrfToken(CSRF_FORM_NAME);
     // Return success response
     $response = [
         'success' => true,

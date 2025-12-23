@@ -1,6 +1,6 @@
 <?php
 // create_apartment_type.php (Optimized with Transaction, Try/Catch, Rate Limiting & Status Code Logging)
-
+define('CSRF_FORM_NAME', 'add_apartment_type_form');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
@@ -122,6 +122,8 @@ try {
     // ------------------------------
     $conn->commit();
     logActivity("Transaction committed successfully. New type_id={$newTypeID}");
+     // Consume CSRF token after successful operation
+        consumeCsrfToken(CSRF_FORM_NAME);
 
     // ------------------------------
     // SUCCESS RESPONSE

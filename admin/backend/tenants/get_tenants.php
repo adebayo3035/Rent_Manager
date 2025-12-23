@@ -9,7 +9,7 @@ try {
     // -----------------------------------------------------
     //  RATE LIMIT CHECK (Optional but recommended)
     // -----------------------------------------------------
-    rateLimit("get_agent", 60, 60); // 60 requests per IP per minute
+    rateLimit("get_tenants", 60, 60); // 60 requests per IP per minute
 
 
     // -----------------------------------------------------
@@ -24,7 +24,7 @@ try {
     $adminId = $_SESSION['unique_id'];
     $loggedInUserRole = $_SESSION['role'] ?? 'Unknown';
 
-    logActivity("Fetch Agents Request | AdminID: {$adminId} | Role: {$loggedInUserRole} | IP: " . getClientIP());
+    logActivity("Fetch Tenants Request | AdminID: {$adminId} | Role: {$loggedInUserRole} | IP: " . getClientIP());
 
 
     // -----------------------------------------------------
@@ -67,13 +67,13 @@ try {
     $types = '';
 
     if ($gender !== null && in_array($gender, $allowedGender, true)) {
-        $whereClauses[] = "agents.gender = ?";
+        $whereClauses[] = "tenants.gender = ?";
         $params[] = $gender;
         $types .= 's';
     }
 
     if ($status !== null && in_array($status, $allowedStatus, true)) {
-        $whereClauses[] = "agents.status = ?";
+        $whereClauses[] = "tenants.status = ?";
         $params[] = $status;
         $types .= 's';
     }
@@ -86,7 +86,7 @@ try {
     // -----------------------------------------------------
     //  TOTAL COUNT QUERY
     // -----------------------------------------------------
-    $totalQuery = "SELECT COUNT(*) AS total FROM agents {$whereSQL}";
+    $totalQuery = "SELECT COUNT(*) AS total FROM tenants {$whereSQL}";
     logActivity("Preparing Total Count Query: {$totalQuery}");
 
     $countStmt = $conn->prepare($totalQuery);
@@ -100,29 +100,29 @@ try {
 
     $countStmt->execute();
     $totalResult = $countStmt->get_result();
-    $totalAgents = $totalResult->fetch_assoc()['total'] ?? 0;
+    $totalTenants = $totalResult->fetch_assoc()['total'] ?? 0;
     $countStmt->close();
 
-    logActivity("Total Agents Count Found: {$totalAgents}");
+    logActivity("Total Tenants Count Found: {$totalTenants}");
 
 
     // -----------------------------------------------------
     //  AGENTS QUERY
     // -----------------------------------------------------
     $query = "SELECT 
-                agents.*
+                tenants.*
               FROM 
-                agents
+                tenants
               {$whereSQL}
               ORDER BY 
-                agents.status ASC, agents.agent_id DESC
+                tenants.status ASC, tenants.id DESC
               LIMIT ? OFFSET ?";
 
-    logActivity("Preparing Agents Query: {$query}");
+    logActivity("Preparing Tenants Query: {$query}");
 
     $stmt = $conn->prepare($query);
     if (!$stmt) {
-        throw new Exception("Failed to prepare agents fetch query: " . $conn->error);
+        throw new Exception("Failed to prepare tenants fetch query: " . $conn->error);
     }
 
     // Add pagination params
@@ -133,32 +133,32 @@ try {
     $stmtTypes = $types . 'ii';
     $stmt->bind_param($stmtTypes, ...$paramsWithPagination);
 
-    logActivity("Executing Agents Query | Params: " . json_encode($paramsWithPagination));
+    logActivity("Executing Tenants Query | Params: " . json_encode($paramsWithPagination));
 
     $stmt->execute();
     $result = $stmt->get_result();
 
-    $agents = [];
+    $tenants = [];
     while ($row = $result->fetch_assoc()) {
         $row['status_display'] = ($row['status'] === '1') ? 'Deactivated' : 'Activated';
-        $agents[] = $row;
+        $tenants[] = $row;
     }
 
     $stmt->close();
     $conn->close();
 
 
-    logActivity("Agents Fetch Success | Returned: " . count($agents) . " rows");
+    logActivity("Tenants Fetch Success | Returned: " . count($tenants) . " rows");
 
 
     echo json_encode([
         "success" => true,
-        "agents" => $agents,
+        "tenants" => $tenants,
          'pagination' => [
             'page' => $page,
             'limit' => $limit,
-            'total' => $totalAgents,
-            'total_pages' => ceil($totalAgents / $limit)
+            'total' => $totalTenants,
+            'total_pages' => ceil($totalTenants / $limit)
         ],
         "logged_in_user_role" => $loggedInUserRole
     ]);

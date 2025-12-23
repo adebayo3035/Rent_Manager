@@ -10,6 +10,7 @@ define('MAX_PHONE_LENGTH', 20);
 define('MAX_NOTES_LENGTH', 1000);
 define('MIN_PROPERTY_UNITS', 1);
 define('MAX_PROPERTY_UNITS', 1000);
+define('CSRF_FORM_NAME', 'add_property_form');
 
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
@@ -402,6 +403,9 @@ try {
         if (isset($clean_tmp) && file_exists($clean_tmp)) {
             @unlink($clean_tmp);
         }
+
+         // Consume CSRF token after successful operation
+        consumeCsrfToken(CSRF_FORM_NAME);
 
         // ------------------------- SUCCESS RESPONSE -------------------------
         $response = [

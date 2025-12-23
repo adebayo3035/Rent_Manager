@@ -2,7 +2,7 @@
 // onboard_admin.php
 // Secure, refactored onboarding endpoint
 // Requirements: config.php must provide $conn (mysqli) and auth_utils.php must provide logActivity().
-
+define('CSRF_FORM_NAME', 'admin_onboarding_form');
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
