@@ -153,12 +153,21 @@
                     </select>
                 </div>
 
+                <!-- PAYMENT STRUCTURE -->
+                <h3 class="section-title">Payment Structure</h3>
+
                 <div class="form-group">
-                    <label for="agent_code">Agent</label>
-                    <select id="agent_code" name="agent_code" class="validate" data-type="select" required>
-                        <option value="">Select Agent</option>
+                    <label for="payment_frequency">Payment Frequency</label>
+                    <select id="payment_frequency" name="payment_frequency" class="validate" data-type="select"
+                        required>
+                        <option value="">Select Frequency</option>
+                        <option value="Monthly">Monthly</option>
+                        <option value="Quarterly">Quarterly</option>
+                        <option value="Semi-Annually">Semi-Annually</option>
+                        <option value="Annually">Annually</option>
                     </select>
                 </div>
+
 
                 <!-- LEASE DETAILS -->
                 <h3 class="section-title">Lease Details</h3>
@@ -174,32 +183,7 @@
                     <input type="date" id="lease_end_date" name="lease_end_date" class="validate" data-type="date">
                 </div>
 
-                <div class="form-group">
-                    <label for="rent_amount">Rent Amount</label>
-                    <input type="number" id="rent_amount" name="rent_amount" class="validate" data-type="number"
-                        required>
-                </div>
-
-                <div class="form-group">
-                    <label for="security_fee">Security Deposit</label>
-                    <input type="number" id="security_fee" name="security_fee" class="validate" data-type="number"
-                        required>
-                </div>
-
-                <!-- PAYMENT STRUCTURE -->
-                <h3 class="section-title">Payment Structure</h3>
-
-                <div class="form-group">
-                    <label for="payment_frequency">Payment Frequency</label>
-                    <select id="payment_frequency" name="payment_frequency" class="validate" data-type="select"
-                        required>
-                        <option value="">Select Frequency</option>
-                        <option value="Monthly">Monthly</option>
-                        <option value="Quarterly">Quarterly</option>
-                        <option value="Yearly">Yearly</option>
-                    </select>
-                </div>
-
+                
                 <!-- REFEREE -->
                 <h3 class="section-title">Referee Information</h3>
 
@@ -218,7 +202,7 @@
 
                 <div class="form-group">
                     <label for="photo">Upload Photo</label>
-                    <input type="file" id="photo" name="photo" accept="image/*" required>
+                    <input type="file" id="tenantPhoto" name="photo" accept="image/*" required>
                 </div>
 
                 <div class="form-group">

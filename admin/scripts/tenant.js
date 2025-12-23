@@ -20,6 +20,51 @@ document.getElementById("tenantPhoto")?.addEventListener("change", function (e) 
     reader.readAsDataURL(file);
 });
 
+document.getElementById("property_code").addEventListener("change", async function () {
+    const propertyCode = this.value;
+    const apartmentSelect = document.getElementById("apartment_code");
+
+    apartmentSelect.innerHTML = `<option value="">Loading apartments...</option>`;
+    apartmentSelect.disabled = true;
+
+    if (!propertyCode) {
+        apartmentSelect.innerHTML = `<option value="">-- Select Apartment --</option>`;
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `../backend/tenants/fetch_apartments.php?property_code=${encodeURIComponent(propertyCode)}`,
+            { credentials: "include" }
+        );
+
+        const data = await response.json();
+
+        apartmentSelect.innerHTML = `<option value="">-- Select Apartment --</option>`;
+
+        if (data.success && data.apartments.length > 0) {
+            data.apartments.forEach(apartment => {
+                const option = document.createElement("option");
+                option.value = apartment.apartment_code;
+                option.textContent =
+                    `${apartment.apartment_number} (${apartment.apartment_type_unit})`;
+                apartmentSelect.appendChild(option);
+            });
+
+            apartmentSelect.disabled = false;
+        } else {
+            apartmentSelect.innerHTML =
+                `<option value="">No available apartments</option>`;
+        }
+
+    } catch (error) {
+        console.error(error);
+        apartmentSelect.innerHTML =
+            `<option value="">Failed to load apartments</option>`;
+    }
+});
+
+
 // -----------------------------
 // Modal internal loader helpers
 // -----------------------------
@@ -232,18 +277,18 @@ document.addEventListener("DOMContentLoaded", () => {
             const statusHTML = isActive ? `<span style="color:green">Active</span>` : `<span style="color:red">Inactive</span>`;
 
             let row = `
-                <td>${tenant.tenant_id}</td>
+                <td>${tenant.tenant_code}</td>
                 <td>${tenant.firstname} ${tenant.lastname}</td>
                 <td>${tenant.email}</td>
-                <td>${tenant.phone_number}</td>
+                <td>${tenant.phone}</td>
                 <td>${statusHTML}</td>
             `;
 
             if (isActive) {
-                row += `<td><span class="edit-icon" data-id="${tenant.tenant_id}">✏️</span></td>`;
-                row += `<td><span class="delete-icon" data-id="${tenant.tenant_id}">🗑️</span></td>`;
+                row += `<td><span class="edit-icon" data-id="${tenant.tenant_code}">✏️</span></td>`;
+                row += `<td><span class="delete-icon" data-id="${tenant.tenant_code}">🗑️</span></td>`;
             } else {
-                row += `<td colspan="2" style="text-align:center;"><span class="restore-icon" data-id="${tenant.tenant_id}">↻ Restore</span></td>`;
+                row += `<td colspan="2" style="text-align:center;"><span class="restore-icon" data-id="${tenant.tenant_code}">↻ Restore</span></td>`;
             }
 
             return row;
@@ -268,7 +313,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     </td>
                 </tr>
 
-                <tr><td><strong>Tenant ID</strong></td><td><input type="text" id="edit_tenant_id" value="${tenant.tenant_id}" readonly></td></tr>
+                <tr><td><strong>Tenant ID</strong></td><td><input type="text" id="edit_tenant_id" value="${tenant.tenant_code}" readonly></td></tr>
 
                 <tr><td><strong>First Name</strong></td><td><input type="text" id="edit_firstname" value="${tenant.firstname}"></td></tr>
 
@@ -276,9 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 <tr><td><strong>Email</strong></td><td><input type="email" id="edit_email" value="${tenant.email}"></td></tr>
 
-                <tr><td><strong>Phone</strong></td><td><input type="text" id="edit_phone" value="${tenant.phone_number}"></td></tr>
-
-                <tr><td><strong>Address</strong></td><td><textarea id="edit_address">${tenant.address || ''}</textarea></td></tr>
+                <tr><td><strong>Phone</strong></td><td><input type="text" id="edit_phone" value="${tenant.phone}"></td></tr>
 
                 <tr><td><strong>Gender</strong></td>
                     <td>
@@ -303,23 +346,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 </tr>
 
                 <tr><td><strong>Lease Start</strong></td><td><input type="date" id="edit_lease_start" value="${tenant.lease_start_date || ''}"></td></tr>
-
-                <tr><td><strong>Rent Amount</strong></td><td><input type="number" id="edit_rent_amount" value="${tenant.rent_amount || ''}"></td></tr>
-
-                <tr><td><strong>Security Deposit</strong></td><td><input type="number" id="edit_security_deposit" value="${tenant.security_deposit || ''}"></td></tr>
+                <tr><td><strong>Lease End Date</strong></td><td><input type="date" id="edit_lease_end" value="${tenant.lease_end_date || ''}"></td></tr>
 
                 <tr><td><strong>Payment Frequency</strong></td>
                     <td>
                         <select id="edit_rent_frequency">
                             <option value="">Select</option>
-                            <option value="monthly" ${tenant.rent_payment_frequency === 'monthly' ? 'selected' : ''}>Monthly</option>
-                            <option value="quarterly" ${tenant.rent_payment_frequency === 'quarterly' ? 'selected' : ''}>Quarterly</option>
-                            <option value="yearly" ${tenant.rent_payment_frequency === 'yearly' ? 'selected' : ''}>Yearly</option>
+                            <option value="monthly" ${tenant.payment_frequency === 'Monthly' ? 'selected' : ''}>Monthly</option>
+                            <option value="quarterly" ${tenant.payment_frequency === 'Quarterly' ? 'selected' : ''}>Quarterly</option>
+                            <option value="quarterly" ${tenant.payment_frequency === 'Semi-Annually' ? 'selected' : ''}>Semi-Annually</option>
+                            <option value="yearly" ${tenant.payment_frequency === 'Annually' ? 'selected' : ''}>Yearly</option>
                         </select>
                     </td>
                 </tr>
 
-                <tr><td><strong>Next Payment</strong></td><td><input type="date" id="edit_next_payment" value="${tenant.next_payment || ''}"></td></tr>
 
                 <tr><td><strong>Status</strong></td>
                     <td>
@@ -452,4 +492,47 @@ document.addEventListener("DOMContentLoaded", () => {
 
     window.tm = tenantManager;
     console.log("Tenant Manager instance created:", tenantManager);
+
+    async function loadSupportData() {
+    try {
+      const res = await fetch(
+        "../backend/apartments/fetch_agent_property_type.php"
+      );
+      const data = await res.json();
+
+      if (data.response_code !== 200) {
+        console.error("Failed loading support data");
+        return;
+      }
+      populateSelect(
+        "#property_code",
+        data.data.properties,
+        "property_code",
+        "name"
+      );
+    //   populateSelect(
+    //     "#edit_property_code",
+    //     data.data.properties,
+    //     "property_code",
+    //     "name"
+    //   );
+    } catch (err) {
+      console.error("Error fetching support data:", err);
+    }
+  }
+
+  function populateSelect(selector, list, valueKey, labelKey) {
+    const select = document.querySelector(selector);
+    if (!select) return;
+
+    select.innerHTML = `<option value="">Select...</option>`;
+
+    list.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item[valueKey];
+      option.textContent =
+        typeof labelKey === "function" ? labelKey(item) : item[labelKey];
+      select.appendChild(option);
+    });
+  }
 });
