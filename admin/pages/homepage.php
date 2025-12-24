@@ -27,7 +27,7 @@
         <div class="hero-content">
             <h2>Property & Rent Management Made Easy</h2>
             <p>Find, manage, and track your properties all in one place.</p>
-            <a href="properties.php" class="btn">View Properties</a>
+            <a href="property.php" class="btn">View Properties</a>
         </div>
         <!-- <img src="../../images/property-hero.jpg" alt="Properties" class="hero-image" /> -->
     </section>

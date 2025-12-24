@@ -41,6 +41,21 @@ try {
     }
 
     /* ==========================
+       Fetch Apartments
+    =========================== */
+    $apartmentQuery = "
+        SELECT apartment_code, apartment_number,apartment_type_unit, property_code
+        FROM apartments
+        ORDER BY apartment_number ASC
+    ";
+    $apartmentResult = $conn->query($apartmentQuery);
+
+    $apartments = [];
+    while ($row = $apartmentResult->fetch_assoc()) {
+        $apartments[] = $row;
+    }
+
+    /* ==========================
        Fetch Properties
        (Address merged)
     =========================== */
@@ -74,11 +89,12 @@ try {
         "data" => [
             "agents" => $agents,
             "apartment_types" => $apartment_types,
+            "apartments" => $apartments,
             "properties" => $properties
         ]
     ]);
 
-    logActivity("Support data (agents, property types, properties) fetched successfully");
+    logActivity("Support data (agents,apartments, property types, properties) fetched successfully");
 
 } catch (Exception $e) {
 
