@@ -96,7 +96,7 @@
 
                 <div class="form-group">
                     <label for="phone">Phone Number</label>
-                    <input type="text" id="phone" name="phone" class="validate" data-type="phone" required>
+                    <input type="number" id="phone" name="phone" class="validate" data-type="phone" maxlength="11" required>
                 </div>
 
                
@@ -112,8 +112,8 @@
 
                 <div class="form-group">
                     <label for="emergency_contact_phone">Contact Phone</label>
-                    <input type="text" id="emergency_contact_phone" name="emergency_contact_phone" class="validate"
-                        data-type="phone" required>
+                    <input type="number" id="emergency_contact_phone" name="emergency_contact_phone" class="validate"
+                        data-type="phone" maxlength="11" required>
                 </div>
 
                 <!-- EMPLOYMENT DETAILS -->
@@ -137,7 +137,7 @@
 
                 <div class="form-group">
                     <label for="employer_contact">Employer Contact</label>
-                    <input type="text" id="employer_contact" name="employer_contact" class="validate" data-type="text">
+                    <input type="number" id="employer_contact" name="employer_contact" class="validate" data-type="text">
                 </div>
 
                 <!-- PROPERTY ALLOCATION -->
@@ -199,7 +199,7 @@
 
                 <div class="form-group">
                     <label for="referee_phone">Referee Phone</label>
-                    <input type="text" id="referee_phone" name="referee_phone" class="validate" data-type="phone">
+                    <input type="number" id="referee_phone" name="referee_phone" class="validate" data-type="phone">
                 </div>
 
                 <!-- PHOTO -->
