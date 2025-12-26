@@ -17,6 +17,7 @@
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
 
     <link rel="stylesheet" href="../css/homepage.css" />
+     <link rel="stylesheet" href="../../styles.css">
 </head>
 <body>
     <?php include "navbar.php" ?>
@@ -403,6 +404,32 @@
         </div>
     </footer>
 
+    <!-- UI Framework Containers -->
+    <div id="toastContainer"></div>
+
+    <div id="alertModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="alertTitle">Alert</h3>
+            <p id="alertMessage"></p>
+            <button id="alertOkBtn">OK</button>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage"></p>
+            <div class="ui-modal-buttons">
+                <button id="confirmCancelBtn">Cancel</button>
+                <button id="confirmOkBtn">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="uiLoaderOverlay">
+        <div class="ui-loader"></div>
+    </div>
+
     <!-- AOS Animation Script -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
     <script>
@@ -414,5 +441,6 @@
     </script>
     
     <script src="../scripts/homepage.js"></script>
+     <script src="../../ui.js"></script>
 </body>
 </html>
