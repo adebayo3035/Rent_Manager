@@ -36,6 +36,7 @@
     top: 0;
     z-index: 1000;
     border-bottom: 1px solid var(--border-color);
+    width: 100%
 }
 
 .nav-container {
@@ -66,6 +67,7 @@
     font-size: 1.75rem;
     background: linear-gradient(135deg, var(--primary-color), #3b82f6);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 

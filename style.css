@@ -901,5 +901,6 @@ tbody td {
         background-color: #f0f0f0 !important;
         color: black !important;
         -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
 }
