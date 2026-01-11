@@ -28,6 +28,23 @@ function verifyAndRehashPassword($pdo, $adminId, $inputPassword, $storedHash) {
 
     return true;
 }
+function verifyAndRehashSecretAnswer($pdo, $adminId, $inputSecretAnswer, $storedHash) {
+
+    if (!passwordVerify($inputSecretAnswer, $storedHash)) {
+        return false; // Incorrect password
+    }
+
+    // If PHP recommends rehash, update it
+    if (password_needs_rehash($storedHash, PASSWORD_ARGON2ID)) {
+
+        $newHash = hashPassword($inputSecretAnswer);
+
+        $stmt = $pdo->prepare("UPDATE admin_tbl SET secret_answer = ? WHERE unique_id = ?");
+        $stmt->execute([$newHash, $adminId]);
+    }
+
+    return true;
+}
 function password_needsRehashPassword($pdo, $adminId, $inputPassword, $storedHash) {
 
     // If PHP recommends rehash, update it

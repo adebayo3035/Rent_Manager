@@ -3,7 +3,7 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 // include '../secrets.php';
 
-require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../../../vendor/autoload.php';
 function sendEmailWithGmailSMTP($to, $body, $subject, $attachments = []) {
     $mail = new PHPMailer(true);
      $config = include __DIR__ . '/../secrets.php';

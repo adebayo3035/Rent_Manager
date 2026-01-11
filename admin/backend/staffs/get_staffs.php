@@ -28,7 +28,7 @@ try {
     $role = isset($_GET['role']) ? trim($_GET['role']) : null;
     $restriction_id = isset($_GET['restriction_id']) ? trim($_GET['restriction_id']) : null;
     $block_id = isset($_GET['block_id']) ? trim($_GET['block_id']) : null;
-    $delete_status = isset($_GET['delete_status']) ? trim($_GET['delete_status']) : null;
+    $status = isset($_GET['status']) ? trim($_GET['status']) : null;
 
     // Allowed values
     $allowedGender = ['Male', 'Female'];
@@ -64,15 +64,15 @@ try {
         $types .= 'i';
     }
 
-    if ($delete_status !== null && $delete_status !== '') {
-        if ($delete_status === 'NULL') {
-            $whereClauses[] = "admin_tbl.delete_status IS NULL";
-        } elseif ($delete_status === 'Yes') {
-            $whereClauses[] = "admin_tbl.delete_status = ?";
-            $params[] = $delete_status;
+    if ($status !== null && $status !== '') {
+        if ($status === 'NULL') {
+            $whereClauses[] = "admin_tbl.status IS NULL";
+        } elseif ($status === 'Yes') {
+            $whereClauses[] = "admin_tbl.status = ?";
+            $params[] = $status;
             $types .= 's';
         } else {
-            echo json_encode(["success" => false, "message" => "Invalid delete_status value"]);
+            echo json_encode(["success" => false, "message" => "Invalid status value"]);
             exit();
         }
     }
@@ -130,8 +130,8 @@ try {
 
     $staffs = [];
     while ($row = $result->fetch_assoc()) {
-        // Optional: map NULL delete_status to 'Activated' for clarity
-        $row['delete_status_display'] = $row['delete_status'] === 'Yes' ? 'Deactivated' : 'Activated';
+        // Optional: map NULL status to 'Activated' for clarity
+        $row['status_display'] = $row['status'] === 'Yes' ? 'Deactivated' : 'Activated';
         $staffs[] = $row;
     }
 

@@ -54,7 +54,7 @@ if ($user['email'] !== $email) {
 }
 
 // Validate password using helper function
-if (!verifyAndUpgradePassword($conn, $unique_id, $password, $user['password'])) {
+if (!verifyAndRehashPassword($conn, $unique_id, $password, $user['password'])) {
     logActivity("Password verification failed for user ID $unique_id.");
     echo json_encode(['success' => false, 'message' => 'Invalid password.']);
     exit;

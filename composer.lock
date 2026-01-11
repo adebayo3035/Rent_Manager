@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9b39cd09dc00928617b524c5f9736fb7",
+    "content-hash": "2eecf1de847ed231be6bfec9ba4b3dff",
     "packages": [
         {
             "name": "dompdf/dompdf",
@@ -235,12 +235,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/PHPMailer/PHPMailer.git",
-                "reference": "e7b1334cf21c4d0d36abcb34223efc4a4f65f86f"
+                "reference": "7e3f24386f8cb1261b165120134cd757d354b9d1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/PHPMailer/PHPMailer/zipball/e7b1334cf21c4d0d36abcb34223efc4a4f65f86f",
-                "reference": "e7b1334cf21c4d0d36abcb34223efc4a4f65f86f",
+                "url": "https://api.github.com/repos/PHPMailer/PHPMailer/zipball/7e3f24386f8cb1261b165120134cd757d354b9d1",
+                "reference": "7e3f24386f8cb1261b165120134cd757d354b9d1",
                 "shasum": ""
             },
             "require": {
@@ -254,13 +254,14 @@
                 "doctrine/annotations": "^1.2.6 || ^1.13.3",
                 "php-parallel-lint/php-console-highlighter": "^1.0.0",
                 "php-parallel-lint/php-parallel-lint": "^1.3.2",
-                "phpcompatibility/php-compatibility": "^9.3.5",
-                "roave/security-advisories": "dev-latest",
-                "squizlabs/php_codesniffer": "^3.7.2",
+                "phpcompatibility/php-compatibility": "^10.0.0@dev",
+                "squizlabs/php_codesniffer": "^3.13.5",
                 "yoast/phpunit-polyfills": "^1.0.4"
             },
             "suggest": {
                 "decomplexity/SendOauth2": "Adapter for using XOAUTH2 authentication",
+                "directorytree/imapengine": "For uploading sent messages via IMAP, see gmail example",
+                "ext-imap": "Needed to support advanced email address parsing according to RFC822",
                 "ext-mbstring": "Needed to send email in multibyte encoding charset or decode encoded addresses",
                 "ext-openssl": "Needed for secure SMTP sending and DKIM signing",
                 "greew/oauth2-azure-provider": "Needed for Microsoft Azure XOAUTH2 authentication",
@@ -309,7 +310,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2025-04-01T08:08:58+00:00"
+            "time": "2025-12-22T14:31:02+00:00"
         },
         {
             "name": "sabberworm/php-css-parser",
@@ -454,11 +455,13 @@
     "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {
-        "dompdf/dompdf": 20
+        "dompdf/dompdf": 20,
+        "phpmailer/phpmailer": 20,
+        "tecnickcom/tcpdf": 20
     },
     "prefer-stable": false,
     "prefer-lowest": false,
-    "platform": [],
-    "platform-dev": [],
-    "plugin-api-version": "2.6.0"
+    "platform": {},
+    "platform-dev": {},
+    "plugin-api-version": "2.9.0"
 }

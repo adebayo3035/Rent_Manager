@@ -97,20 +97,60 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // Handle mobile logout
+  // if (mobileLogoutButton) {
+  //   mobileLogoutButton.addEventListener("click", function (e) {
+  //     e.preventDefault();
+  //     if (confirm("Are you sure you want to logout?")) {
+  //       // Close mobile menu first
+  //       mobileMenu.classList.remove("active");
+  //       body.classList.remove("mobile-menu-open");
+  //       // Trigger logout
+  //       if (window.logoutUser) {
+  //         logoutUser();
+  //       } else {
+  //         document.getElementById("logoutButton").click();
+  //       }
+  //     }
+  //   });
+  // }
+
+  // const logoutButton = document.getElementById("logoutButton");
+  // const mobileLogoutButton = document.getElementById("mobileLogoutButton")
+
   if (mobileLogoutButton) {
-    mobileLogoutButton.addEventListener("click", function (e) {
-      e.preventDefault();
-      if (confirm("Are you sure you want to logout?")) {
-        // Close mobile menu first
-        mobileMenu.classList.remove("active");
-        body.classList.remove("mobile-menu-open");
-        // Trigger logout
-        if (window.logoutUser) {
-          logoutUser();
-        } else {
-          document.getElementById("logoutButton").click();
+    mobileLogoutButton.addEventListener("click", (event) => {
+      event.preventDefault();
+       if (!userId) return;
+
+      UI.confirm("Are you sure you want to logout?", async () => {
+        try {
+          const response = await fetch("../backend/authentication/logout.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include", // IMPORTANT for sessions
+            body: JSON.stringify({
+              logout_id: userId, // ensure this exists
+            }),
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            UI.toast("Logged out successfully", "success");
+            window.location.href = "index.php";
+          } else {
+            UI.toast(
+              data.message || "Logout failed. Please try again.",
+              "danger"
+            );
+          }
+        } catch (error) {
+          console.error("Logout error:", error);
+          UI.toast("An error occurred while logging out.", "danger");
         }
-      }
+      });
     });
   }
 
@@ -177,34 +217,8 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // Handle logout
-  // const logoutButton = document.getElementById('logoutButton');
-  // if (logoutButton) {
-  //     logoutButton.addEventListener('click', function(e) {
-  //         e.preventDefault();
-  //         if (!userId) return;
-  //         if(!confirm("Are you sure you want to logout?")) {
-  //             return;
-  //         }
-  //         fetch('../backend/authentication/logout.php', {
-  //             method: 'POST',
-  //             headers: { 'Content-Type': 'application/json' },
-  //             body: JSON.stringify({ logout_id: userId })
-  //         })
-  //         .then(response => response.json())
-  //         .then(data => {
-  //             if (data.success) {
-  //                 window.location.href = 'index.php';
-  //             } else {
-  //                 console.error('Logout failed:', data.message);
-  //             }
-  //         })
-  //         .catch(error => {
-  //             console.error('Error during logout:', error);
-  //         });
-  //     });
-  // }
-
   const logoutButton = document.getElementById("logoutButton");
+  // const mobileLogoutButton = document.getElementById("mobileLogoutButton")
 
   if (logoutButton) {
     logoutButton.addEventListener("click", (event) => {

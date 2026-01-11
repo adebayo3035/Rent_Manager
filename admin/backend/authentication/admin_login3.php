@@ -105,10 +105,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $row = $result->fetch_assoc();
         $unique_id = $row['unique_id'];
         $block_id = $row['block_id'];
-        $delete_status = $row['delete_status'];
+        $status = $row['status'];
         $admin_password = $row['password'];
 
-        logActivity("User found - ID: $unique_id, Block Status: $block_id, Delete Status: $delete_status");
+        logActivity("User found - ID: $unique_id, Block Status: $block_id, Delete Status: $status");
 
         // Check account status
         if ($block_id !== 0) {
@@ -117,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             exit;
         }
 
-        if ($delete_status == 'Yes') {
+        if ($status == '0') {
             logActivity("Login blocked - Account $unique_id is deactivated. Attempt from IP: " . $_SERVER['REMOTE_ADDR']);
             echo json_encode(["success" => false, "message" => "This account has been deactivated. Please contact support"]);
             exit;
@@ -336,7 +336,7 @@ function handleFailedLogin($conn, $unique_id, $max_attempts, $lockout_duration)
         logActivity("Login attempt for user: " . $unique_id .
             " - Current attempts: " . $new_attempts .
             " of " . $max_attempts .
-            " - Locked: " . ($is_locked ? "Yes" : "No"));
+            " - Locked: " . ($is_locked ? "0" : "No"));
 
         if ($is_locked) {
             // Account is already locked

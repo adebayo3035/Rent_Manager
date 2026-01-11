@@ -127,7 +127,7 @@ try {
     //     $stmt->close();
     //     exit();
     // }
-    if (!verifyAndUpgradeSecretAnswer($conn, $adminId, $secret_answer, $stored_secret_answer)) {
+    if (!verifyAndRehashPassword($conn, $adminId, $secret_answer, $stored_secret_answer)) {
     logActivity("Validation failed - Incorrect secret answer for Admin ID: $adminId");
         echo json_encode(['success' => false, 'message' => 'Error Validating Secret Answer.']);
         $stmt->close();

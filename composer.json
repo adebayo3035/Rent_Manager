@@ -3,7 +3,7 @@
     "description": "A food vending web application, that has different modules.",
     "type": "project",
     "require": {
-        "phpmailer/phpmailer": "*",
+        "phpmailer/phpmailer": "dev-master",
         "dompdf/dompdf": "dev-master",
         "tecnickcom/tcpdf": "dev-main"
     },

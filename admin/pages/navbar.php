@@ -82,8 +82,8 @@
                             <a href="reports.php" class="dropdown-item">
                                 <i class="fas fa-file-alt"></i> Reports
                             </a>
-                            <a href="account_history.php" class="dropdown-item">
-                                <i class="fas fa-history"></i> Account History
+                            <a href="account_management.php" class="dropdown-item">
+                                <i class="fas fa-history"></i> Account Management
                             </a>
                         </div>
                     </div>
@@ -91,7 +91,7 @@
 
                 <!-- Quick Actions -->
                 <div class="quick-actions">
-                    <a href="account_history.php" class="quick-link" title="Account History">
+                    <a href="account_management.php" class="quick-link" title="Account Management">
                         <i class="fas fa-history"></i>
                     </a>
                     <a href="admin_notification.php" class="quick-link notification-link" title="Notifications">
@@ -225,16 +225,16 @@
                                 <a href="reports.php" class="mobile-nav-link sub">
                                     <i class="fas fa-file-alt"></i> Reports
                                 </a>
-                                <a href="account_history.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-history"></i> Account History
+                                <a href="account_management.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-history"></i> Account Management
                                 </a>
                             </div>
                         </div>
                     </div>
 
                     <!-- Quick Links -->
-                    <a href="account_history.php" class="mobile-nav-link">
-                        <i class="fas fa-history"></i> Account History
+                    <a href="account_management.php" class="mobile-nav-link">
+                        <i class="fas fa-history"></i> Account Management
                     </a>
                     <a href="admin_notification.php" class="mobile-nav-link">
                         <i class="fas fa-bell"></i> Notifications
