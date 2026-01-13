@@ -116,7 +116,7 @@
                         <i class="fas fa-chevron-down dropdown-icon"></i>
                     </button>
                     <div class="dropdown-menu">
-                        <a href="staff_profile.php" class="dropdown-item">
+                        <a href="profile.php" class="dropdown-item">
                             <i class="fas fa-user"></i> My Profile
                         </a>
                         <a href="settings.php" class="dropdown-item">
@@ -243,7 +243,7 @@
                     <a href="settings.php" class="mobile-nav-link">
                         <i class="fas fa-cog"></i> Settings
                     </a>
-                    <a href="staff_profile.php" class="mobile-nav-link">
+                    <a href="profile.php" class="mobile-nav-link">
                         <i class="fas fa-user"></i> My Profile
                     </a>
                 </div>
