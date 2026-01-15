@@ -28,14 +28,14 @@ try {
         throw new Exception("Invalid JSON input: " . json_last_error_msg());
     }
 
-    if (!isset($input['staff_id'])) {
+    if (!isset($input['id'])) {
         $errorMsg = "Missing staff_id in request data";
         logActivity($errorMsg);
         echo json_encode(['success' => false, 'message' => 'Staff ID is required']);
         exit();
     }
 
-    $staff_id = $input['staff_id'];
+    $staff_id = $input['id'];
     if (!is_numeric($staff_id)) {
         $errorMsg = "Invalid staff_id format: " . $staff_id;
         logActivity($errorMsg);

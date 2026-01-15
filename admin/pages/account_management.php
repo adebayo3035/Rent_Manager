@@ -290,10 +290,11 @@
                     <input type="text" id="filterSearch" class="form-control" placeholder="Search by email or user ID...">
                 </div>
                 
-                <div class="form-group" style="display: flex; justify-content: space-between; ">
+                <div class="form-group" style="display: flex; flex-direction: column; align-content: space-between; justify-content: space-between; ">
                     <button id="applyFilters" class="btn btn-primary">
                         <i class="fas fa-search"></i> Apply Filters
                     </button>
+                    <span> </span>
                     <button id="resetFilters" class="btn btn-secondary" style="margin-left: 10px;">
                         <i class="fas fa-redo"></i> Reset
                     </button>

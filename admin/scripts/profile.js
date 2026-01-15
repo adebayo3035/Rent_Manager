@@ -408,7 +408,10 @@ function checkPasswordStrength(password) {
 
   bar.style.width = strength + "%";
 
-  if (strength < 50) {
+  if(strength == 0){
+    text.textContent = "";
+  }
+  else if (strength < 50) {
     bar.style.backgroundColor = "#dc3545";
     text.textContent = "Weak password";
     text.style.color = "#dc3545";

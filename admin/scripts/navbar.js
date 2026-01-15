@@ -4,7 +4,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize functions
   fetchUserData();
-  fetchNotificationsAndCount();
+  // fetchNotificationsAndCount();
 
   const mobileToggle = document.getElementById("mobileToggle");
   const mobileClose = document.getElementById("mobileClose");
@@ -319,7 +319,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // Periodically update notifications
-  setInterval(() => {
-    fetchNotificationsAndCount();
-  }, 30000);
+  // setInterval(() => {
+  //   fetchNotificationsAndCount();
+  // }, 30000);
 });

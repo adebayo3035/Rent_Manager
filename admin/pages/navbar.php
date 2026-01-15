@@ -63,6 +63,7 @@
                             <a href="tenant_new.php" class="dropdown-item new-badge">
                                 <i class="fas fa-user-plus"></i> New Tenant
                             </a>
+                            
                             <a href="rent_payments.php" class="dropdown-item">
                                 <i class="fas fa-money-check-alt"></i> Rent Payments
                             </a>
@@ -75,6 +76,9 @@
                             <span class="dropdown-title">Administration</span>
                             <a href="admin.php" class="dropdown-item">
                                 <i class="fas fa-user-shield"></i> Admin Portal
+                            </a>
+                            <a href="staff.php" class="dropdown-item">
+                                <i class="fas fa-user-shield"></i> Staff Portal
                             </a>
                             <a href="agent.php" class="dropdown-item">
                                 <i class="fas fa-user-tie"></i> Agents
@@ -218,6 +222,9 @@
                                 <span class="mobile-group-title">Administration</span>
                                 <a href="admin.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-shield"></i> Admin Portal
+                                </a>
+                                <a href="staff.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-user-shield"></i> New Staff Portal
                                 </a>
                                 <a href="agent.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-tie"></i> Agents

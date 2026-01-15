@@ -141,9 +141,12 @@ try {
     echo json_encode([
         "success" => true,
         "staffs" => $staffs,
-        "total" => $totalStaffs,
-        "page" => $page,
-        "limit" => $limit,
+        'pagination' => [
+            "total" => $totalStaffs,
+            "page" => $page,
+            "limit" => $limit,
+            'total_pages' => ceil($totalStaffs / $limit)
+        ],
         "logged_in_user_role" => $loggedInUserRole
     ]);
 

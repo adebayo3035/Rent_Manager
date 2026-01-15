@@ -105,6 +105,7 @@ if (!empty($_POST)) {
 } else {
     // Try JSON request
     $input = file_get_contents("php://input");
+    $data = json_decode($input, true);
     
     if (empty($input)) {
         logActivity("[EMPTY_REQUEST_STAFF] [ID:{$requestId}] Empty request body received");
@@ -118,8 +119,11 @@ if (!empty($_POST)) {
         ]);
         exit();
     }
+    else{
+        logActivity("[REQUEST_STAFF] [ID:{$requestId}] Received Inpus are". $data );
+    }
     
-    $data = json_decode($input, true);
+    
     
     if (json_last_error() !== JSON_ERROR_NONE) {
         $jsonError = json_last_error_msg();
@@ -280,7 +284,7 @@ function shouldLogoutAfterUpdate($data) {
     $sensitiveFields = ['password', 'secret_question', 'secret_answer'];
     
     foreach ($sensitiveFields as $field) {
-        if (isset($data[$field]) && trim($data[$field]) !== '') {
+        if (isset($data[$field]) && !empty(trim($data[$field]))) {
             logActivity("[SENSITIVE_FIELD_CHANGED] Field '{$field}' will trigger logout");
             return true;
         }
