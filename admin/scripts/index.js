@@ -621,66 +621,142 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Login Form
-  const loginForm = document.getElementById("loginForm");
-  if (loginForm) {
+const loginForm = document.getElementById("loginForm");
+if (loginForm) {
     loginForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
+        e.preventDefault();
 
-      const username = loginForm.querySelector('input[name="username"]').value;
-      const password = loginForm.querySelector('input[name="password"]').value;
+        const username = loginForm.querySelector('input[name="username"]').value.trim();
+        const password = loginForm.querySelector('input[name="password"]').value;
 
-      if (!username || !password) {
-        displayError("Please enter both username and password.");
-        return;
-      }
-
-      clearError();
-
-      try {
-        const response = await fetch(
-          "../backend/authentication/admin_login3.php",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password }),
-          }
-        );
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          disableForm(loginForm);
-
-          const resetPasswordBtn = document.getElementById("resetPasswordBtn");
-          const getSecretQuestionBtn = document.getElementById(
-            "getSecretQuestionBtn"
-          );
-          if (resetPasswordBtn) {
-            resetPasswordBtn.style.cursor = "not-allowed";
-            resetPasswordBtn.style.opacity = "0.6";
-          }
-          if (getSecretQuestionBtn) {
-            getSecretQuestionBtn.style.cursor = "not-allowed";
-            getSecretQuestionBtn.style.opacity = "0.6";
-          }
-
-          UI.toast("Login successful! Redirecting...", "success");
-
-          setTimeout(() => {
-            window.location.href = "splashscreen.php";
-          }, 1500);
-        } else {
-          displayError(data.message || "Login failed. Please try again.");
+        if (!username || !password) {
+            displayError("Please enter both username and password.");
+            return;
         }
-      } catch (error) {
-        displayError(
-          "An error occurred while processing your request. Please try again later."
-        );
-        console.error("Login Error:", error);
-      }
-    });
-  }
 
+        clearError();
+
+        // Show loading state
+        const submitBtn = loginForm.querySelector('input[type="submit"]');
+        const originalBtnText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
+        submitBtn.disabled = true;
+
+        try {
+            const response = await fetch("../backend/authentication/admin_login3.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password }),
+            });
+
+            const data = await response.json();
+            
+            // Handle response based on status code
+            if (response.status === 200 && data.success) {
+                // Success - 200 OK with success=true
+                disableForm(loginForm);
+
+                // Disable other buttons
+                const resetPasswordBtn = document.getElementById("resetPasswordBtn");
+                const getSecretQuestionBtn = document.getElementById("getSecretQuestionBtn");
+                if (resetPasswordBtn) {
+                    resetPasswordBtn.style.cursor = "not-allowed";
+                    resetPasswordBtn.style.opacity = "0.6";
+                    resetPasswordBtn.disabled = true;
+                }
+                if (getSecretQuestionBtn) {
+                    getSecretQuestionBtn.style.cursor = "not-allowed";
+                    getSecretQuestionBtn.style.opacity = "0.6";
+                    getSecretQuestionBtn.disabled = true;
+                }
+
+                UI.toast("Login successful! Redirecting...", "success");
+
+                setTimeout(() => {
+                    window.location.href = "splashscreen.php";
+                }, 1500);
+                
+            } else {
+                // Error - Check the error message
+                let errorMessage = data.message || "Login failed. Please try again.";
+                
+                // Specific handling for locked accounts (423)
+                if (response.status === 423) {
+                    errorMessage = data.message;
+                    // You might want to show a special UI for locked accounts
+                    UI.toast(errorMessage, "warning", 10000); // Longer duration
+                } 
+                // Handling for blocked/deactivated (403)
+                else if (response.status === 403) {
+                    errorMessage = data.message;
+                    UI.toast(errorMessage, "error", 10000);
+                }
+                // Handling for invalid credentials (401)
+                else if (response.status === 401) {
+                    errorMessage = data.message || "Invalid username or password.";
+                    displayError(errorMessage);
+                }
+                // Handling for validation errors (400)
+                else if (response.status === 400) {
+                    errorMessage = data.message || "Please check your input.";
+                    displayError(errorMessage);
+                }
+                // Server errors (500)
+                else if (response.status === 500) {
+                    errorMessage = "Server error. Please try again later.";
+                    console.error("Server Error:", data);
+                    UI.toast(errorMessage, "error");
+                }
+                // Other errors
+                else {
+                    displayError(errorMessage);
+                }
+                
+                // Re-enable form on error
+                submitBtn.innerHTML = originalBtnText;
+                submitBtn.disabled = false;
+            }
+            
+        } catch (error) {
+            // Network errors or JSON parsing errors
+            displayError("Network error. Please check your connection and try again.");
+            console.error("Login Error:", error);
+            
+            // Re-enable form on error
+            submitBtn.innerHTML = originalBtnText;
+            submitBtn.disabled = false;
+        }
+    });
+}
+
+// Helper functions
+function displayError(message) {
+    // Your existing error display logic
+    const errorElement = document.getElementById("loginError");
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.style.display = "block";
+    } else {
+        UI.toast(message, "danger");
+    }
+}
+
+function clearError() {
+    const errorElement = document.getElementById("loginError");
+    if (errorElement) {
+        errorElement.textContent = "";
+        errorElement.style.display = "none";
+    }
+}
+
+function disableForm(form) {
+    const inputs = form.querySelectorAll("input, button, select, textarea");
+    inputs.forEach(input => {
+        input.disabled = true;
+        input.style.cursor = "not-allowed";
+        input.style.opacity = "0.6";
+    });
+}
   // OTP Generation Form
   const otpGenerationForm = document.getElementById("otpGenerationForm");
   if (otpGenerationForm) {
