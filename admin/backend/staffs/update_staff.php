@@ -304,7 +304,7 @@ try {
 
     // ==================== GET CURRENT STAFF STATUS ====================
     logActivity("[FETCH_CURRENT_STATUS] [ID:{$requestId}] Fetching current status for staff:{$staffId}");
-    $currentQuery = "SELECT status, firstname, lastname, email FROM admin_tbl WHERE unique_id = ?";
+    $currentQuery = "SELECT status, unique_id, firstname, lastname, email, role FROM admin_tbl WHERE unique_id = ?";
     $currentStmt = $conn->prepare($currentQuery);
     
     if (!$currentStmt) {
@@ -313,7 +313,7 @@ try {
     
     $currentStmt->bind_param("i", $staffId);
     $currentStmt->execute();
-    $currentStmt->bind_result($currentStatus, $currentFirstName, $currentLastName, $currentEmail);
+    $currentStmt->bind_result($currentStatus, $userID, $currentFirstName, $currentLastName, $currentEmail, $currentRole);
     $currentStmt->fetch();
     $currentStmt->close();
     
@@ -387,6 +387,14 @@ try {
     if ($actionType === 'delete') {
         if ($currentStatus === '0') {
             throw new Exception("Staff is already inactive.", 400);
+        }
+
+        if($userID == $currentUserId){
+            throw new Exception("You cannot Deactivate your own Profile.", 400);
+        }
+        
+        if($currentRole == 'Super Admin'){
+            throw new Exception("You cannot Deactivate a Super Admin Account.", 400);
         }
         
         // Start transaction

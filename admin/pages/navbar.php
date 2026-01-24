@@ -83,7 +83,7 @@
                             <a href="agent.php" class="dropdown-item">
                                 <i class="fas fa-user-tie"></i> Agents
                             </a>
-                            <a href="reports.php" class="dropdown-item">
+                            <a href="report.php" class="dropdown-item">
                                 <i class="fas fa-file-alt"></i> Reports
                             </a>
                             <a href="account_management.php" class="dropdown-item">
@@ -229,7 +229,7 @@
                                 <a href="agent.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-tie"></i> Agents
                                 </a>
-                                <a href="reports.php" class="mobile-nav-link sub">
+                                <a href="report.php" class="mobile-nav-link sub">
                                     <i class="fas fa-file-alt"></i> Reports
                                 </a>
                                 <a href="account_management.php" class="mobile-nav-link sub">
