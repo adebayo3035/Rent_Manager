@@ -4,8 +4,71 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';   // added for centralized auth using requireAuth function
 
-session_start();
+// $auth = requireAuth([
+//     'method' => 'POST',
+//     'rate_key' => 'agent_onboarding',
+//     'rate_limit' => [10, 60],
+//     'csrf' => [
+//         'enabled' => true,
+//         'form_name' => 'generic_reporting_form'
+//     ],
+//     'roles' => ['Super Admin']
+// ]);
+
+// Set JSON header
+header('Content-Type: application/json');
+
+// Get JSON input (NOT $_POST)
+$input = json_decode(file_get_contents('php://input'), true);
+
+if (!$input) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Invalid JSON input'
+    ]);
+    exit;
+}
+
+// ✅ FIXED: Validate CSRF token from JSON input
+$csrfToken = $input['csrf_token'] ?? null;
+$tokenId = $input['token_id'] ?? null;
+$formName = 'generic_reporting_form';
+
+logActivity("[CSRF_TOKEN_VALIDATION] [Request Received for CSRF Token Validation: CSRF TOKEN{$csrfToken} and Token Identifier {$tokenId}] ");
+
+// Validate CSRF
+if (!$csrfToken || !$tokenId) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Security token required'
+    ]);
+    exit;
+}
+logActivity("CSRF Token and Token ID Passed successfully from Client");
+
+if ($tokenId !== $formName) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Invalid security token ID'
+    ]);
+    exit;
+}
+
+logActivity("[CSRF_TOKEN_VALIDATION] About to Validate CSRF token Passed from Client");
+if (!validateCsrfToken($csrfToken, $formName)) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Security token invalid or expired'
+    ]);
+    exit;
+}
+logActivity("[CSRF_TOKEN_VALIDATION] CSRF Token Validated Successfully");
+// ✅ FIXED: Consume token after use (one-time use)
+unset($_SESSION['csrf_tokens'][$formName]);
+
+// session_start();
 
 // Generate request ID for tracking
 $requestId = uniqid('sql_query_', true);
@@ -36,108 +99,184 @@ if (!in_array($userRole, $allowedRoles)) {
 
 logActivity("[SQL_QUERY_START] [ID:{$requestId}] [IP:{$ipAddress}] [User:{$userId}] [Role:{$userRole}] SQL query runner accessed");
 
-class SecureQueryRunner {
+class SecureQueryRunner
+{
     private $conn;
     private $allowedUsers = ['Super Admin', 'Admin'];
     private $maxExecutionTime = 30; // Increased to 30 seconds
     private $maxRows = 10000;
     private $requestId;
     private $userId;
-    
-    public function __construct($conn, $requestId, $userId) {
+
+    public function __construct($conn, $requestId, $userId)
+    {
         $this->conn = $conn;
         $this->requestId = $requestId;
         $this->userId = $userId;
     }
-    
-    public function executeQuery($userRole, $sql) {
+
+    public function executeQuery($userRole, $sql)
+    {
         $startTime = microtime(true);
-        
+
         // 1. Authentication & Authorization
         if (!in_array($userRole, $this->allowedUsers)) {
             logActivity("[SQL_QUERY_UNAUTHORIZED] [ID:{$this->requestId}] [User:{$this->userId}] Unauthorized role: {$userRole}");
             throw new Exception("Unauthorized access");
         }
-        
+
         logActivity("[SQL_QUERY_RECEIVED] [ID:{$this->requestId}] [User:{$this->userId}] Query length: " . strlen($sql) . " chars");
-        
+
         // 2. Log the attempt (before validation)
         $this->logQueryAttempt($sql, 'attempted');
-        
+
         // 3. Validate SQL
         if (!$this->validateSQL($sql)) {
             logActivity("[SQL_QUERY_REJECTED] [ID:{$this->requestId}] [User:{$this->userId}] Query failed validation: " . substr($sql, 0, 200));
             $this->logQueryAttempt($sql, 'rejected');
             throw new Exception("Invalid SQL query: Contains forbidden keywords or is not a SELECT statement");
         }
-        
+
         logActivity("[SQL_QUERY_VALIDATED] [ID:{$this->requestId}] [User:{$this->userId}] Query passed validation");
-        
+
         // 4. Set limits
         $this->setQueryLimits();
-        
+
         // 5. Execute query
         try {
             logActivity("[SQL_QUERY_EXECUTING] [ID:{$this->requestId}] [User:{$this->userId}] Executing query");
-            
+
             $result = $this->conn->query($sql);
             $executionTime = round((microtime(true) - $startTime) * 1000, 2); // in milliseconds
-            
+
             if ($result === false) {
                 $error = $this->conn->error;
                 logActivity("[SQL_QUERY_FAILED] [ID:{$this->requestId}] [User:{$this->userId}] [Time:{$executionTime}ms] MySQL Error: {$error}");
                 $this->logQueryAttempt($sql, 'failed', 0, $executionTime, $error);
                 throw new Exception("Query failed: " . $error);
             }
-            
+
             // Get row count before fetching
             $rowCount = $result->num_rows;
-            
+
             logActivity("[SQL_QUERY_SUCCESS] [ID:{$this->requestId}] [User:{$this->userId}] [Time:{$executionTime}ms] [Rows:{$rowCount}] Query executed successfully");
             $this->logQueryAttempt($sql, 'success', $rowCount, $executionTime);
-            
+
             $formattedResults = $this->formatResults($result);
-            
+
             // Additional log for large result sets
             if ($rowCount > 1000) {
                 logActivity("[SQL_QUERY_LARGE_RESULT] [ID:{$this->requestId}] [User:{$this->userId}] Large result set: {$rowCount} rows");
             }
-            
+
             return $formattedResults;
-            
+
         } catch (Exception $e) {
             $executionTime = round((microtime(true) - $startTime) * 1000, 2);
             logActivity("[SQL_QUERY_EXCEPTION] [ID:{$this->requestId}] [User:{$this->userId}] [Time:{$executionTime}ms] Exception: " . $e->getMessage());
             throw $e;
         }
     }
-    
-    private function validateSQL($sql) {
+
+    private function validateSQL($sql)
+    {
         $originalSql = $sql;
         $sql = strtolower(trim($sql));
-        
+
         // Check query length
         if (strlen($sql) > 5000) {
             logActivity("[SQL_QUERY_TOO_LONG] [ID:{$this->requestId}] [User:{$this->userId}] Query too long: " . strlen($sql) . " chars");
             return false;
         }
-        
+
+        // Safe injection patterns (won't block admin_tbl)
+        $injectionPatterns = [
+            // Basic SQL injection patterns
+            '/\bunion\s+select\b/i',
+            '/\bexec(\s|\()+.*\)/i',
+            '/\bwaitfor\s+delay\b/i',
+
+            // System database access
+            '/\bfrom\s+(information_schema|mysql\.|sys\.|performance_schema)/i',
+
+            // Dangerous keywords in suspicious contexts
+            '/\bdrop\s+(table|database)\b/i',
+            '/\btruncate\s+table\b/i',
+            '/\balter\s+table\b/i',
+            '/\bcreate\s+(table|database)\b/i',
+
+            // Classic injection patterns
+            '/\bselect\b.*\bfrom\b.*\bwhere\b.*\b(?:1=1|or\s+1=1)/i',
+            '/\border\s+by\s+\d+/i', // ORDER BY with number (column index)
+
+            // Comment-based injection
+            '/\/\*.*\*\/.*union/i',
+            '/--.*union/i',
+            '/#.*union/i',
+
+            // Schema probing
+            '/information_schema\.(tables|columns)/i',
+        ];
+
+        foreach ($injectionPatterns as $pattern) {
+            if (preg_match($pattern, $sql)) {
+                logActivity("[SQL_QUERY_INJECTION_DETECTED] Pattern matched: {$pattern}");
+                return false;
+            }
+        }
+
+        // Check query complexity (simple heuristic)
+        $complexityScore = 0;
+        $complexityScore += substr_count(strtolower($sql), 'join') * 3;
+        $complexityScore += substr_count(strtolower($sql), 'where') * 2;
+        $complexityScore += substr_count(strtolower($sql), 'or') * 1;
+        $complexityScore += substr_count(strtolower($sql), 'and') * 1;
+        $complexityScore += substr_count(strtolower($sql), 'substring') * 5;
+
+        if ($complexityScore > 50) {
+            logActivity("[SQL_QUERY_TOO_COMPLEX] Score: {$complexityScore}");
+            return false;
+        }
+
+
         // BLOCK LIST - Dangerous operations
         $dangerousKeywords = [
-            'drop ', 'delete ', 'truncate ', 'alter ', 'create ', 'insert ',
-            'update ', 'grant ', 'revoke ', 'exec ', 'execute ', 'xp_', 'sp_',
-            'shutdown', 'kill', 'union select', 'information_schema',
-            'into outfile', 'into dumpfile', 'load_file', 'benchmark(',
-            'sleep(', 'waitfor delay', '--', '/*', '*/', '#'
+            'drop ',
+            'delete ',
+            'truncate ',
+            'alter ',
+            'create ',
+            'insert ',
+            'update ',
+            'grant ',
+            'revoke ',
+            'exec ',
+            'execute ',
+            'xp_',
+            'sp_',
+            'shutdown',
+            'kill',
+            'union select',
+            'information_schema',
+            'into outfile',
+            'into dumpfile',
+            'load_file',
+            'benchmark(',
+            'sleep(',
+            'waitfor delay',
+            '--',
+            '/*',
+            '*/',
+            '#'
         ];
-        
+
         foreach ($dangerousKeywords as $keyword) {
             if (strpos($sql, $keyword) !== false) {
                 logActivity("[SQL_QUERY_DANGEROUS] [ID:{$this->requestId}] [User:{$this->userId}] Found dangerous keyword: {$keyword}");
                 return false;
             }
         }
-        
+
         // ALLOW LIST - Only SELECT queries (case insensitive)
         if (substr($sql, 0, 6) !== 'select') {
             // Check if it's SELECT with parentheses or comments before
@@ -147,25 +286,26 @@ class SecureQueryRunner {
                 return false;
             }
         }
-        
+
         return true;
     }
-    
-    private function setQueryLimits() {
+
+    private function setQueryLimits()
+    {
         // Set PHP execution time limit
         set_time_limit($this->maxExecutionTime);
         logActivity("[SQL_QUERY_SET_LIMITS] [ID:{$this->requestId}] [User:{$this->userId}] Set PHP time limit: {$this->maxExecutionTime}s");
-        
+
         // Try to set MySQL execution time limit
         $mysqlVariables = [
             'max_execution_time',  // MySQL 5.7+
             'max_statement_time',  // Older MySQL
             'max_query_time'       // Some versions
         ];
-        
+
         $timeLimitMs = $this->maxExecutionTime * 1000;
         $setSuccess = false;
-        
+
         foreach ($mysqlVariables as $variable) {
             try {
                 $query = "SET SESSION {$variable} = {$timeLimitMs}";
@@ -179,11 +319,11 @@ class SecureQueryRunner {
                 continue;
             }
         }
-        
+
         if (!$setSuccess) {
             logActivity("[SQL_QUERY_MYSQL_LIMIT_FAILED] [ID:{$this->requestId}] [User:{$this->userId}] Could not set MySQL execution time limit");
         }
-        
+
         // Set row limit
         try {
             $this->conn->query("SET SESSION sql_select_limit = " . $this->maxRows);
@@ -192,12 +332,13 @@ class SecureQueryRunner {
             logActivity("[SQL_QUERY_ROW_LIMIT_FAILED] [ID:{$this->requestId}] [User:{$this->userId}] Could not set row limit: " . $e->getMessage());
         }
     }
-    
-    private function logQueryAttempt($sql, $status, $rowsReturned = 0, $executionTime = 0, $error = null) {
+
+    private function logQueryAttempt($sql, $status, $rowsReturned = 0, $executionTime = 0, $error = null)
+    {
         $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
         $sqlTruncated = strlen($sql) > 1000 ? substr($sql, 0, 1000) . '...' : $sql;
-        
+
         try {
             // Create table if it doesn't exist
             $this->conn->query("
@@ -217,70 +358,72 @@ class SecureQueryRunner {
                     INDEX idx_timestamp (timestamp)
                 )
             ");
-            
+
             $logStmt = $this->conn->prepare("
                 INSERT INTO query_audit_log 
-                (user_id, query, ip_address, user_agent, rows_returned, execution_time_ms, status, error_message) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, request_id, query, ip_address, user_agent, rows_returned, execution_time_ms, status, error_message) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            
+
             $logStmt->bind_param(
-                "isssiiss", 
-                $this->userId, 
-                $sqlTruncated, 
-                $ip, 
+                "issssiiss",
+                $this->userId,
+                $this->requestId,
+                $sqlTruncated,
+                $ip,
                 $userAgent,
                 $rowsReturned,
                 $executionTime,
                 $status,
                 $error
             );
-            
+
             if ($logStmt->execute()) {
                 logActivity("[SQL_QUERY_AUDIT_LOGGED] [ID:{$this->requestId}] [User:{$this->userId}] [Status:{$status}] Query logged to audit table");
             } else {
                 logActivity("[SQL_QUERY_AUDIT_FAILED] [ID:{$this->requestId}] [User:{$this->userId}] Failed to log to audit table: " . $logStmt->error);
             }
-            
+
             $logStmt->close();
-            
+
         } catch (Exception $e) {
             logActivity("[SQL_QUERY_AUDIT_ERROR] [ID:{$this->requestId}] [User:{$this->userId}] Audit logging error: " . $e->getMessage());
         }
     }
-    
-    private function formatResults($result) {
+
+    private function formatResults($result)
+    {
         $data = [];
         $columns = [];
-        
+
         // Get column names
         $fields = $result->fetch_fields();
         foreach ($fields as $field) {
             $columns[] = $field->name;
         }
-        
+
         logActivity("[SQL_QUERY_COLUMNS] [ID:{$this->requestId}] [User:{$this->userId}] Columns returned: " . implode(', ', $columns));
-        
+
         // Get data
         $rowCount = 0;
         while ($row = $result->fetch_assoc()) {
             $data[] = $row;
             $rowCount++;
-            
+
             // Log progress for large datasets
             if ($rowCount % 1000 === 0) {
                 logActivity("[SQL_QUERY_FETCH_PROGRESS] [ID:{$this->requestId}] [User:{$this->userId}] Fetched {$rowCount} rows...");
             }
-            
+
             // Safety limit - don't fetch more than maxRows
             if ($rowCount >= $this->maxRows) {
                 logActivity("[SQL_QUERY_MAX_ROWS] [ID:{$this->requestId}] [User:{$this->userId}] Reached maximum row limit: {$this->maxRows}");
                 break;
             }
         }
-        
+
         logActivity("[SQL_QUERY_FORMATTED] [ID:{$this->requestId}] [User:{$this->userId}] Formatting complete: {$rowCount} rows");
-        
+
         return [
             'columns' => $columns,
             'data' => $data,
@@ -297,28 +440,28 @@ try {
         logActivity("[SQL_QUERY_NO_DATA] [ID:{$requestId}] [User:{$userId}] No POST data received");
         throw new Exception("No data received");
     }
-    
+
     $data = json_decode($input, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
         logActivity("[SQL_QUERY_INVALID_JSON] [ID:{$requestId}] [User:{$userId}] Invalid JSON: " . json_last_error_msg());
         throw new Exception("Invalid JSON format");
     }
-    
+
     if (!isset($data['query']) || empty(trim($data['query']))) {
         logActivity("[SQL_QUERY_EMPTY] [ID:{$requestId}] [User:{$userId}] Empty query received");
         throw new Exception("SQL query is required");
     }
-    
+
     $sql = trim($data['query']);
-    
+
     logActivity("[SQL_QUERY_PROCESSING] [ID:{$requestId}] [User:{$userId}] Processing query");
-    
+
     // Execute query
     $queryRunner = new SecureQueryRunner($conn, $requestId, $userId);
     $results = $queryRunner->executeQuery($userRole, $sql);
-    
+
     logActivity("[SQL_QUERY_COMPLETED] [ID:{$requestId}] [User:{$userId}] Query completed successfully, returning " . $results['row_count'] . " rows");
-    
+
     // Ensure proper response format
     $response = [
         'success' => true,
@@ -328,19 +471,19 @@ try {
         'row_count' => $results['row_count'],
         'generated_by' => $username
     ];
-    
+
     echo json_encode($response, JSON_PRETTY_PRINT);
-    
+
 } catch (Exception $e) {
     logActivity("[SQL_QUERY_ERROR] [ID:{$requestId}] [User:{$userId}] Final error: " . $e->getMessage());
     http_response_code(400);
-    
+
     $response = [
         'success' => false,
         'message' => $e->getMessage(),
         'request_id' => $requestId
     ];
-    
+
     echo json_encode($response, JSON_PRETTY_PRINT);
 } finally {
     if (isset($conn) && $conn instanceof mysqli) {

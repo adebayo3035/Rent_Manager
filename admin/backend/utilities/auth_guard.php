@@ -44,10 +44,11 @@ function requireAuth(array $options = [])
         }
 
         if (!isset($_POST['token_id']) || $_POST['token_id'] !== $formName) {
-            logActivity("CSRF form name mismatch");
+            $token_id = $_POST['token_id'];
+            logActivity("CSRF form name mismatch | Token ID passed from client ={$token_id} | Form Name ={formName}");
             json_error("Security token invalid or expired.", 403);
         }
-
+        
         if (
             !isset($_POST['csrf_token']) ||
             !validateCsrfToken($_POST['csrf_token'], $formName)
