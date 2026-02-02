@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize functions
   fetchUserData();
+  fetchNotificationsAndCount();
   // fetchNotificationsAndCount();
 
   const mobileToggle = document.getElementById("mobileToggle");
@@ -172,7 +173,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Update notification badge
   function updateNotificationBadge(count) {
     const badges = document.querySelectorAll(
-      ".badge, .badge-menu, .mobile-notification-badge"
+      "#notification-badge, .badge-menu, .mobile-notification-badge"
     );
     badges.forEach((badge) => {
       badge.textContent = count;
@@ -260,11 +261,11 @@ document.addEventListener("DOMContentLoaded", function () {
   // Fetch notifications count
   const notificationBadge = document.getElementById("notification-badge");
   function fetchNotificationsAndCount() {
-    fetch("../backend/authentication/notification.php")
+    fetch("../backend/staffs/notifications.php")
       .then((response) => response.json())
       .then((data) => {
         if (data.success) {
-          const count = data.totalNotifications || "0";
+          const count = data.counts.unread || "0";
           updateNotificationBadge(count);
         } else {
           console.error("Error fetching notifications:", data.message);

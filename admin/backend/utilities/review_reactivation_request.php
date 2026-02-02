@@ -134,7 +134,7 @@ class ReactivationReviewService {
         $idColumn = $tables[$userType]['id_column'];
         
         // Activate the account (set status to '1' for active)
-        $query = "UPDATE {$table} SET status = '1', date_last_updated = NOW() 
+        $query = "UPDATE {$table} SET status = '1'
                   WHERE {$idColumn} = ? AND email = ?";
         
         $stmt = $this->conn->prepare($query);

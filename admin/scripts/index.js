@@ -694,6 +694,7 @@ if (loginForm) {
                 // Handling for invalid credentials (401)
                 else if (response.status === 401) {
                     errorMessage = data.message || "Invalid username or password.";
+                    console.log(errorMessage)
                     displayError(errorMessage);
                 }
                 // Handling for validation errors (400)

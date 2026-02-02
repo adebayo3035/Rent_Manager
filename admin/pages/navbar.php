@@ -98,7 +98,7 @@
                     <a href="account_management.php" class="quick-link" title="Account Management">
                         <i class="fas fa-history"></i>
                     </a>
-                    <a href="admin_notification.php" class="quick-link notification-link" title="Notifications">
+                    <a href="notification.php" class="quick-link notification-link" title="Notifications">
                         <i class="fas fa-bell"></i>
                         <span class="badge" id="notification-badge">0</span>
                     </a>
@@ -126,7 +126,7 @@
                         <a href="settings.php" class="dropdown-item">
                             <i class="fas fa-cog"></i> Settings
                         </a>
-                        <a href="admin_notification.php" class="dropdown-item">
+                        <a href="notification.php" class="dropdown-item">
                             <i class="fas fa-bell"></i> Notifications
                             <span class="badge-menu">0</span>
                         </a>
@@ -243,7 +243,7 @@
                     <a href="account_management.php" class="mobile-nav-link">
                         <i class="fas fa-history"></i> Account Management
                     </a>
-                    <a href="admin_notification.php" class="mobile-nav-link">
+                    <a href="notification.php" class="mobile-nav-link">
                         <i class="fas fa-bell"></i> Notifications
                         <span class="mobile-notification-badge">0</span>
                     </a>

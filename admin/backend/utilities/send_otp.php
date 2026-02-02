@@ -96,7 +96,7 @@ class OTPService
         $user = $this->getUserByEmail($email);
 
         if (!$user) {
-            $errorMsg = "User lookup failed - Email not found or inactive: {$email}";
+            $errorMsg = "User lookup failed - Email not found for E-mail: {$email}";
             logActivity("[USER_NOT_FOUND] {$logPrefix} {$errorMsg}");
 
             // Generic success message to prevent email enumeration
@@ -183,7 +183,7 @@ class OTPService
         $logPrefix = "[USER_LOOKUP] [ID:{$this->requestId}]";
 
         // Check both id and status - adjust column names based on your actual schema
-        $query = "SELECT unique_id as id, status FROM {$this->userTable} WHERE email = ? AND status = '0'";
+        $query = "SELECT unique_id as id, status FROM {$this->userTable} WHERE email = ? ";
         logActivity("{$logPrefix} Preparing query: {$query} for email: {$email}");
 
         $stmt = $this->conn->prepare($query);
@@ -538,6 +538,7 @@ class OTPService
                 return [
                     'success' => true,
                     'message' => 'OTP sent successfully. Please check your email.',
+                    'otp' => $otp,
                     'code' => 200,
                     'email_sent' => true
                 ];
@@ -556,6 +557,7 @@ class OTPService
                     'message' => 'OTP was generated but we encountered an issue sending it to your email. Please try again or contact support.',
                     'code' => 500,
                     'email_sent' => false,
+                    'otp' => $otp,
                     'otp_generated' => true
                 ];
             }
