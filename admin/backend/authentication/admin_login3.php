@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notifications.php';
 
 // ==================== CONSTANTS & CONFIGURATION ====================
 const MAX_LOGIN_ATTEMPTS = 3;
@@ -309,9 +310,26 @@ class LoginSecurity
 
                 $this->log("Account locked - ID: {$userId}, Until: {$lockPeriod}");
                 $message = "Too many failed login attempts. Your account is locked for " . LOCKOUT_DURATION_MINUTES . " minutes.";
+
+                // Create and notify Super Admin on account lock
+                try {
+                    createNotification($this->conn, [
+                        'user_id' => $userId,
+                        'title' => 'Account Lock Notification',
+                        'message' => "User {$userId} account has been locked after too many failed login attempts.",
+                        'type' => 'DANGER',
+                        'category' => 'account_lock'
+                    ]);
+                    logActivity("{NOTIFICATION_ERROR} Notification created for user ID: {$userId}");
+                } catch (Exception $e) {
+                    // Log but don't fail the entire request if notification fails
+                    logActivity("[NOTIFICATION_ERROR] Failed to create user notification: " . $e->getMessage());
+                }
             } else {
                 $message = "Invalid credentials. Attempts remaining: {$attemptsRemaining}";
             }
+
+
 
             $this->conn->commit();
             return [false, $message, 401, null];  // FIXED: Added 4th element

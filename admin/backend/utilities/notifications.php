@@ -31,7 +31,7 @@ function createNotification(mysqli $conn, array $data)
 
 
     // Validate type
-    $validTypes = ['INFO', 'SUCCESS', 'WARNING', 'ERROR'];
+    $validTypes = ['INFO', 'SUCCESS', 'WARNING', 'SYSTEM', 'DANGER'];
     if (!in_array(strtoupper($type), $validTypes)) {
         $type = 'INFO';
     }
@@ -49,7 +49,7 @@ function createNotification(mysqli $conn, array $data)
     }
 
     $stmt->bind_param(
-        "iisssss",
+        "iissss",
         $user_id,      // user_id (who created/triggered the notification)
         $assigned_to,  // assigned_to (who should see/act on it)
         $title,
