@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notifications</title>
     <link rel="stylesheet" href="../css/notification.css">
+    <link rel="stylesheet" href="../../styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
@@ -58,6 +59,33 @@
         <div class="pagination" id="pagination"></div>
     </div>
 
+     <!-- UI Library -->
+    <div id="toastContainer"></div>
+
+    <div id="alertModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="alertTitle">Alert</h3>
+            <p id="alertMessage"></p>
+            <button id="alertOkBtn">OK</button>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage"></p>
+            <div class="ui-modal-buttons">
+                <button id="confirmCancelBtn">Cancel</button>
+                <button id="confirmOkBtn">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="uiLoaderOverlay">
+        <div class="ui-loader"></div>
+    </div>
+
     <script src="../scripts/notification.js"></script>
+     <script src="../../ui.js"></script>
 </body>
 </html>

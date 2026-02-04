@@ -137,6 +137,32 @@
         </div>
     </div>
 
+     <!-- UI Library -->
+    <div id="toastContainer"></div>
+
+    <div id="alertModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="alertTitle">Alert</h3>
+            <p id="alertMessage"></p>
+            <button id="alertOkBtn">OK</button>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage"></p>
+            <div class="ui-modal-buttons">
+                <button id="confirmCancelBtn">Cancel</button>
+                <button id="confirmOkBtn">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="uiLoaderOverlay">
+        <div class="ui-loader"></div>
+    </div>
+
     <!-- Custom JavaScript -->
     <script>
         // Store username for use in JavaScript
@@ -144,5 +170,6 @@
             '<?php echo ($_SESSION["firstname"] ?? "Admin") . " " . ($_SESSION["lastname"] ?? "User"); ?>');
     </script>
     <script src="../scripts/report.js"></script>
+     <script src="../../ui.js"></script>
 </body>
 </html>

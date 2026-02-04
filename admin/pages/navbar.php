@@ -60,9 +60,6 @@
                             <a href="tenant.php" class="dropdown-item">
                                 <i class="fas fa-user-friends"></i> Tenants
                             </a>
-                            <a href="tenant_new.php" class="dropdown-item new-badge">
-                                <i class="fas fa-user-plus"></i> New Tenant
-                            </a>
                             
                             <a href="rent_payments.php" class="dropdown-item">
                                 <i class="fas fa-money-check-alt"></i> Rent Payments
@@ -74,9 +71,7 @@
                         
                         <div class="dropdown-column">
                             <span class="dropdown-title">Administration</span>
-                            <a href="admin.php" class="dropdown-item">
-                                <i class="fas fa-user-shield"></i> Admin Portal
-                            </a>
+                            
                             <a href="staff.php" class="dropdown-item">
                                 <i class="fas fa-user-shield"></i> Staff Portal
                             </a>
@@ -102,7 +97,7 @@
                         <i class="fas fa-bell"></i>
                         <span class="badge" id="notification-badge">0</span>
                     </a>
-                    <a href="settings.php" class="quick-link" title="Settings">
+                    <a href="account_unlock.php" class="quick-link" title="Settings">
                         <i class="fas fa-cog"></i>
                     </a>
                 </div>
@@ -123,7 +118,7 @@
                         <a href="profile.php" class="dropdown-item">
                             <i class="fas fa-user"></i> My Profile
                         </a>
-                        <a href="settings.php" class="dropdown-item">
+                        <a href="account_unlock.php" class="dropdown-item">
                             <i class="fas fa-cog"></i> Settings
                         </a>
                         <a href="notification.php" class="dropdown-item">
@@ -205,10 +200,10 @@
                                 <a href="tenant.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-friends"></i> Tenants
                                 </a>
-                                <a href="tenant_new.php" class="mobile-nav-link sub new-badge">
+                                <!-- <a href="tenant_new.php" class="mobile-nav-link sub new-badge">
                                     <i class="fas fa-user-plus"></i> New Tenant
                                     <span class="mobile-badge">New</span>
-                                </a>
+                                </a> -->
                                 <a href="rent_payments.php" class="mobile-nav-link sub">
                                     <i class="fas fa-money-check-alt"></i> Rent Payments
                                 </a>
@@ -220,9 +215,7 @@
                             <!-- Administration -->
                             <div class="mobile-module-group">
                                 <span class="mobile-group-title">Administration</span>
-                                <a href="admin.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-user-shield"></i> Admin Portal
-                                </a>
+                                
                                 <a href="staff.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-shield"></i> New Staff Portal
                                 </a>
@@ -247,7 +240,7 @@
                         <i class="fas fa-bell"></i> Notifications
                         <span class="mobile-notification-badge">0</span>
                     </a>
-                    <a href="settings.php" class="mobile-nav-link">
+                    <a href="account_unlock.php" class="mobile-nav-link">
                         <i class="fas fa-cog"></i> Settings
                     </a>
                     <a href="profile.php" class="mobile-nav-link">
@@ -265,6 +258,6 @@
     </nav>
 
     <script src="../scripts/navbar.js"></script>
-    <!-- <script src="../../ui.js"></script> -->
+    <!-- <script src="../../ui.js"></script>  -->
 </body>
 </html>
