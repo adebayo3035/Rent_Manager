@@ -18,7 +18,7 @@
 <body>
 <?php include "../backend/utilities/activity_checker.php"; ?>
     <div class="splash">
-        <img src="../../images/trans_manager.png" alt="" class="rotate">
+        <img src="../../images/loader.png" alt="Loader Image Here" class="rotate">
         <div class="loader">
             <div class="loader-text" id="loaderText"></div>
         </div>
