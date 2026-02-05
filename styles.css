@@ -495,7 +495,7 @@ tr:nth-child(even):hover {
 
 
 /* Action Icons */
-.edit-icon, .delete-icon, .restore-icon {
+.edit-icon, .delete-icon, .restore-icon, .not-allowed-icon {
     cursor: pointer;
     font-weight: 600;
     margin: 4px;

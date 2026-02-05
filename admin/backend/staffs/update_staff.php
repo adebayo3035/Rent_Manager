@@ -320,6 +320,7 @@ try {
     if (!$currentStatus && $currentStatus !== '0') {
         throw new Exception("Staff not found.", 404);
     }
+
     
     $currentStatusText = STATUS_MAP[$currentStatus] ?? 'Unknown';
     logActivity("[CURRENT_STATUS] [ID:{$requestId}] Staff {$staffId} status: {$currentStatus} ({$currentStatusText})");
@@ -442,6 +443,18 @@ try {
     // ==================== HANDLE UPDATE_ALL ACTION ====================
     // Validate and prepare update data
     $validatedData = validateUpdateData($data, $currentStatus, $staffId, $requestId);
+
+     // Only Super Admin can deactivate
+    if ($data['status'] == 0 && $userRole !== "Super Admin") {
+        logActivity("UNAUTHORIZED deactivate attempt by Admin=$currentUserId");
+        json_error("You do not have Permission to Deactivate an Account.", 403);
+    }
+
+     // Only Super Admin can deactivate
+    if ($currentRole == "Super Admin" && $userRole !== "Super Admin") {
+        logActivity("UNAUTHORIZED Update attempt by Admin=$currentUserId to modify Super Admin Account");
+        json_error("You do not have Permission to Update a Super Admin Account.", 403);
+    }
     
     // Check for duplicates
     $duplicateErrors = checkForDuplicates($conn, $staffId, $validatedData, $requestId);

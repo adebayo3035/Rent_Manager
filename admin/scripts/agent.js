@@ -1,115 +1,122 @@
 // Preview uploaded agent photo
 document.getElementById("agentPhoto").addEventListener("change", function (e) {
-    const file = e.target.files[0];
-    const preview = document.getElementById("photoPreview");
+  const file = e.target.files[0];
+  const preview = document.getElementById("photoPreview");
 
-    if (!file) {
-        preview.innerHTML = "<span class = 'photoPreviewText'>No image</span>";
-        return;
-    }
+  if (!file) {
+    preview.innerHTML = "<span class = 'photoPreviewText'>No image</span>";
+    return;
+  }
 
-    const reader = new FileReader();
-    reader.onload = function (event) {
-        preview.innerHTML = `<img src="${event.target.result}" 
+  const reader = new FileReader();
+  reader.onload = function (event) {
+    preview.innerHTML = `<img src="${event.target.result}" 
                                 style="width:100%;height:100%;object-fit:cover;">`;
-    };
-    reader.readAsDataURL(file);
+  };
+  reader.readAsDataURL(file);
 });
 
 // agent.js
 document.addEventListener("DOMContentLoaded", () => {
-     initFormValidation('addAgentForm', 'saveAgentBtn', 'addAgentMessage', {
+  initFormValidation("addAgentForm", "saveAgentBtn", "addAgentMessage", {
     maxFileSizeMB: 2, // Override default
-    allowedFileTypes: ['jpg', 'jpeg', 'png'] // Override default
-});
-    const agentManager = new DataManager({
+    allowedFileTypes: ["jpg", "jpeg", "png"], // Override default
+  });
+  const agentManager = new DataManager({
+    // === DOM Element IDs ===
+    tableId: "agentSummary",
+    tableBodyId: "agentSummaryBody",
+    modalId: "agentModal",
+    addModalId: "addAgentModal",
+    formId: "addAgentForm", // (we will handle manually because you don't have a <form>)
+    paginationId: "agentPagination",
+    searchInputId: "agentLiveSearch",
+    addButtonId: "addNewAgentBtn",
+    csrfTokenName: "add_agent_form",
 
-        // === DOM Element IDs ===
-        tableId: "agentSummary",
-        tableBodyId: "agentSummaryBody",
-        modalId: "agentModal",
-        addModalId: "addAgentModal",
-        formId: "addAgentForm",    // (we will handle manually because you don't have a <form>)
-        paginationId: "agentPagination",
-        searchInputId: "agentLiveSearch",
-        addButtonId: "addNewAgentBtn",
-        csrfTokenName: "add_agent_form",
+    // === API Endpoints ===
+    fetchUrl: "../backend/agents/get_agent.php",
+    addUrl: "../backend/agents/agent_onboarding.php",
+    updateUrl: "../backend/agents/update_agent.php",
+    fetchDetailsUrl: "../backend/agents/fetch_agent_details.php",
 
-        // === API Endpoints ===
-        fetchUrl: "../backend/agents/get_agent.php",
-        addUrl: "../backend/agents/agent_onboarding.php",
-        updateUrl: "../backend/agents/update_agent.php",
-        fetchDetailsUrl: "../backend/agents/fetch_agent_details.php",
+    // === Item Definitions ===
+    itemName: "agent",
+    itemNamePlural: "agents",
+    idField: "agent_code",
+    statusField: "status",
+    detailsKey: "agent_details",
 
-        // === Item Definitions ===
-        itemName: "agent",
-        itemNamePlural: "agents",
-        idField: "agent_code",
-        statusField: "status",
-        detailsKey: "agent_details",
+    // === Columns (match HTML header) ===
+    columns: [
+      {
+        field: "agent_code",
+        label: "Agent ID",
+        render: (item) => `<strong>${item.agent_code}</strong>`,
+      },
+      {
+        field: "firstname",
+        label: "Agent Name",
+        render: (item) => `${item.firstname} ${item.lastname}`,
+      },
+      {
+        field: "email",
+        label: "Email",
+        render: (item) => item.email,
+      },
+      {
+        field: "status",
+        label: "Status",
+        render: (item) =>
+          item.status == 1
+            ? `<span style="color:green">Active</span>`
+            : `<span style="color:red">Inactive</span>`,
+      },
+    ],
 
-        // === Columns (match HTML header) ===
-        columns: [
-            {
-                field: "agent_code",
-                label: "Agent ID",
-                render: (item) => `<strong>${item.agent_code}</strong>`
-            },
-            {
-                field: "firstname",
-                label: "Agent Name",
-                render: (item) => `${item.firstname} ${item.lastname}`
-            },
-            {
-                field: "email",
-                label: "Email",
-                render: (item) => item.email
-            },
-            {
-                field: "status",
-                label: "Status",
-                render: (item) =>
-                    item.status == 1
-                        ? `<span style="color:green">Active</span>`
-                        : `<span style="color:red">Inactive</span>`
-            }
-        ],
+    // === Row Rendering Logic ===
+    renderRow: function (agent, userRole) {
+      console.log("UserRole inside renderRow:", userRole);
 
-        // === Row Rendering Logic ===
-        renderRow: function (agent, userRole) {
-            console.log("UserRole inside renderRow:", userRole);
+      const statusHTML =
+        agent.status == 1
+          ? `<span style="color: green;">Active</span>`
+          : `<span style="color: red;">Inactive</span>`;
 
-            const statusHTML =
-                agent.status == 1
-                    ? `<span style="color: green;">Active</span>`
-                    : `<span style="color: red;">Inactive</span>`;
-
-            let row = `
+      let row = `
                 <td>${agent.agent_code}</td>
                 <td>${agent.firstname} ${agent.lastname}</td>
                 <td>${agent.email}</td>
                 <td>${statusHTML}</td>`;
 
-            if (agent.status == 1) {
-                row += `
-                    <td><span class="edit-icon" data-id="${agent.agent_code}">✏️</span></td>
-                    <td><span class="delete-icon" data-id="${agent.agent_code}">🗑️</span></td>`;
-            } else {
-                row += `
-                    <td colspan="2" style="text-align:center;">
-                        <span class="restore-icon" data-id="${agent.agent_code}">↻ Restore</span>
-                    </td>`;
-            }
+      if (agent.status == 1) {
+        row += `
+                    <td><span class="edit-icon" data-id="${agent.agent_code}">✏️</span></td>`;
+        if (userRole == "Super Admin") {
+          row += ` <td><span class="delete-icon" data-id="${agent.agent_code}">🗑️</span></td>`;
+        } else {
+          row += `<td><span class="not-allowed-icon">⛔</span></td>`;
+        }
+      } else {
+        if (userRole === "Super Admin") {
+          row += `
+                <td colspan="2" style="text-align:center;"><span class="restore-icon" data-id="${agent.agent_code}">↻ Restore</span></td>
+            `;
+        } else {
+          row += `<td><span class="not-allowed-icon">🚫</span></td>
+          <td><span class="not-allowed-icon">⛔</span></td>`;
+        }
+      }
 
-            return row;
-        },
+      return row;
+    },
 
-        // === Populate Edit Modal ===
-        populateDetails: function (agent) {
-            const body = document.querySelector("#agentDetailsTable tbody");
-             const photoUrl = `../backend/agents/agent_photos/${agent.photo}`;
+    // === Populate Edit Modal ===
+    populateDetails: function (agent) {
+      const body = document.querySelector("#agentDetailsTable tbody");
+      const photoUrl = `../backend/agents/agent_photos/${agent.photo}`;
 
-            body.innerHTML = `
+      body.innerHTML = `
                 <tr>
             <td colspan="2" style="text-align:center;">
                 <img 
@@ -183,69 +190,55 @@ document.addEventListener("DOMContentLoaded", () => {
                 </tr>
             `;
 
-            // Reset event listener to avoid duplicates
-            const updateButton = document.getElementById("updateAgentBtn");
-            updateButton.replaceWith(updateButton.cloneNode(true));
+      // Reset event listener to avoid duplicates
+      const updateButton = document.getElementById("updateAgentBtn");
+      updateButton.replaceWith(updateButton.cloneNode(true));
 
-            document.getElementById("updateAgentBtn").addEventListener("click", () => {
-                UI.confirm("Are you sure you want to update this agent?", () => {
-                    this.updateItem(agent.agent_code, {
-                        agent_code: agent.agent_code,
-                        firstname: document.getElementById("edit_firstname").value,
-                        lastname: document.getElementById("edit_lastname").value,
-                        email: document.getElementById("edit_email").value,
-                        phone: document.getElementById("edit_phone").value,
-                        address: document.getElementById("edit_address").value,
-                        gender: document.getElementById("edit_gender").value,
-                        status: document.getElementById("edit_status").value,
-                        action_type: "update_all"
-                    });
-                });
+      document
+        .getElementById("updateAgentBtn")
+        .addEventListener("click", () => {
+          UI.confirm("Are you sure you want to update this agent?", () => {
+            this.updateItem(agent.agent_code, {
+              agent_code: agent.agent_code,
+              firstname: document.getElementById("edit_firstname").value,
+              lastname: document.getElementById("edit_lastname").value,
+              email: document.getElementById("edit_email").value,
+              phone: document.getElementById("edit_phone").value,
+              address: document.getElementById("edit_address").value,
+              gender: document.getElementById("edit_gender").value,
+              status: document.getElementById("edit_status").value,
+              action_type: "update_all",
             });
-        },
+          });
+        });
+    },
 
-        // === Custom Initialization ===
-        onInit: function () {
-            window.agentManager = this;
+    // === Custom Initialization ===
+    onInit: function () {
+      window.agentManager = this;
 
-            // Load initial data
-            // this.fetchData();
+      // Load initial data
+      // this.fetchData();
 
-            // Handle photo preview
-            const photoInput = document.getElementById("agentPhoto");
-            const photoPreview = document.getElementById("photoPreview");
+      // Handle photo preview
+      const photoInput = document.getElementById("agentPhoto");
+      const photoPreview = document.getElementById("photoPreview");
 
-            photoInput.addEventListener("change", function () {
-                const file = this.files[0];
-                if (!file) return;
+      photoInput.addEventListener("change", function () {
+        const file = this.files[0];
+        if (!file) return;
 
-                const reader = new FileReader();
-                reader.onload = function (e) {
-                    photoPreview.innerHTML =
-                        `<img src="${e.target.result}" style="width:120px;height:120px;object-fit:cover;">`;
-                };
-                reader.readAsDataURL(file);
-            });
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          photoPreview.innerHTML = `<img src="${e.target.result}" style="width:120px;height:120px;object-fit:cover;">`;
+        };
+        reader.readAsDataURL(file);
+      });
 
-            // // Handle Save Agent Button
-            // document.getElementById("saveAgentBtn").addEventListener("click", () => {
-            //     const formData = new FormData();
-            //     formData.append("firstname", document.getElementById("agentFirstName").value);
-            //     formData.append("lastname", document.getElementById("agentLastName").value);
-            //     formData.append("email", document.getElementById("agentEmail").value);
-            //     formData.append("phone", document.getElementById("agentPhone").value);
-            //     formData.append("address", document.getElementById("agentAddress").value);
-            //     formData.append("gender", document.getElementById("agentGender").value);
-            //     formData.append("photo", document.getElementById("agentPhoto").files[0]);
+      console.log("Agent Manager initialized successfully");
+    },
+  });
 
-            //     this.addItem(formData, true); // true = multipart/FormData
-            // });
-
-            console.log("Agent Manager initialized successfully");
-        }
-    });
-
-    window.agm = agentManager; // expose for debugging
-    console.log('Agent Manager instance created:', agentManager);
+  window.agm = agentManager; // expose for debugging
+  console.log("Agent Manager instance created:", agentManager);
 });
-

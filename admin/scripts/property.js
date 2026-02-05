@@ -134,7 +134,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (userRole === "Super Admin") {
             html += `<td><span class="delete-icon" data-id="${item.property_code}" title="Delete">🗑️</span></td>`;
         } else {
-            html += `<td></td>`;
+            html += `<td><span class="not-allowed-icon">⛔</span></td>`;
         }
 
     } else {
@@ -145,7 +145,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 </td>
             `;
         } else {
-            html += `<td></td><td></td>`;
+            html += `<td><span class="not-allowed-icon">🚫</span></td>
+          <td><span class="not-allowed-icon">⛔</span></td>`;
         }
     }
 
