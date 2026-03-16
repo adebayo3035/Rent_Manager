@@ -63,6 +63,7 @@ try {
         SELECT 
             property_code,
             name,
+            agent_code,
             CONCAT_WS(', ',
                 address,
                 city,

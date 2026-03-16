@@ -91,9 +91,10 @@
 
                 <div class="form-input">
                     <label for="agent_code">Agent:</label>
-                    <select id="agent_code" name="apartment_agent_code" class="validate" data-type="text" required>
+                    <!-- <select id="agent_code" name="apartment_agent_code" class="validate" data-type="text" required> -->
                         <!-- Filled from API -->
-                    </select>
+                    <!-- </select> -->
+                    <input type="text"id="agent_code" name="apartment_agent_code" class="validate" data-type="text" readonly required>
                 </div>
 
                 <div class="form-input">

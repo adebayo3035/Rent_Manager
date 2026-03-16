@@ -24,7 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
     "addApartmentForm",
     "submitBtnAddApartment",
     "addApartmentMessage",
-    {}
+    {},
   );
   loadSupportData();
   const apartmentManager = new DataManager({
@@ -83,7 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
       {
         field: "agent_fullname",
         label: "Agent",
-        render: (item) => item.agent_fullname,
+        render: (item) => item.agent.agent_fullname,
       },
     ],
 
@@ -103,7 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td>${item.apartment_code}</td>
         <td>${item.property_name}</td>
         <td>${item.apartment_type_name}</td>
-        <td>${item.agent_fullname}</td>
+        <td>${item.agent.agent_fullname}</td>
         <td>${statusLabel}</td>
     `;
 
@@ -149,10 +149,15 @@ document.addEventListener("DOMContentLoaded", () => {
 </tr>
 
 <tr>
-    <td><strong>Property Code:</strong></td>
-    <td><input type="text" id="edit_property_name" value="${
-      apartment.property_code
-    }" readonly></td>
+    <td><strong>Property Name:</strong></td>
+    <td><input type="text" id="edit_property_name" value="${apartment.property.name} - ${apartment.property_code}" 
+        data-property-code="${apartment.property_code}" readonly></td>
+</tr>
+<tr>
+    <td><strong>Agent :</strong></td>
+    <td><input type="text" id="edit_agent_code" value="${apartment.agent.agent_name} - ${apartment.agent.agent_code}" 
+        data-agent-code="${apartment.agent.agent_code || ""}"
+ readonly></td>
 </tr>
 <tr>
     <td><strong>Apartment No. :</strong></td>
@@ -165,11 +170,6 @@ document.addEventListener("DOMContentLoaded", () => {
     <td><input type="text" id="edit_apartment_type_unit" value="${
       apartment.apartment_type_unit
     }" readonly></td>
-</tr>
-
-<tr>
-    <td><strong>Agent:</strong></td>
-    <td><select id="edit_agent_code" class="select2"></select></td>
 </tr>
 
 <tr>
@@ -223,15 +223,13 @@ document.addEventListener("DOMContentLoaded", () => {
         allowClear: true,
       });
 
-      
       // ----------------------------------------------------------
       // After DOM is ready, load support data for selects
       // ----------------------------------------------------------
       await loadSupportData();
-      
 
       // Apply default values AFTER loading
-      $("#edit_agent_code").val(apartment.agent_code).trigger("change");
+  
       $("#edit_apartment_type_id")
         .val(apartment.apartment_type_id)
         .trigger("change");
@@ -244,17 +242,17 @@ document.addEventListener("DOMContentLoaded", () => {
         UI.confirm("Are you sure you want to update this apartment?", () => {
           this.updateItem(apartment.apartment_code, {
             apartment_id: apartment.apartment_code,
-            property_code: document.getElementById("edit_property_name")
-              .value,
-              apartment_type_unit: document.getElementById('edit_apartment_type_unit').value,
-            agent_code: document.getElementById("edit_agent_code").value,
+            property_code: document.getElementById("edit_property_name").dataset.propertyCode,
+            apartment_type_unit: document.getElementById(
+              "edit_apartment_type_unit",
+            ).value,
+            agent_code: document.getElementById("edit_agent_code").dataset.agentCode,
             apartment_type_id: document.getElementById("edit_apartment_type_id")
               .value,
-            rent_amount: document.getElementById(
-              "edit_apartment_rent_amount"
-            ).value,
+            rent_amount: document.getElementById("edit_apartment_rent_amount")
+              .value,
             security_deposit: document.getElementById(
-              "edit_apartment_security_deposit"
+              "edit_apartment_security_deposit",
             ).value,
             status: document.getElementById("edit_status").value,
             action_type: "update_all",
@@ -274,10 +272,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.pm = apartmentManager;
 
+  // Define fullApiData in a scope accessible to all functions
+  let fullApiData = null;
+
   async function loadSupportData() {
     try {
       const res = await fetch(
-        "../backend/apartments/fetch_agent_property_type.php"
+        "../backend/apartments/fetch_agent_property_type.php",
       );
       const data = await res.json();
 
@@ -286,42 +287,36 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      // Store the data in the global variable
+      fullApiData = data.data;
+
       populateSelect(
         "#agent_code",
         data.data.agents,
         "agent_code",
-        (item) => `${item.firstname} ${item.lastname}`
+        (item) => `${item.firstname} ${item.lastname}`,
       );
       populateSelect(
         "#apartment_type_id",
         data.data.apartment_types,
         "type_id",
-        "type_name"
+        "type_name",
       );
       populateSelect(
         "#property_code",
         data.data.properties,
         "property_code",
-        "name"
+        "name",
       );
-      populateSelect(
-        "#edit_agent_code",
-        data.data.agents,
-        "agent_code",
-        (item) => `${item.firstname} ${item.lastname}`
-      );
+
+      // Add the change event listener specifically for property_code
+      setupPropertyChangeHandler();
       populateSelect(
         "#edit_apartment_type_id",
         data.data.apartment_types,
         "type_id",
-        "type_name"
+        "type_name",
       );
-    //   populateSelect(
-    //     "#edit_property_code",
-    //     data.data.properties,
-    //     "property_code",
-    //     "name"
-    //   );
     } catch (err) {
       console.error("Error fetching support data:", err);
     }
@@ -342,4 +337,59 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Function to set up property change handler
+  function setupPropertyChangeHandler() {
+    const propertySelect = document.getElementById("property_code");
+    const agentInput = document.getElementById("agent_code");
+
+    if (!propertySelect || !agentInput) return;
+
+    // Remove any existing event listeners (to avoid duplicates)
+    propertySelect.removeEventListener("change", handlePropertyChange);
+
+    // Add the change event listener
+    propertySelect.addEventListener("change", handlePropertyChange);
+  }
+
+  // Handler function for property change
+  function handlePropertyChange() {
+    const propertySelect = document.getElementById("property_code");
+    const agentInput = document.getElementById("agent_code");
+
+    // Get the selected property code
+    const selectedPropertyCode = propertySelect.value;
+
+    // Clear agent input if no property selected or no data
+    if (!selectedPropertyCode || !fullApiData) {
+      agentInput.value = "";
+      return;
+    }
+
+    // Find the selected property from the stored data
+    const selectedProperty = fullApiData.properties.find(
+      (p) => p.property_code === selectedPropertyCode,
+    );
+
+    if (selectedProperty && selectedProperty.agent_code) {
+      // Find the agent using the agent_code from the property
+      const agent = fullApiData.agents.find(
+        (a) => a.agent_code === selectedProperty.agent_code,
+      );
+
+      if (agent) {
+        // Display full name
+        agentInput.value = `${agent.firstname} ${agent.lastname}`;
+        // Store agent code for form submission if needed
+        agentInput.setAttribute("data-agent-code", agent.agent_code);
+      } else {
+        // If agent not found, just show the agent code
+        agentInput.value = selectedProperty.agent_code;
+        agentInput.setAttribute("data-agent-code", selectedProperty.agent_code);
+      }
+    } else {
+      agentInput.value = "";
+    }
+  }
+  // Initialize on page load
+  document.addEventListener("DOMContentLoaded", loadSupportData);
 });

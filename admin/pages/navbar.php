@@ -61,7 +61,7 @@
                                 <i class="fas fa-user-friends"></i> Tenants
                             </a>
                             
-                            <a href="rent_payments.php" class="dropdown-item">
+                            <a href="payment.php" class="dropdown-item">
                                 <i class="fas fa-money-check-alt"></i> Rent Payments
                             </a>
                             <a href="client.php" class="dropdown-item">
@@ -204,7 +204,7 @@
                                     <i class="fas fa-user-plus"></i> New Tenant
                                     <span class="mobile-badge">New</span>
                                 </a> -->
-                                <a href="rent_payments.php" class="mobile-nav-link sub">
+                                <a href="payment.php" class="mobile-nav-link sub">
                                     <i class="fas fa-money-check-alt"></i> Rent Payments
                                 </a>
                                 <a href="client.php" class="mobile-nav-link sub">

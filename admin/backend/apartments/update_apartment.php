@@ -33,14 +33,6 @@ try {
         json_error("Invalid request method. Use POST.", 405);
     }
 
-    // ================= CSRF PROTECTION =================
-    // $csrfToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
-    // if (!validateCsrfToken($csrfToken, CSRF_FORM_NAME)) {
-    //     logActivity("CSRF token validation failed for user {$adminId}");
-    //     json_error("Security token invalid or expired.", 403);
-    // }
-    // logActivity("CSRF token validation passed");
-
     // ================= VALIDATE JSON INPUT =================
     $rawInput = file_get_contents("php://input");
     if (empty($rawInput)) {
@@ -62,7 +54,7 @@ try {
     // ================= NORMALIZE & VALIDATE INPUTS =================
     $apartment_code = isset($input['apartment_id']) ? trim($input['apartment_id']) : '';
     $property_code = isset($input['property_code']) ? trim($input['property_code']) : '';
-    $agent_code = isset($input['agent_code']) ? trim($input['agent_code']) : '';
+    // $agent_code = isset($input['agent_code']) ? trim($input['agent_code']) : '';
     $apartment_type_id = isset($input['apartment_type_id']) ? (int) $input['apartment_type_id'] : 0;
     $apartment_type_unit = isset($input['apartment_type_unit']) ? (int) $input['apartment_type_unit'] : 0; // FIXED: Added missing variable
     $rent_amount = isset($input['rent_amount']) ? (float) $input['rent_amount'] : 0;
@@ -180,7 +172,7 @@ try {
                     $conn,
                     $apartment_code,
                     $property_code,
-                    $agent_code,
+                    // $agent_code,
                     $apartment_type_id,
                     $apartment_type_unit, // FIXED: Added missing parameter
                     $rent_amount,
@@ -212,39 +204,6 @@ try {
                 $auditDetails = ['action' => 'restore', 'apartment_code' => $apartment_code];
                 break;
         }
-
-        // ================= CREATE AUDIT LOG =================
-        // try {
-        //     $auditSql = "INSERT INTO apartment_audit_log 
-        //         (apartment_code, property_code, action, performed_by, details, ip_address, user_agent)
-        //         VALUES (?, ?, ?, ?, ?, ?, ?)";
-            
-        //     $auditStmt = $conn->prepare($auditSql);
-        //     if ($auditStmt) {
-        //         $detailsJson = json_encode($auditDetails);
-        //         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        //         $userAgent = substr($_SERVER['HTTP_USER_AGENT'] ?? 'unknown', 0, 255);
-                
-        //         $propertyCodeForAudit = $action_type === 'update_all' ? $property_code : $existing_property_code;
-                
-        //         $auditStmt->bind_param(
-        //             'sssssss',
-        //             $apartment_code,
-        //             $propertyCodeForAudit,
-        //             $action_type,
-        //             $adminId,
-        //             $detailsJson,
-        //             $ipAddress,
-        //             $userAgent
-        //         );
-        //         $auditStmt->execute();
-        //         $auditStmt->close();
-        //         logActivity("Audit log created for apartment {$apartment_code}");
-        //     }
-        // } catch (Exception $e) {
-        //     logActivity("WARNING: Failed to create audit log: " . $e->getMessage());
-        //     // Don't fail the whole request if audit fails
-        // }
 
         // ================= COMMIT TRANSACTION =================
         $conn->commit();
@@ -303,7 +262,7 @@ try {
 /**
  * Full update handler with comprehensive validation
  */
-function handleFullUpdate($conn, $apartment_code, $property_code, $agent_code, 
+function handleFullUpdate($conn, $apartment_code, $property_code, 
                          $apartment_type_id, $apartment_type_unit, $rent_amount, 
                          $security_deposit, $adminId, $status, $adminRole) {
     
@@ -325,25 +284,6 @@ function handleFullUpdate($conn, $apartment_code, $property_code, $agent_code,
                 $errors[] = "Property not found or inactive.";
             }
             $propStmt->close();
-        }
-    }
-
-    // Agent code validation
-    if (!empty($agent_code)) {
-        if (!preg_match('/^[A-Za-z0-9_\-]{4,64}$/', $agent_code)) {
-            $errors[] = "Invalid agent code format.";
-        } else {
-            // Verify agent exists and is active
-            $agentStmt = $conn->prepare("SELECT agent_code FROM agents WHERE agent_code = ? AND status = 1 LIMIT 1");
-            if ($agentStmt) {
-                $agentStmt->bind_param("s", $agent_code);
-                $agentStmt->execute();
-                $agentStmt->store_result();
-                if ($agentStmt->num_rows === 0) {
-                    $errors[] = "Agent not found or inactive.";
-                }
-                $agentStmt->close();
-            }
         }
     }
 
@@ -400,7 +340,6 @@ function handleFullUpdate($conn, $apartment_code, $property_code, $agent_code,
     $stmt = $conn->prepare("
         UPDATE apartments 
         SET 
-            agent_code = ?,
             apartment_type_id = ?,
             apartment_type_unit = ?,
             rent_amount = ?,
@@ -417,10 +356,9 @@ function handleFullUpdate($conn, $apartment_code, $property_code, $agent_code,
     }
 
     // FIXED: Correct parameter binding - 10 parameters
-    $types = "siiddiis";
+    $types = "siddiis";
     $stmt->bind_param(
         $types,
-        $agent_code,
         $apartment_type_id,
         $apartment_type_unit,
         $rent_amount,

@@ -107,20 +107,20 @@ try {
 
 
     // -----------------------------------------------------
-    //  MAIN QUERY
+    //  MAIN QUERY - Get apartments with property and agent info
     // -----------------------------------------------------
+    // First, get apartments with property information
     $query = "
         SELECT 
             p.*,
             pt.type_name AS apartment_type_name,
             pr.name AS property_name,
-            CONCAT(a.firstname, ' ', a.lastname) AS agent_fullname
+            pr.property_code,
+            pr.agent_code AS property_agent_code  -- Get agent_code from properties table
         FROM 
             apartments p
         LEFT JOIN 
             apartment_type pt ON p.apartment_type_id = pt.type_id
-        LEFT JOIN 
-            agents a ON p.agent_code = a.agent_code
         LEFT JOIN
             properties pr ON p.property_code = pr.property_code
         {$whereSQL}
@@ -150,15 +150,100 @@ try {
     $result = $stmt->get_result();
 
     $apartments = [];
+    $agentCodes = [];
+    
+    // First pass: collect apartments and gather unique agent codes
     while ($row = $result->fetch_assoc()) {
-        $row['status_display'] = ((int)$row['status'] === "1") ? 'Deactivated' : 'Activated';
+        $row['status_display'] = ((int)$row['status'] === 1) ? 'Deactivated' : 'Activated';
         $apartments[] = $row;
+        
+        // Collect unique agent codes from properties
+        if (!empty($row['property_agent_code'])) {
+            $agentCodes[$row['property_agent_code']] = true;
+        }
+    }
+    
+    $stmt->close();
+    
+    logActivity("Collected " . count($apartments) . " apartments with " . count($agentCodes) . " unique agent codes");
+
+
+    // -----------------------------------------------------
+    //  FETCH AGENT NAMES FOR ALL COLLECTED AGENT CODES
+    // -----------------------------------------------------
+    $agentNames = [];
+    if (!empty($agentCodes)) {
+        $agentCodeList = array_keys($agentCodes);
+        $placeholders = implode(',', array_fill(0, count($agentCodeList), '?'));
+        
+        $agentQuery = "
+            SELECT 
+                agent_code,
+                firstname,
+                lastname,
+                CONCAT(firstname, ' ', lastname) AS agent_fullname
+            FROM 
+                agents 
+            WHERE 
+                agent_code IN ({$placeholders})
+        ";
+        
+        logActivity("Agent Query: {$agentQuery} | Codes: " . json_encode($agentCodeList));
+        
+        $agentStmt = $conn->prepare($agentQuery);
+        if ($agentStmt) {
+            // Create types string for binding (all strings)
+            $agentTypes = str_repeat('s', count($agentCodeList));
+            $agentStmt->bind_param($agentTypes, ...$agentCodeList);
+            
+            $agentStmt->execute();
+            $agentResult = $agentStmt->get_result();
+            
+            while ($agentRow = $agentResult->fetch_assoc()) {
+                $agentNames[$agentRow['agent_code']] = [
+                    'firstname' => $agentRow['firstname'],
+                    'lastname' => $agentRow['lastname'],
+                    'agent_fullname' => $agentRow['agent_fullname']
+                ];
+            }
+            
+            $agentStmt->close();
+            logActivity("Fetched " . count($agentNames) . " agent names");
+        }
     }
 
-    $stmt->close();
+
+    // -----------------------------------------------------
+    //  ENRICH APARTMENTS WITH AGENT INFORMATION
+    // -----------------------------------------------------
+    foreach ($apartments as &$apartment) {
+        $agentCode = $apartment['property_agent_code'] ?? null;
+        
+        if ($agentCode && isset($agentNames[$agentCode])) {
+            // Add agent details to the apartment
+            $apartment['agent'] = [
+                'agent_code' => $agentCode,
+                'firstname' => $agentNames[$agentCode]['firstname'],
+                'lastname' => $agentNames[$agentCode]['lastname'],
+                'agent_fullname' => $agentNames[$agentCode]['agent_fullname']
+            ];
+        } else {
+            // No agent found
+            $apartment['agent'] = [
+                'agent_code' => $agentCode,
+                'firstname' => null,
+                'lastname' => null,
+                'agent_fullname' => $agentCode ? 'Agent not found' : 'No agent assigned'
+            ];
+        }
+        
+        // Also keep the original property_agent_code for backward compatibility
+        $apartment['agent_code_from_property'] = $agentCode;
+    }
+
     $conn->close();
 
-    logActivity("Fetch Success | Returned " . count($apartments) . " apartments");
+    logActivity("Fetch Success | Returned " . count($apartments) . " apartments with agent names");
 
 
     echo json_encode([
@@ -176,6 +261,10 @@ try {
 } catch (Exception $e) {
 
     logActivity("EXCEPTION | " . $e->getMessage() . " | IP: " . getClientIP());
+    
+    if (isset($conn) && $conn instanceof mysqli) {
+        $conn->close();
+    }
 
     echo json_encode(["success" => false, "message" => "An unexpected error occurred"]);
     exit();

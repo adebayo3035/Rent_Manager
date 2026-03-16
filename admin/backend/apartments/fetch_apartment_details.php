@@ -45,14 +45,6 @@ try {
     }
 
     $apartment_code = trim($input['id']);
-
-    // Valid apartment_code format? (hex or alphanumeric, length 8–64)
-    // if (!preg_match('/^[a-zA-Z0-9]+$/', $apartment_code)) {
-    //     logActivity("Validation Error: Invalid apartment_code format: {$apartment_code}");
-    //     echo json_encode(['success' => false, 'message' => 'Invalid apartment_code format']);
-    //     exit();
-    // }
-
     logActivity("Validated apartment_code: {$apartment_code}");
 
 
@@ -63,9 +55,24 @@ try {
     logActivity("Transaction started.");
 
 
-    // ------------------------ SQL PREPARATION ------------------------
-    $query = "SELECT * FROM apartments WHERE apartment_code = ?";
-    logActivity("Preparing SQL Query: {$query}");
+    // ------------------------ SQL PREPARATION - APARTMENT DETAILS WITH JOIN ------------------------
+    // Updated query to join apartments with properties and agents in a single query
+    $query = "
+        SELECT 
+            a.*,
+            p.name as property_name,
+            p.address as property_address,
+            p.agent_code as property_agent_code,
+            ag.firstname as agent_firstname,
+            ag.lastname as agent_lastname,
+            CONCAT(ag.firstname, ' ', ag.lastname) as agent_name
+        FROM apartments a
+        LEFT JOIN properties p ON a.property_code = p.property_code
+        LEFT JOIN agents ag ON p.agent_code = ag.agent_code
+        WHERE a.apartment_code = ?
+    ";
+    
+    logActivity("Preparing SQL Query with joins: {$query}");
 
     $stmt = $conn->prepare($query);
     if (!$stmt) {
@@ -76,7 +83,6 @@ try {
 
 
     // ------------------------ SQL BIND ------------------------
-    // apartment_code is a string, so bind as 's'
     if (!$stmt->bind_param("s", $apartment_code)) {
         throw new Exception("SQL Bind Failed: " . $stmt->error);
     }
@@ -108,8 +114,61 @@ try {
         exit();
     }
 
-    $apartmentDetails = $result->fetch_assoc();
-    logActivity("Apartment details fetched: " . json_encode($apartmentDetails));
+    $apartmentData = $result->fetch_assoc();
+    logActivity("Apartment data fetched with joins: " . json_encode($apartmentData));
+
+
+    // ------------------------ STRUCTURE THE APARTMENT DETAILS WITH NESTED AGENT INFO ------------------------
+    $apartmentDetails = [
+        // Basic apartment information
+        'apartment_code' => $apartmentData['apartment_code'],
+        'apartment_number' => $apartmentData['apartment_number'],
+        'property_code' => $apartmentData['property_code'],
+        'status' => $apartmentData['status'] ?? null,
+        'created_at' => $apartmentData['created_at'] ?? null,
+        'updated_at' => $apartmentData['updated_at'] ?? null,
+        
+        // Property information
+        'property' => [
+            'name' => $apartmentData['property_name'],
+            'address' => $apartmentData['property_address'],
+            'agent_code' => $apartmentData['property_agent_code']
+        ],
+        
+        // Agent information (nested inside apartment_details)
+        'agent' => [
+            'agent_code' => $apartmentData['property_agent_code'],
+            'firstname' => $apartmentData['agent_firstname'],
+            'lastname' => $apartmentData['agent_lastname'],
+            'agent_name' => $apartmentData['agent_name'] ?? 
+                           trim(($apartmentData['agent_firstname'] ?? '') . ' ' . ($apartmentData['agent_lastname'] ?? ''))
+        ]
+    ];
+
+    // Add any additional fields from apartments table that might exist
+    // This ensures we don't miss any apartment-specific fields
+    foreach ($apartmentData as $key => $value) {
+        // Skip keys we've already explicitly set or that are from joined tables
+        if (!in_array($key, [
+            'apartment_code', 'apartment_number', 'property_code', 'status', 
+            'created_at', 'updated_at', 'property_name', 'property_address', 
+            'property_agent_code', 'agent_firstname', 'agent_lastname', 'agent_name'
+        ]) && !str_starts_with($key, 'property_') && !str_starts_with($key, 'agent_')) {
+            $apartmentDetails[$key] = $value;
+        }
+    }
+
+    // Clean up agent info if no agent exists
+    if (empty($apartmentDetails['agent']['agent_code'])) {
+        $apartmentDetails['agent'] = [
+            'agent_code' => null,
+            'firstname' => null,
+            'lastname' => null,
+            'agent_name' => 'No agent assigned'
+        ];
+    }
+
+    logActivity("Structured apartment details with nested agent info: " . json_encode($apartmentDetails));
 
 
     // ------------------------ COMMIT TRANSACTION ------------------------
@@ -120,14 +179,14 @@ try {
     // ------------------------ SUCCESS RESPONSE ------------------------
     $response = [
         'success' => true,
-        'apartment_details' => $apartmentDetails,
+        'apartment_details' => $apartmentDetails,  // All data nested here
         'logged_in_user_role' => $loggedInUserRole,
         'requested_by' => $adminId,
         'timestamp' => date('c')
     ];
 
     echo json_encode($response);
-    logActivity("SUCCESS: Apartment details returned successfully.");
+    logActivity("SUCCESS: Apartment details with agent info returned successfully.");
 
 } catch (Exception $e) {
 

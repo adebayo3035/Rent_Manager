@@ -35,7 +35,7 @@ try {
     // ------------------------- INPUT COLLECTION & SANITIZATION -------------------------
     $rawInputs = [
         'property_code' => $_POST['apartment_property_code'] ?? '',
-        'agent_code' => $_POST['apartment_agent_code'] ?? '',
+        // 'agent_code' => $_POST['apartment_agent_code'] ?? '',
         'apartment_type_id' => $_POST['apartment_type'] ?? '',
         'apartment_type_unit' => $_POST['apartment_type_unit'] ?? '',
         'rent_amount' => $_POST['apartment_rent_amount'] ?? '',
@@ -53,7 +53,7 @@ try {
 
     // Extract variables
     $propertyCode = trim($inputs['property_code']);
-    $agentCode = trim($inputs['agent_code']);
+    // $agentCode = trim($inputs['agent_code']);
     $typeId = (int) $inputs['apartment_type_id'];
     $typeUnit = (int) $inputs['apartment_type_unit'];
     // $floorNumber    = !empty($inputs['floor_number']) ? (int) $inputs['floor_number'] : null;
@@ -68,7 +68,7 @@ try {
     // Required fields validation
     $required = [
         'property_code' => 'Property Code',
-        'agent_code' => 'Agent Code',
+        // 'agent_code' => 'Agent Code',
         'apartment_type_id' => 'Apartment Type',
         'apartment_type_unit' => 'Apartment Unit'
     ];
@@ -85,9 +85,9 @@ try {
     }
 
     // Agent code format validation
-    if (!empty($agentCode) && !preg_match('/^[A-Za-z0-9_\-]{4,64}$/', $agentCode)) {
-        $errors[] = "Invalid agent code format.";
-    }
+    // if (!empty($agentCode) && !preg_match('/^[A-Za-z0-9_\-]{4,64}$/', $agentCode)) {
+    //     $errors[] = "Invalid agent code format.";
+    // }
 
     // Apartment type unit validation
     if ($typeUnit < MIN_APARTMENT_UNIT || $typeUnit > MAX_APARTMENT_UNIT) {
@@ -152,21 +152,6 @@ try {
 
         logActivity("Property validation passed: {$propertyCode} | Max apartments: {$maxApartments}");
 
-        // 2. Validate agent exists and is active
-        if (!empty($agentCode)) {
-            $agentStmt = $conn->prepare("SELECT agent_code FROM agents WHERE agent_code = ? AND status = 1 LIMIT 1");
-            $agentStmt->bind_param("s", $agentCode);
-            $agentStmt->execute();
-            $agentStmt->store_result();
-
-            if ($agentStmt->num_rows === 0) {
-                $agentStmt->close();
-                throw new Exception("Agent not found or inactive.", 400);
-            }
-            $agentStmt->close();
-            logActivity("Agent validation passed: {$agentCode}");
-        }
-
         // 3. Validate apartment type exists and is active
         $typeStmt = $conn->prepare("SELECT type_name FROM apartment_type WHERE type_id = ? AND status = 1 LIMIT 1");
         $typeStmt->bind_param("i", $typeId);
@@ -230,33 +215,6 @@ try {
             }
             $dupNumberStmt->close();
         }
-
-        // Check for duplicate unit combination (property + type + unit)
-        // $dupUnitStmt = $conn->prepare("
-        //     SELECT apartment_code 
-        //     FROM apartments 
-        //     WHERE property_code = ? 
-        //       AND apartment_type_id = ? 
-        //       AND apartment_type_unit = ?
-        //       AND status = 1
-        //     LIMIT 1
-        // ");
-        // $dupUnitStmt->bind_param("sii", $propertyCode, $typeId, $typeUnit);
-        // $dupUnitStmt->execute();
-        // $dupUnitStmt->store_result();
-
-        // if ($dupUnitStmt->num_rows > 0) {
-        //     $dupUnitStmt->close();
-        //     throw new Exception(
-        //         "This apartment unit (Type: {$apartmentTypeName}, Unit: {$typeUnit}) " .
-        //         "already exists under property '{$propertyCode}'.",
-        //         409
-        //     );
-        // }
-        // $dupUnitStmt->close();
-
-        // logActivity("Duplicate checks passed.");
-
         // ------------------------- GENERATE APARTMENT CODE -------------------------
         // Enhanced apartment code generation
         $apartmentCode = generateApartmentCode($propertyCode, $typeUnit, $apartmentNumber);
@@ -267,7 +225,6 @@ try {
     INSERT INTO apartments (
         apartment_code,
         property_code,
-        agent_code,
         apartment_type_id,
         apartment_type_unit,
         apartment_number,
@@ -276,7 +233,7 @@ try {
         occupancy_status,
         created_by,
         created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW())
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NOW())
 ";
 
         $stmt = $conn->prepare($insertSql);
@@ -286,10 +243,9 @@ try {
 
         // Bind parameters
         $stmt->bind_param(
-            "sssiiidds",
+            "ssiiidds",
             $apartmentCode,
             $propertyCode,
-            $agentCode,
             $typeId,
             $typeUnit,
             $apartmentNumber,
@@ -312,57 +268,6 @@ try {
 
         logActivity("Apartment inserted successfully. ID: {$newApartmentId}, Code: {$apartmentCode}");
 
-        // ------------------------- UPDATE PROPERTY STATISTICS -------------------------
-        // Optionally update property statistics or trigger any post-creation logic
-        // $updateStatsStmt = $conn->prepare("
-        //     UPDATE properties 
-        //     SET total_apartments = (
-        //         SELECT COUNT(*) FROM apartments 
-        //         WHERE property_code = ? AND status = 1
-        //     ),
-        //     last_updated_by = ?,
-        //     updated_at = NOW()
-        //     WHERE property_code = ?
-        // ");
-
-        // if ($updateStatsStmt) {
-        //     $updateStatsStmt->bind_param("sis", $propertyCode, $userId, $propertyCode);
-        //     $updateStatsStmt->execute();
-        //     $updateStatsStmt->close();
-        //     logActivity("Property statistics updated for {$propertyCode}");
-        // }
-
-        // // ------------------------- CREATE AUDIT TRAIL -------------------------
-        // $auditSql = "INSERT INTO apartment_audit_log 
-        //     (apartment_code, property_code, action, performed_by, details, ip_address, user_agent)
-        //     VALUES (?, ?, 'CREATE', ?, ?, ?, ?)";
-
-        // $auditStmt = $conn->prepare($auditSql);
-        // if ($auditStmt) {
-        //     $details = json_encode([
-        //         'apartment_type' => $apartmentTypeName,
-        //         'apartment_unit' => $typeUnit,
-        //         'floor_number' => $floorNumber,
-        //         'apartment_number' => $apartmentNumber,
-        //         'rent_amount' => $rentAmount,
-        //         'remaining_capacity' => $remainingCapacity - 1 // After this insertion
-        //     ]);
-        //     $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        //     $userAgent = substr($_SERVER['HTTP_USER_AGENT'] ?? 'unknown', 0, 255);
-
-        //     $auditStmt->bind_param(
-        //         'ssssss',
-        //         $apartmentCode,
-        //         $propertyCode,
-        //         $userId,
-        //         $details,
-        //         $ipAddress,
-        //         $userAgent
-        //     );
-        //     $auditStmt->execute();
-        //     $auditStmt->close();
-        //     logActivity("Audit log created for apartment {$apartmentCode}");
-        // }
 
         // ------------------------- COMMIT TRANSACTION -------------------------
         $conn->commit();

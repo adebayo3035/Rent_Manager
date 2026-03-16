@@ -263,6 +263,7 @@ class DataManager {
 
               // Reset form
               form.reset();
+              messageDiv.textContent = "";
               if (photoPreview) {
                 photoPreview.innerHTML = `<span style="font-size:12px;color:#777;">No image</span>`;
               }

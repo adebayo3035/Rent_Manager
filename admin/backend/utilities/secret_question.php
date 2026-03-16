@@ -111,7 +111,7 @@ if ($attemptData) {
 //     ]);
 // }
 
-if (!verifyAndUpgradePassword($conn, $unique_id, $password, $hashedPassword)) {
+if (!verifyAndRehashPassword($conn, $unique_id, $password, $hashedPassword)) {
     if ($attemptData) {
         $newAttempts = $attempts + 1;
         $lockedUntilTime = null;
