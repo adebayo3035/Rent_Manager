@@ -406,8 +406,8 @@ try {
 
     // 8. Update apartment occupancy status
     $occupancy_status = 'OCCUPIED';
-    $update_apt = $conn->prepare("UPDATE apartments SET occupancy_status = ? WHERE apartment_code = ?");
-    $update_apt->bind_param("ss", $occupancy_status, $inputs['apartment_code']);
+    $update_apt = $conn->prepare("UPDATE apartments SET occupied_by = ?, occupancy_status = ? WHERE apartment_code = ?");
+    $update_apt->bind_param("sss", $tenant_code, $occupancy_status, $inputs['apartment_code']);
 
     if (!$update_apt->execute()) {
         throw new Exception('Failed to update apartment status: ' . $update_apt->error);
