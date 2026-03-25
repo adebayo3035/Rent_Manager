@@ -110,13 +110,13 @@
 
                 <div class="form-input">
                     <label for="apartment_rent_amount">Rent Amount</label>
-                    <input type="number" id="apartment_rent_amount" name="apartment_rent_amount" class="validate" data-type="number"
+                    <input type="text" id="apartment_rent_amount" name="apartment_rent_amount" class="validate number-input" 
                         required>
                 </div>
 
                 <div class="form-input">
                     <label for="apartment_security_deposit">Security Deposit</label>
-                    <input type="number" id="apartment_security_deposit" name="apartment_security_deposit" class="validate" data-type="number"
+                    <input type="text" id="apartment_security_deposit" name="apartment_security_deposit" class="validate number-input"
                         required>
                 </div>
                 

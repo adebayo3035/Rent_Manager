@@ -18,6 +18,90 @@ function hideEditLoader() {
   document.querySelector("#apartmentDetailsTable").style.opacity = "1";
 }
 
+// Function to format number with commas
+function formatNumberWithCommas(value) {
+    if (!value && value !== 0) return '';
+    
+    // Convert to string and remove existing commas
+    let cleanValue = value.toString().replace(/,/g, '');
+    
+    // Check if it's a valid number
+    if (cleanValue === '' || isNaN(cleanValue)) return '';
+    
+    // Split integer and decimal parts
+    let parts = cleanValue.split('.');
+    let integerPart = parts[0];
+    let decimalPart = parts[1] !== undefined ? '.' + parts[1] : '';
+    
+    // Add commas to integer part
+    integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    
+    return integerPart + decimalPart;
+}
+
+// Event handler for input fields
+function handleNumberInput(event) {
+    let input = event.target;
+    
+    // Store cursor position
+    let cursorPosition = input.selectionStart;
+    let originalValue = input.value;
+    
+    // Get raw value (remove commas and non-numeric except decimal)
+    let rawValue = originalValue.replace(/,/g, '');
+    
+    // Allow only numbers and decimal point
+    rawValue = rawValue.replace(/[^\d.]/g, '');
+    
+    // Handle multiple decimal points
+    let decimalCount = (rawValue.match(/\./g) || []).length;
+    if (decimalCount > 1) {
+        let firstDecimalIndex = rawValue.indexOf('.');
+        rawValue = rawValue.substring(0, firstDecimalIndex + 1) + 
+                   rawValue.substring(firstDecimalIndex + 1).replace(/\./g, '');
+    }
+    
+    // Format with commas
+    let formattedValue = formatNumberWithCommas(rawValue);
+    
+    // Update input value if changed
+    if (originalValue !== formattedValue) {
+        input.value = formattedValue;
+        
+        // Store raw value in data attribute for form submission
+        input.setAttribute('data-raw-value', rawValue);
+        
+        // Calculate new cursor position
+        let newLength = formattedValue.length;
+        let newCursorPosition = cursorPosition + (newLength - originalValue.length);
+        if (newCursorPosition >= 0 && newCursorPosition <= formattedValue.length) {
+            input.setSelectionRange(newCursorPosition, newCursorPosition);
+        }
+    }
+}
+
+// Function to initialize number formatting on all number inputs
+function initializeNumberInputs() {
+    document.querySelectorAll('.number-input').forEach(input => {
+        // Remove existing event listener to avoid duplicates
+        input.removeEventListener('input', handleNumberInput);
+        
+        // Add event listener
+        input.addEventListener('input', handleNumberInput);
+        
+        // Initialize any existing values
+        if (input.value && !isNaN(input.value.replace(/,/g, ''))) {
+            let rawValue = input.value.toString().replace(/,/g, '');
+            let formattedValue = formatNumberWithCommas(rawValue);
+            
+            if (input.value !== formattedValue) {
+                input.value = formattedValue;
+            }
+            input.setAttribute('data-raw-value', rawValue);
+        }
+    });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   // initFormValidation("addApartmentForm", "submitBtnAddApartment", "addApartmentMessage");
   initFormValidation(
@@ -26,6 +110,10 @@ document.addEventListener("DOMContentLoaded", () => {
     "addApartmentMessage",
     {},
   );
+
+  // Apply to all number inputs with a specific class
+  initializeNumberInputs();
+  
   loadSupportData();
   const apartmentManager = new DataManager({
     // ============================
@@ -137,82 +225,62 @@ document.addEventListener("DOMContentLoaded", () => {
       showEditLoader(); // 🔥 Disable modal + show spinner
       const body = document.querySelector("#apartmentDetailsTable tbody");
       if (!body) return;
+      
+      // Format numbers for display
+      const formattedRent = formatNumberWithCommas(apartment.rent_amount);
+      const formattedSecurityDeposit = formatNumberWithCommas(apartment.security_deposit);
 
       // Build the form UI
       body.innerHTML = `
-
-<tr>
-    <td><strong>Apartment ID:</strong></td>
-    <td><input type="text" id="edit_apartment_id" value="${
-      apartment.apartment_code
-    }" readonly></td>
-</tr>
-
-<tr>
-    <td><strong>Property Name:</strong></td>
-    <td><input type="text" id="edit_property_name" value="${apartment.property.name} - ${apartment.property_code}" 
-        data-property-code="${apartment.property_code}" readonly></td>
-</tr>
-<tr>
-    <td><strong>Agent :</strong></td>
-    <td><input type="text" id="edit_agent_code" value="${apartment.agent.agent_name} - ${apartment.agent.agent_code}" 
-        data-agent-code="${apartment.agent.agent_code || ""}"
- readonly></td>
-</tr>
-<tr>
-    <td><strong>Apartment No. :</strong></td>
-    <td><input type="text" id="edit_apartment_number" value="${
-      apartment.apartment_number
-    }" readonly></td>
-</tr>
-<tr>
-    <td><strong>Apartment Unit:</strong></td>
-    <td><input type="text" id="edit_apartment_type_unit" value="${
-      apartment.apartment_type_unit
-    }" readonly></td>
-</tr>
-
-<tr>
-    <td><strong>Apartment Type:</strong></td>
-    <td><select id="edit_apartment_type_id" class="select2"></select></td>
-</tr>
-
-
-
-<tr>
-    <td><strong>Rent Amount :</strong></td>
-    <td><input type="text" id="edit_apartment_rent_amount" value="${
-      apartment.rent_amount
-    }"></td>
-</tr>
-
-<tr>
-    <td><strong>Security Deposit :</strong></td>
-    <td><input type="text" id="edit_apartment_security_deposit" value="${
-      apartment.security_deposit
-    }"></td>
-</tr>
-
-<tr>
-    <td><strong>Status:</strong></td>
-    <td>
-        <select id="edit_status" class="select2">
-            <option value="1" ${
-              apartment.status == 1 ? "selected" : ""
-            }>Active</option>
-            <option value="0" ${
-              apartment.status == 0 ? "selected" : ""
-            }>Inactive</option>
-        </select>
-    </td>
-</tr>
-
-<tr>
-    <td colspan="2" style="text-align:center;">
-        <button id="updateApartmentBtn" class="btn btn-primary">Update Apartment</button>
-    </td>
-</tr>
-`;
+        <tr>
+          <td><strong>Apartment ID:</strong></td>
+          <td><input type="text" id="edit_apartment_id" value="${apartment.apartment_code}" readonly></td>
+        </tr>
+        <tr>
+          <td><strong>Property Name:</strong></td>
+          <td><input type="text" id="edit_property_name" value="${apartment.property.name} - ${apartment.property_code}" 
+              data-property-code="${apartment.property_code}" readonly></td>
+        </tr>
+        <tr>
+          <td><strong>Agent :</strong></td>
+          <td><input type="text" id="edit_agent_code" value="${apartment.agent.agent_name} - ${apartment.agent.agent_code}" 
+              data-agent-code="${apartment.agent.agent_code || ""}" readonly></td>
+        </tr>
+        <tr>
+          <td><strong>Apartment No. :</strong></td>
+          <td><input type="text" id="edit_apartment_number" value="${apartment.apartment_number}" readonly></td>
+        </tr>
+        <tr>
+          <td><strong>Apartment Unit:</strong></td>
+          <td><input type="text" id="edit_apartment_type_unit" value="${apartment.apartment_type_unit}" readonly></td>
+        </tr>
+        <tr>
+          <td><strong>Apartment Type:</strong></td>
+          <td><select id="edit_apartment_type_id" class="select2"></select></td>
+        </tr>
+        <tr>
+          <td><strong>Rent Amount :</strong></td>
+          <td><input type="text" class="validate number-input" id="edit_apartment_rent_amount" value="${formattedRent}"></td>
+        </tr>
+        <tr>
+          <td><strong>Security Deposit :</strong></td>
+          <td><input type="text" class="validate number-input" id="edit_apartment_security_deposit" value="${formattedSecurityDeposit}"></td>
+        </tr>
+        <tr>
+          <td><strong>Status:</strong></td>
+          <td>
+            <select id="edit_status" class="select2">
+              <option value="1" ${apartment.status == 1 ? "selected" : ""}>Active</option>
+              <option value="0" ${apartment.status == 0 ? "selected" : ""}>Inactive</option>
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="text-align:center;">
+            <button id="updateApartmentBtn" class="btn btn-primary">Update Apartment</button>
+          </td>
+        </tr>
+      `;
 
       // -------------------------------------------------------
       // INIT SELECT2 ON ALL SELECTS
@@ -229,31 +297,43 @@ document.addEventListener("DOMContentLoaded", () => {
       await loadSupportData();
 
       // Apply default values AFTER loading
-  
       $("#edit_apartment_type_id")
         .val(apartment.apartment_type_id)
         .trigger("change");
+
+      // 🔥 IMPORTANT: Initialize number formatting on the newly added inputs
+      initializeNumberInputs();
 
       hideEditLoader(); // 🔥 All done — show form & enable modal
 
       // Attach update handler
       const btn = document.getElementById("updateApartmentBtn");
       btn.addEventListener("click", () => {
+        // Get raw values from data attributes (without commas)
+        const rentAmountInput = document.getElementById("edit_apartment_rent_amount");
+        const securityDepositInput = document.getElementById("edit_apartment_security_deposit");
+        
+        // Get raw values from data attributes or parse from input
+        let rentAmount = rentAmountInput.getAttribute('data-raw-value');
+        let securityDeposit = securityDepositInput.getAttribute('data-raw-value');
+        
+        // If data attribute doesn't exist, get value and remove commas
+        if (!rentAmount && rentAmount !== '0') {
+          rentAmount = rentAmountInput.value.replace(/,/g, '');
+        }
+        if (!securityDeposit && securityDeposit !== '0') {
+          securityDeposit = securityDepositInput.value.replace(/,/g, '');
+        }
+        
         UI.confirm("Are you sure you want to update this apartment?", () => {
           this.updateItem(apartment.apartment_code, {
             apartment_id: apartment.apartment_code,
             property_code: document.getElementById("edit_property_name").dataset.propertyCode,
-            apartment_type_unit: document.getElementById(
-              "edit_apartment_type_unit",
-            ).value,
+            apartment_type_unit: document.getElementById("edit_apartment_type_unit").value,
             agent_code: document.getElementById("edit_agent_code").dataset.agentCode,
-            apartment_type_id: document.getElementById("edit_apartment_type_id")
-              .value,
-            rent_amount: document.getElementById("edit_apartment_rent_amount")
-              .value,
-            security_deposit: document.getElementById(
-              "edit_apartment_security_deposit",
-            ).value,
+            apartment_type_id: document.getElementById("edit_apartment_type_id").value,
+            rent_amount: rentAmount, // Send raw value
+            security_deposit: securityDeposit, // Send raw value
             status: document.getElementById("edit_status").value,
             action_type: "update_all",
           });
@@ -311,6 +391,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Add the change event listener specifically for property_code
       setupPropertyChangeHandler();
+      
       populateSelect(
         "#edit_apartment_type_id",
         data.data.apartment_types,
@@ -390,6 +471,7 @@ document.addEventListener("DOMContentLoaded", () => {
       agentInput.value = "";
     }
   }
+  
   // Initialize on page load
   document.addEventListener("DOMContentLoaded", loadSupportData);
 });

@@ -89,6 +89,7 @@ function initFormValidation(formId, submitBtnId, messageLabelId, options = {}) {
   function validateField(field) {
     const type = field.dataset.type || field.type;
     const value = field.value.trim();
+    const customSet = field.dataset.customize;
 
     // Handle file inputs separately
     if (type === "file" || field.type === "file") {

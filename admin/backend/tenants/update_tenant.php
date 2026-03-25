@@ -67,11 +67,11 @@ try {
     $conn->begin_transaction();
     logActivity("TRANSACTION START for tenant_code=$tenant_code");
 
-    // ================= CHECK AGENT EXISTS =================
-    $check = $conn->prepare("SELECT tenant_code, status FROM tenants WHERE tenant_code = ?");
+    // ================= CHECK TENANT EXISTS =================
+    $check = $conn->prepare("SELECT tenant_code, status, apartment_code, property_code FROM tenants WHERE tenant_code = ?");
     $check->bind_param("s", $tenant_code);
     $check->execute();
-    $check->bind_result($existing_code, $existing_status);
+    $check->bind_result($existing_code, $existing_status, $current_apartment_code, $current_property_code);
 
     if (!$check->fetch()) {
         logActivity("ERROR: Tenant not found (Tenant Code: $tenant_code)");
@@ -86,15 +86,15 @@ try {
     switch ($action_type) {
 
         case 'update_all':
-            $response = fullUpdate($conn, $input, $tenant_code, $adminId, $adminRole);
+            $response = fullUpdate($conn, $input, $tenant_code, $adminId, $adminRole, $current_apartment_code, $current_property_code);
             break;
 
         case 'delete':
-            $response = statusUpdate($conn, $tenant_code, 0, $adminId, $adminRole, "delete");
+            $response = statusUpdate($conn, $tenant_code, 0, $adminId, $adminRole, "delete", $current_apartment_code);
             break;
 
         case 'restore':
-            $response = statusUpdate($conn, $tenant_code, 1, $adminId, $adminRole, "restore");
+            $response = statusUpdate($conn, $tenant_code, 1, $adminId, $adminRole, "restore", $current_apartment_code);
             break;
 
         default:
@@ -129,7 +129,7 @@ try {
 /* ============================================================
    FULL UPDATE
    ============================================================ */
-function fullUpdate($conn, $input, $tenant_code, $adminId, $adminRole)
+function fullUpdate($conn, $input, $tenant_code, $adminId, $adminRole, $current_apartment_code, $current_property_code)
 {
     logActivity("FULL UPDATE START for Tenant=$tenant_code by Admin=$adminId");
 
@@ -260,27 +260,107 @@ function fullUpdate($conn, $input, $tenant_code, $adminId, $adminRole)
     }
     $dup->close();
 
-    // Confirm property and apartment exist
-    $propCheck = $conn->prepare("
-        SELECT p.property_code, a.apartment_code
-        FROM properties p
-        JOIN apartments a ON p.property_code = a.property_code
+    // Confirm property and apartment exist and get apartment details
+    $aptCheck = $conn->prepare("
+        SELECT a.apartment_code, a.occupied_by, a.occupancy_status, p.property_code
+        FROM apartments a
+        JOIN properties p ON a.property_code = p.property_code
         WHERE p.property_code = ? AND a.apartment_code = ?
-        LIMIT 1 ");
-    $propCheck->bind_param("ss", $property_code, $apartment_code);
-    $propCheck->execute();
-    $propCheck->store_result();
-    if ($propCheck->num_rows === 0) {
+        LIMIT 1
+    ");
+    $aptCheck->bind_param("ss", $property_code, $apartment_code);
+    $aptCheck->execute();
+    $aptCheck->store_result();
+    
+    if ($aptCheck->num_rows === 0) {
         logActivity("ERROR: Property or Apartment not found during update for tenant=$tenant_code");
         json_error("Property or Apartment not found.", 404);
     }
-    $propCheck->close();
+    $apt_code = ""; $occupied_by = ""; $occupancy_status = ""; $prop_code = "";
+    $aptCheck->bind_result($apt_code, $occupied_by, $occupancy_status, $prop_code);
+    $aptCheck->fetch();
+    $aptCheck->close();
 
-    // Perform update
+    // ================= APARTMENT OCCUPANCY HANDLING =================
+    
+    // Check if apartment is being changed
+    $is_apartment_changed = ($current_apartment_code !== $apartment_code);
+    
+    if ($is_apartment_changed) {
+        logActivity("APARTMENT CHANGE DETECTED | From: {$current_apartment_code} To: {$apartment_code}");
+        
+        // 1. Check if the new apartment is already occupied
+        if ($occupied_by !== null && $occupancy_status === 'OCCUPIED') {
+            logActivity("ERROR: New apartment {$apartment_code} is already occupied by tenant: {$occupied_by}");
+            json_error("Selected apartment is already occupied by another tenant.", 409);
+        }
+        
+        // 2. Clear the old apartment (if it exists and was occupied by this tenant)
+        if (!empty($current_apartment_code)) {
+            $clearOldStmt = $conn->prepare("
+                UPDATE apartments 
+                SET occupied_by = NULL, 
+                    occupancy_status = 'NOT OCCUPIED',
+                    updated_at = NOW(),
+                    last_updated_by = ?
+                WHERE apartment_code = ? AND occupied_by = ?
+            ");
+            $clearOldStmt->bind_param("iss", $adminId, $current_apartment_code, $tenant_code);
+            $clearOldStmt->execute();
+            
+            if ($clearOldStmt->affected_rows > 0) {
+                logActivity("SUCCESS: Cleared old apartment {$current_apartment_code}");
+            } else {
+                logActivity("WARNING: Old apartment {$current_apartment_code} was not occupied by this tenant or not found");
+            }
+            $clearOldStmt->close();
+        }
+        
+        // 3. Update the new apartment
+        $updateNewStmt = $conn->prepare("
+            UPDATE apartments 
+            SET occupied_by = ?, 
+                occupancy_status = 'OCCUPIED',
+                last_updated_by = ?,
+                updated_at = NOW()
+            WHERE apartment_code = ?
+        ");
+        $updateNewStmt->bind_param("sis", $tenant_code, $adminId, $apartment_code);
+        $updateNewStmt->execute();
+        
+        if ($updateNewStmt->affected_rows > 0) {
+            logActivity("SUCCESS: New apartment {$apartment_code} assigned to tenant {$tenant_code}");
+        } else {
+            logActivity("WARNING: New apartment {$apartment_code} could not be updated");
+        }
+        $updateNewStmt->close();
+        
+    } else {
+        logActivity("Apartment unchanged: {$apartment_code}");
+        // Still verify that the current apartment is properly assigned
+        if ($occupied_by !== $tenant_code && $occupied_by !== null) {
+            logActivity("WARNING: Apartment {$apartment_code} is assigned to different tenant: {$occupied_by}");
+            // Fix the mismatch
+            $fixStmt = $conn->prepare("
+                UPDATE apartments 
+                SET occupied_by = ?, 
+                    occupancy_status = 'OCCUPIED',
+                    last_updated_by = ?,
+                    updated_at = NOW()
+                WHERE apartment_code = ?
+            ");
+            $fixStmt->bind_param("sis", $tenant_code, $adminId, $apartment_code);
+            $fixStmt->execute();
+            $fixStmt->close();
+            logActivity("FIXED: Apartment {$apartment_code} now correctly assigned to tenant {$tenant_code}");
+        }
+    }
+
+    // Perform tenant update
     $stmt = $conn->prepare("
         UPDATE tenants SET
             property_code = ?, apartment_code = ?, firstname = ?, lastname = ?, gender = ?, email = ?, phone = ?,
-             lease_start_date = ?, lease_end_date = ?, payment_frequency = ?, status = ?, 
+            lease_start_date = ?, lease_end_date = ?, payment_frequency = ?, status = ?, 
             last_updated_by = ?, last_updated_at = NOW()
         WHERE tenant_code = ?
         LIMIT 1
@@ -310,7 +390,7 @@ function fullUpdate($conn, $input, $tenant_code, $adminId, $adminRole)
 
     return [
         "success" => true,
-        "message" => "Tenant updated successfully."
+        "message" => "Tenant updated successfully." . ($is_apartment_changed ? " Apartment assignment updated." : "")
     ];
 }
 
@@ -319,7 +399,7 @@ function fullUpdate($conn, $input, $tenant_code, $adminId, $adminRole)
 /* ============================================================
    STATUS UPDATE (delete / restore)
    ============================================================ */
-function statusUpdate($conn, $tenant_code, $new_status, $adminId, $adminRole, $action)
+function statusUpdate($conn, $tenant_code, $new_status, $adminId, $adminRole, $action, $current_apartment_code)
 {
     logActivity("STATUS UPDATE START ($action) for Tenant=$tenant_code by Admin=$adminId");
 
@@ -328,6 +408,28 @@ function statusUpdate($conn, $tenant_code, $new_status, $adminId, $adminRole, $a
         json_error("You do not have permission to modify status.", 403);
     }
 
+    // If deactivating tenant (delete), clear the apartment
+    if ($action === "delete" && !empty($current_apartment_code)) {
+        logActivity("Deactivating tenant - clearing apartment {$current_apartment_code}");
+        
+        $clearApartmentStmt = $conn->prepare("
+            UPDATE apartments 
+            SET occupied_by = NULL, 
+                occupancy_status = 'NOT OCCUPIED',
+                last_updated_by = ?,
+                updated_at = NOW()
+            WHERE apartment_code = ? AND occupied_by = ?
+        ");
+        $clearApartmentStmt->bind_param("iss", $adminId, $current_apartment_code, $tenant_code);
+        $clearApartmentStmt->execute();
+        
+        if ($clearApartmentStmt->affected_rows > 0) {
+            logActivity("SUCCESS: Apartment {$current_apartment_code} cleared for deactivated tenant");
+        }
+        $clearApartmentStmt->close();
+    }
+
+    // Update tenant status
     $stmt = $conn->prepare("
         UPDATE tenants
         SET status = ?, last_updated_by = ?, last_updated_at = NOW()
@@ -345,4 +447,3 @@ function statusUpdate($conn, $tenant_code, $new_status, $adminId, $adminRole, $a
         "message" => "Tenant " . ($action === "delete" ? "deactivated" : "restored") . " successfully."
     ];
 }
-

@@ -120,3 +120,44 @@ function rateLimit($key, $limit = 20, $seconds = 60)
     // Log each hit for audit visibility
     logActivity("Rate limit check OK | IP: {$ip} | Key: {$key} | Count: {$_SESSION[$identifier]['count']}/{$limit}");
 }
+
+/**
+ * Sanitize number input by removing commas and validating
+ * @param mixed $value The input value
+ * @param bool $allowNull Whether to allow null values
+ * @param float $min Minimum allowed value
+ * @param float $max Maximum allowed value
+ * @return float|null Sanitized number or null
+ * @throws Exception if validation fails
+ */
+function sanitizeNumberWithCommas($value, $allowNull = false, $min = null, $max = null) {
+    // Handle empty values
+    if ($value === null || $value === '' || $value === 'null') {
+        if ($allowNull) {
+            return null;
+        }
+        throw new Exception("Number value is required.");
+    }
+    
+    // Remove commas and any whitespace
+    $cleaned = preg_replace('/[,\s]/', '', trim($value));
+    
+    // Check if it's a valid number
+    if (!is_numeric($cleaned)) {
+        throw new Exception("Invalid number format: {$value}");
+    }
+    
+    // Convert to float
+    $number = (float) $cleaned;
+    
+    // Apply min/max validation if provided
+    if ($min !== null && $number < $min) {
+        throw new Exception("Value must be at least {$min}.");
+    }
+    
+    if ($max !== null && $number > $max) {
+        throw new Exception("Value cannot exceed {$max}.");
+    }
+    
+    return $number;
+}

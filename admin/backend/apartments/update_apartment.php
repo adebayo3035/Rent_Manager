@@ -4,6 +4,11 @@ header('Content-Type: application/json; charset=utf-8');
 
 // Define constants
 define('CSRF_FORM_NAME', 'update_apartment');
+define('MIN_RENT_AMOUNT', 0);
+define('MAX_RENT_AMOUNT', 999999999.99);
+define('MIN_SECURITY_DEPOSIT', 0);
+define('MAX_SECURITY_DEPOSIT', 999999999.99);
+
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
@@ -48,19 +53,43 @@ try {
 
     // Log non-sensitive input
     $logInput = $input;
-    // unset($logInput['rent_amount'], $logInput['security_deposit']);
     logActivity("REQUEST: Apartment update | User={$adminId} | Role={$adminRole} | Input: " . json_encode($logInput));
 
     // ================= NORMALIZE & VALIDATE INPUTS =================
     $apartment_code = isset($input['apartment_id']) ? trim($input['apartment_id']) : '';
     $property_code = isset($input['property_code']) ? trim($input['property_code']) : '';
-    // $agent_code = isset($input['agent_code']) ? trim($input['agent_code']) : '';
     $apartment_type_id = isset($input['apartment_type_id']) ? (int) $input['apartment_type_id'] : 0;
-    $apartment_type_unit = isset($input['apartment_type_unit']) ? (int) $input['apartment_type_unit'] : 0; // FIXED: Added missing variable
-    $rent_amount = isset($input['rent_amount']) ? (float) $input['rent_amount'] : 0;
-    $security_deposit = isset($input['security_deposit']) ? (float) $input['security_deposit'] : 0;
+    $apartment_type_unit = isset($input['apartment_type_unit']) ? (int) $input['apartment_type_unit'] : 0;
     $status = isset($input['status']) ? (int) $input['status'] : null;
     $action_type = isset($input['action_type']) ? trim($input['action_type']) : 'update_all';
+    
+    // ================= SANITIZE NUMBER FIELDS WITH COMMAS =================
+    try {
+        $rent_amount = sanitizeNumberWithCommas(
+            $input['rent_amount'] ?? null,
+            false, // required
+            MIN_RENT_AMOUNT,
+            MAX_RENT_AMOUNT
+        );
+        
+        $security_deposit = sanitizeNumberWithCommas(
+            $input['security_deposit'] ?? null,
+            true, // allow null/empty
+            MIN_SECURITY_DEPOSIT,
+            MAX_SECURITY_DEPOSIT
+        );
+        
+        // If security deposit is null (not provided), set to 0
+        if ($security_deposit === null) {
+            $security_deposit = 0.00;
+        }
+        
+        logActivity("Sanitized amounts - Rent: {$rent_amount}, Deposit: {$security_deposit}");
+        
+    } catch (Exception $e) {
+        logActivity("Number validation error: " . $e->getMessage());
+        json_error($e->getMessage(), 400);
+    }
 
     // ================= BASIC VALIDATION =================
     $errors = [];
@@ -89,11 +118,13 @@ try {
             $errors[] = "property_code is required.";
         }
         
-        if ($rent_amount < 0) {
+        // Number validation already done by sanitizeNumberWithCommas
+        // Additional business rule validation
+        if ($rent_amount < MIN_RENT_AMOUNT) {
             $errors[] = "Rent amount cannot be negative.";
         }
         
-        if ($security_deposit < 0) {
+        if ($security_deposit < MIN_SECURITY_DEPOSIT) {
             $errors[] = "Security deposit cannot be negative.";
         }
     }
@@ -116,7 +147,6 @@ try {
 
     try {
         // ================= VERIFY APARTMENT EXISTS =================
-        // FIXED: Use consistent query for all action types
         $check = $conn->prepare("
             SELECT a.apartment_code, a.status, a.property_code, a.occupancy_status,
                    p.property_code as prop_code, p.status as prop_status
@@ -172,11 +202,10 @@ try {
                     $conn,
                     $apartment_code,
                     $property_code,
-                    // $agent_code,
                     $apartment_type_id,
-                    $apartment_type_unit, // FIXED: Added missing parameter
-                    $rent_amount,
-                    $security_deposit,
+                    $apartment_type_unit,
+                    $rent_amount,      // Already sanitized
+                    $security_deposit, // Already sanitized
                     $adminId,
                     $status,
                     $adminRole
@@ -217,6 +246,8 @@ try {
             'message' => $resultMessage,
             'apartment_code' => $apartment_code,
             'action' => $action_type,
+            'rent_amount' => number_format($rent_amount, 2), // Format for response
+            'security_deposit' => number_format($security_deposit, 2),
             'timestamp' => date('Y-m-d H:i:s')
         ];
         
@@ -248,8 +279,7 @@ try {
     
     logActivity("EXCEPTION: " . $e->getMessage() . 
                 " | File: " . $e->getFile() . 
-                " | Line: " . $e->getLine() . 
-                " | Trace: " . $e->getTraceAsString());
+                " | Line: " . $e->getLine());
 
     // Don't expose internal errors in production
     $errorMessage = ($errorCode === 500 && strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') === false)
@@ -291,7 +321,6 @@ function handleFullUpdate($conn, $apartment_code, $property_code,
     if ($apartment_type_id <= 0) {
         $errors[] = "Invalid apartment type selected.";
     } else {
-        // FIXED: Changed from property_type to apartment_type table
         $typeStmt = $conn->prepare("SELECT type_name FROM apartment_type WHERE type_id = ? AND status = 1 LIMIT 1");
         if ($typeStmt) {
             $typeStmt->bind_param("i", $apartment_type_id);
@@ -309,14 +338,20 @@ function handleFullUpdate($conn, $apartment_code, $property_code,
         $errors[] = "Apartment unit cannot be negative.";
     }
 
-    // Rent validation
-    if ($rent_amount < 0) {
+    // Rent validation (already sanitized, but double-check)
+    if ($rent_amount < MIN_RENT_AMOUNT) {
         $errors[] = "Rent amount cannot be negative.";
     }
+    if ($rent_amount > MAX_RENT_AMOUNT) {
+        $errors[] = "Rent amount exceeds maximum allowed value.";
+    }
 
-    // Security deposit validation
-    if ($security_deposit < 0) {
+    // Security deposit validation (already sanitized, but double-check)
+    if ($security_deposit < MIN_SECURITY_DEPOSIT) {
         $errors[] = "Security deposit cannot be negative.";
+    }
+    if ($security_deposit > MAX_SECURITY_DEPOSIT) {
+        $errors[] = "Security deposit exceeds maximum allowed value.";
     }
 
     // Status validation
@@ -336,7 +371,6 @@ function handleFullUpdate($conn, $apartment_code, $property_code,
     }
 
     // ================= PERFORM UPDATE =================
-    // FIXED: Corrected the UPDATE query with proper fields
     $stmt = $conn->prepare("
         UPDATE apartments 
         SET 
@@ -355,7 +389,6 @@ function handleFullUpdate($conn, $apartment_code, $property_code,
         throw new Exception("Database prepare failed: " . $conn->error, 500);
     }
 
-    // FIXED: Correct parameter binding - 10 parameters
     $types = "siddiis";
     $stmt->bind_param(
         $types,
@@ -374,7 +407,7 @@ function handleFullUpdate($conn, $apartment_code, $property_code,
         
         // Handle specific MySQL errors
         if (strpos($error, 'foreign key constraint') !== false) {
-            throw new Exception("Referenced entity (property, agent, or type) not found.", 400);
+            throw new Exception("Referenced entity (property or type) not found.", 400);
         }
         
         throw new Exception("Database update failed: " . $error, 500);
@@ -388,7 +421,7 @@ function handleFullUpdate($conn, $apartment_code, $property_code,
         // This might be okay if data didn't change
     }
 
-    logActivity("SUCCESS: Full update for apartment {$apartment_code} | Rows affected: {$affected}");
+    logActivity("SUCCESS: Full update for apartment {$apartment_code} | Rent: {$rent_amount} | Deposit: {$security_deposit} | Rows affected: {$affected}");
 
     return "Apartment updated successfully!";
 }

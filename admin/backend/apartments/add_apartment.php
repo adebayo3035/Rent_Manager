@@ -7,6 +7,10 @@ header('Content-Type: application/json; charset=utf-8');
 define('CSRF_FORM_NAME', 'add_apartment_form');
 define('MAX_APARTMENT_UNIT', 1000); // Maximum apartment unit number
 define('MIN_APARTMENT_UNIT', 1);    // Minimum apartment unit number
+define('MIN_RENT_AMOUNT', 0);       // Minimum rent amount
+define('MAX_RENT_AMOUNT', 999999999.99); // Maximum rent amount
+define('MIN_SECURITY_DEPOSIT', 0);   // Minimum security deposit
+define('MAX_SECURITY_DEPOSIT', 999999999.99); // Maximum security deposit
 
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
@@ -35,17 +39,14 @@ try {
     // ------------------------- INPUT COLLECTION & SANITIZATION -------------------------
     $rawInputs = [
         'property_code' => $_POST['apartment_property_code'] ?? '',
-        // 'agent_code' => $_POST['apartment_agent_code'] ?? '',
         'apartment_type_id' => $_POST['apartment_type'] ?? '',
         'apartment_type_unit' => $_POST['apartment_type_unit'] ?? '',
         'rent_amount' => $_POST['apartment_rent_amount'] ?? '',
         'security_deposit' => $_POST['apartment_security_deposit'] ?? '',
-        // 'description'           => $_POST['description'] ?? '',
     ];
 
     // Log non-sensitive inputs
     $logInputs = $rawInputs;
-    // unset($logInputs['rent_amount'], $logInputs['security_deposit']);
     logActivity("Raw inputs received: " . json_encode($logInputs));
 
     // Sanitize inputs
@@ -53,14 +54,38 @@ try {
 
     // Extract variables
     $propertyCode = trim($inputs['property_code']);
-    // $agentCode = trim($inputs['agent_code']);
     $typeId = (int) $inputs['apartment_type_id'];
     $typeUnit = (int) $inputs['apartment_type_unit'];
-    // $floorNumber    = !empty($inputs['floor_number']) ? (int) $inputs['floor_number'] : null;
-    // $apartmentNumber= trim($inputs['apartment_number'] ?? '');
-    $rentAmount =  (float) $inputs['rent_amount'];
-    $securityDeposit = (float) $inputs['security_deposit'];
-    // $description    = trim($inputs['description'] ?? '');
+    
+    // ------------------------- SANITIZE NUMBER FIELDS WITH COMMAS -------------------------
+    // Method 1: Using the sanitizeNumberWithCommas function (strict)
+    try {
+        $rentAmount = sanitizeNumberWithCommas(
+            $inputs['rent_amount'], 
+            false, // required
+            MIN_RENT_AMOUNT, 
+            MAX_RENT_AMOUNT
+        );
+        
+        $securityDeposit = sanitizeNumberWithCommas(
+            $inputs['security_deposit'], 
+            true, // allow null/empty
+            MIN_SECURITY_DEPOSIT, 
+            MAX_SECURITY_DEPOSIT
+        );
+        
+        // If security deposit is empty or null, set to 0
+        if ($securityDeposit === null) {
+            $securityDeposit = 0.00;
+        }
+        
+    } catch (Exception $e) {
+        logActivity("Number validation error: " . $e->getMessage());
+        json_error($e->getMessage(), 400);
+    }
+    
+
+    logActivity("Sanitized amounts - Rent: {$rentAmount}, Deposit: {$securityDeposit}");
 
     // ------------------------- COMPREHENSIVE VALIDATION -------------------------
     $errors = [];
@@ -68,7 +93,6 @@ try {
     // Required fields validation
     $required = [
         'property_code' => 'Property Code',
-        // 'agent_code' => 'Agent Code',
         'apartment_type_id' => 'Apartment Type',
         'apartment_type_unit' => 'Apartment Unit'
     ];
@@ -84,11 +108,6 @@ try {
         $errors[] = "Invalid property code format.";
     }
 
-    // Agent code format validation
-    // if (!empty($agentCode) && !preg_match('/^[A-Za-z0-9_\-]{4,64}$/', $agentCode)) {
-    //     $errors[] = "Invalid agent code format.";
-    // }
-
     // Apartment type unit validation
     if ($typeUnit < MIN_APARTMENT_UNIT || $typeUnit > MAX_APARTMENT_UNIT) {
         $errors[] = "Apartment unit must be between " . MIN_APARTMENT_UNIT . " and " . MAX_APARTMENT_UNIT . ".";
@@ -99,18 +118,13 @@ try {
         $errors[] = "Invalid apartment type selected.";
     }
 
-    // Floor number validation (if provided)
-    // if ($floorNumber !== null && ($floorNumber < 0 || $floorNumber > 100)) {
-    //     $errors[] = "Floor number must be between 0 and 100.";
-    // }
-
-    // Rent amount validation (if provided)
-    if ($rentAmount !== null && $rentAmount < 0) {
+    // Rent amount validation (already done in sanitizeNumberWithCommas, but double-check)
+    if ($rentAmount < MIN_RENT_AMOUNT) {
         $errors[] = "Rent amount cannot be negative.";
     }
 
-    // Security deposit validation (if provided)
-    if ($securityDeposit !== null && $securityDeposit < 0) {
+    // Security deposit validation (already done in sanitizeNumberWithCommas)
+    if ($securityDeposit < MIN_SECURITY_DEPOSIT) {
         $errors[] = "Security deposit cannot be negative.";
     }
 
@@ -152,7 +166,7 @@ try {
 
         logActivity("Property validation passed: {$propertyCode} | Max apartments: {$maxApartments}");
 
-        // 3. Validate apartment type exists and is active
+        // 2. Validate apartment type exists and is active
         $typeStmt = $conn->prepare("SELECT type_name FROM apartment_type WHERE type_id = ? AND status = 1 LIMIT 1");
         $typeStmt->bind_param("i", $typeId);
         $typeStmt->execute();
@@ -215,26 +229,28 @@ try {
             }
             $dupNumberStmt->close();
         }
+        
         // ------------------------- GENERATE APARTMENT CODE -------------------------
         // Enhanced apartment code generation
         $apartmentCode = generateApartmentCode($propertyCode, $typeUnit, $apartmentNumber);
         logActivity("Generated apartment code: {$apartmentCode}");
+        $occupancy_status = 'NOT OCCUPIED';
 
         // ------------------------- DATABASE INSERT -------------------------
         $insertSql = "
-    INSERT INTO apartments (
-        apartment_code,
-        property_code,
-        apartment_type_id,
-        apartment_type_unit,
-        apartment_number,
-        rent_amount,
-        security_deposit,
-        occupancy_status,
-        created_by,
-        created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NOW())
-";
+            INSERT INTO apartments (
+                apartment_code,
+                property_code,
+                apartment_type_id,
+                apartment_type_unit,
+                apartment_number,
+                rent_amount,
+                security_deposit,
+                occupancy_status,
+                created_by,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ";
 
         $stmt = $conn->prepare($insertSql);
         if (!$stmt) {
@@ -243,7 +259,7 @@ try {
 
         // Bind parameters
         $stmt->bind_param(
-            "ssiiidds",
+            "ssiiiddss",
             $apartmentCode,
             $propertyCode,
             $typeId,
@@ -251,9 +267,9 @@ try {
             $apartmentNumber,
             $rentAmount,
             $securityDeposit,
+            $occupancy_status,
             $userId
         );
-
 
         if (!$stmt->execute()) {
             // Check for specific MySQL errors
@@ -267,7 +283,6 @@ try {
         $stmt->close();
 
         logActivity("Apartment inserted successfully. ID: {$newApartmentId}, Code: {$apartmentCode}");
-
 
         // ------------------------- COMMIT TRANSACTION -------------------------
         $conn->commit();
@@ -283,6 +298,8 @@ try {
             'apartment_code' => $apartmentCode,
             'apartment_id' => $newApartmentId,
             'property_code' => $propertyCode,
+            'rent_amount' => number_format($rentAmount, 2), // Format for response
+            'security_deposit' => number_format($securityDeposit, 2),
             'remaining_capacity' => $remainingCapacity - 1,
             'total_capacity' => $maxApartments,
             'timestamp' => date('Y-m-d H:i:s')
