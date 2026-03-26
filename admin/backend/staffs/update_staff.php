@@ -321,9 +321,14 @@ try {
         throw new Exception("Staff not found.", 404);
     }
 
+    if($userID === $_SESSION['unique_id']){
+        throw new Exception("Request Rejected, you cannot Update your Profile Here", 403);
+    }
     
     $currentStatusText = STATUS_MAP[$currentStatus] ?? 'Unknown';
     logActivity("[CURRENT_STATUS] [ID:{$requestId}] Staff {$staffId} status: {$currentStatus} ({$currentStatusText})");
+
+   
 
     // ==================== HANDLE RESTORE ACTION ====================
     if ($actionType === 'restore') {
@@ -464,7 +469,8 @@ try {
     
     // Verify secret answer if required
     if (isset($validatedData['secret_answer'])) {
-        verifySecretAnswer($conn, $staffId, $validatedData['secret_answer']['value'], $requestId);
+        // verifySecretAnswer($conn, $staffId, $validatedData['secret_answer']['value'], $requestId);
+        verifySecretAnswer($conn, $currentUserId, $validatedData['secret_answer']['value'], $requestId);
         unset($validatedData['secret_answer']); // Remove from update data
     }
     
