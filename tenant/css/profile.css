@@ -1,0 +1,363 @@
+/* profile.css - Page-specific styles only */
+/* Base styles (sidebar, top-bar, etc.) are handled by navbar.css */
+
+/* Profile Container */
+.profile-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+/* Page Header */
+.page-header {
+    margin-bottom: 30px;
+}
+
+.page-header h1 {
+    font-size: 28px;
+    color: #1a1f36;
+    margin-bottom: 8px;
+}
+
+.page-header p {
+    color: #666;
+    font-size: 14px;
+}
+
+/* Profile Card */
+.profile-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 20px;
+    border: 1px solid #f0f0f0;
+}
+
+/* Profile Header */
+.profile-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 30px;
+    text-align: center;
+    color: white;
+}
+
+.profile-avatar {
+    width: 100px;
+    height: 100px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 15px;
+    transition: transform 0.3s;
+}
+
+.profile-card:hover .profile-avatar {
+    transform: scale(1.05);
+}
+
+.profile-avatar i {
+    font-size: 60px;
+}
+
+.profile-name {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.profile-role {
+    opacity: 0.9;
+    font-size: 14px;
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 10px;
+    border-bottom: 2px solid #f0f0f0;
+    margin: 0 30px;
+    padding-top: 20px;
+}
+
+.tab {
+    padding: 10px 20px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.3s;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.tab:hover {
+    color: #667eea;
+}
+
+.tab.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+}
+
+/* Tab Content */
+.tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Profile Form */
+.profile-form {
+    padding: 30px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 0;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #1a1f36;
+    font-size: 14px;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    transition: all 0.2s;
+    background: white;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-group input[readonly] {
+    background: #f9fafb;
+    cursor: not-allowed;
+    border-color: #e5e7eb;
+}
+
+/* Save Button */
+.btn-save {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.2s;
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+}
+
+.btn-save:active {
+    transform: translateY(0);
+}
+
+/* Password Requirements */
+.password-requirements {
+    background: #f9fafb;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 15px;
+    font-size: 13px;
+    border: 1px solid #f0f0f0;
+}
+
+.password-requirements strong {
+    color: #1a1f36;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.password-requirements ul {
+    margin-left: 20px;
+    margin-top: 5px;
+    list-style: none;
+    padding-left: 0;
+}
+
+.password-requirements li {
+    margin: 5px 0;
+    color: #666;
+    padding-left: 20px;
+    position: relative;
+}
+
+.password-requirements li::before {
+    content: "○";
+    position: absolute;
+    left: 0;
+    color: #999;
+}
+
+.password-requirements li.valid {
+    color: #10b981;
+}
+
+.password-requirements li.valid::before {
+    content: "✓";
+    color: #10b981;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .profile-container {
+        max-width: 90%;
+    }
+}
+
+@media (max-width: 768px) {
+    .profile-container {
+        max-width: 95%;
+    }
+    
+    .tabs {
+        margin: 0 20px;
+        gap: 5px;
+    }
+    
+    .tab {
+        padding: 8px 16px;
+        font-size: 13px;
+    }
+    
+    .profile-form {
+        padding: 20px;
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+    
+    .profile-header {
+        padding: 25px;
+    }
+    
+    .profile-avatar {
+        width: 80px;
+        height: 80px;
+    }
+    
+    .profile-avatar i {
+        font-size: 48px;
+    }
+    
+    .profile-name {
+        font-size: 20px;
+    }
+    
+    .page-header h1 {
+        font-size: 24px;
+    }
+}
+
+@media (max-width: 480px) {
+    .tabs {
+        margin: 0 15px;
+    }
+    
+    .tab {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .profile-form {
+        padding: 15px;
+    }
+    
+    .form-group label {
+        font-size: 13px;
+    }
+    
+    .form-group input,
+    .form-group select {
+        padding: 8px 10px;
+        font-size: 13px;
+    }
+    
+    .btn-save {
+        padding: 10px 20px;
+        font-size: 13px;
+    }
+    
+    .password-requirements {
+        padding: 12px;
+        font-size: 12px;
+    }
+    
+    .page-header h1 {
+        font-size: 22px;
+    }
+    
+    .page-header p {
+        font-size: 13px;
+    }
+}
