@@ -410,6 +410,7 @@ function escapeHtml(text) {
 function showForcePasswordModal() {
     const modal = document.getElementById('forcePasswordModal');
     if (modal) {
+        modal.style.display = 'flex';
         modal.classList.add('active');
         
         // Add event listeners for password strength

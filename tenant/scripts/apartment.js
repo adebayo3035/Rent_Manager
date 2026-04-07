@@ -69,7 +69,20 @@ function renderApartmentDetails() {
     const propertyInfo = apartmentDetails.property_details || {};
     const agentInfo = apartmentDetails.agent_details || {};
     const leaseInfo = apartmentDetails.lease_details || {};
+
     const tenantInfo = apartmentDetails.tenant_details || {};
+    let monthly_rent = 0;
+    if(leaseInfo.payment_frequency === "Annually"){
+        monthly_rent = leaseInfo.rent_amount/12
+    }else if (leaseInfo.payment_frequency === "Quaterly"){
+        monthly_rent = leaseInfo.rent_amount/3
+    }else if(leaseInfo.payment_frequency === "Semi-Annually"){
+        monthly_rent = leaseInfo.rent_amount/6
+    }
+    else{
+        monthly_rent = leaseInfo.rent_amount;
+    }
+   
 
     const html = `
         <div class="apartment-container">
@@ -137,7 +150,7 @@ function renderApartmentDetails() {
                     </div>
                     <div class="detail-item">
                         <span class="detail-label">Monthly Rent:</span>
-                        <span class="detail-value">₦${formatNumber(leaseInfo.rent_amount)}</span>
+                        <span class="detail-value">₦${formatNumber(monthly_rent)}</span>
                     </div>
                 </div>
 

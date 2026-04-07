@@ -52,7 +52,7 @@ async function fetchDashboardData() {
 
 async function createMaintenanceRequest(requestData) {
     try {
-        const response = await fetch('../backend/tenant/create_maintenance_request.php', {
+        const response = await fetch('../backend/maintenance/create_maintenance_request.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -153,6 +153,27 @@ function renderDashboard() {
             <!-- Payment Section -->
             <div class="payment-section">
                 <div class="section-header">
+                    <h2> Rent Information</h2>
+                    <span class="btn-link" onclick="navigateToPage('apartment')">View More →</span>
+                </div>
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Rent Amount </label>
+                            <span class="amount">₦${formatNumber(currentUser.rent_amount || 0)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Payment Frequency</label>
+                            <span class="date">${currentUser.payment_frequency}</span>
+                        </div>
+                    </div>
+                   
+                </div>
+            </div>
+
+            <!-- Payment Section -->
+            <div class="payment-section">
+                <div class="section-header">
                     <h2>Upcoming Payment</h2>
                     <span class="btn-link" onclick="navigateToPage('payments')">View All →</span>
                 </div>
@@ -164,7 +185,7 @@ function renderDashboard() {
                         </div>
                         <div class="payment-date">
                             <label>Due Date</label>
-                            <span class="date">${formatDate(dashboardData.next_payment_date)}</span>
+                            <span class="date">${formatDate(dashboardData.lease_end_date)}</span>
                         </div>
                     </div>
                     <button class="btn-primary" onclick="makePayment()">Make Payment</button>
@@ -343,7 +364,8 @@ function navigateToPage(page) {
         'payments': 'payments.php',
         'documents': 'documents.php',
         'profile': 'profile.php',
-        'settings': 'settings.php'
+        'settings': 'settings.php',
+        'profile' : 'profile.php'
     };
     
     const url = pageUrls[page];

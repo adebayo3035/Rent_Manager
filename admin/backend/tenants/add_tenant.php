@@ -1,9 +1,10 @@
 <?php
 // onboard_tenant.php
-// Secure, refactored onboarding endpoint with comprehensive validation
+// Secure, refactored onboarding endpoint with comprehensive validation and payment recording
 
 header('Content-Type: application/json; charset=utf-8');
 define('CSRF_FORM_NAME', 'add_tenant_form');
+
 // Define constants
 define('MAX_FILE_SIZE', 500000); // 500KB
 define('MAX_FIELD_LENGTH', 255);
@@ -11,12 +12,11 @@ define('RATE_LIMIT_COUNT', 10);
 define('RATE_LIMIT_SECONDS', 60);
 define('MIN_LEASE_MONTHS', 1);
 define('MAX_LEASE_MONTHS', 36); // 3 years max
-// define('CSRF_FORM_NAME', 'tenant_onboarding');
 
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
-require_once __DIR__ . '/../utilities/auth_guard.php';   // added for centralized auth using requireAuth function
+require_once __DIR__ . '/../utilities/auth_guard.php';
 
 $auth = requireAuth([
     'method' => 'POST',
@@ -33,15 +33,6 @@ $userId = $auth['user_id'];
 $userRole = $auth['role'];
 
 logActivity("Authenticated user: {$userId} | Role: {$userRole}");
-
-
-
-// FIXED: Changed || to &&
-// if ($userRole !== 'Super Admin' && $userRole !== 'Admin') {
-//     logActivity("Access denied - insufficient role ({$userRole}) for user {$userId}");
-//     json_error('Access Denied. Permission not granted!', 403);
-// }
-// logActivity("User {$userId} with role {$userRole} authorized");
 
 // ---------- Accept & sanitize inputs ----------
 $required_fields = [
@@ -65,9 +56,7 @@ $required_fields = [
     'emergency_contact_phone'
 ];
 
-$optional_fields = [
-
-];
+$optional_fields = [];
 
 $inputs = [];
 
@@ -88,10 +77,8 @@ foreach ($optional_fields as $field) {
 // Sanitize inputs
 $inputs = sanitize_inputs($inputs);
 
-// Log non-sensitive input summary (exclude sensitive data)
+// Log non-sensitive input summary
 $logCopy = $inputs;
-//unset($logCopy['email'], $logCopy['phone'], $logCopy['employer_contact'], 
-//$logCopy['emergency_contact_phone'], $logCopy['referee_phone']);
 logActivity('Inputs received: ' . json_encode($logCopy));
 
 // ---------- Comprehensive Validations ----------
@@ -170,14 +157,15 @@ if ($actual_months > MAX_LEASE_MONTHS) {
     logActivity("Lease duration too long: {$actual_months} months exceeds maximum of " . MAX_LEASE_MONTHS);
     json_error("Maximum lease duration is " . MAX_LEASE_MONTHS . " months.", 400);
 }
-// 7. Gender validation
+
+// 6. Gender validation
 $valid_genders = ['Male', 'Female', 'Other'];
 if (!in_array($inputs['gender'], $valid_genders, true)) {
     logActivity("Invalid gender: {$inputs['gender']}");
     json_error('Please select a valid gender.', 400);
 }
 
-// 8. Validate file upload
+// 7. Validate file upload
 if (!isset($_FILES['photo'])) {
     logActivity("Photo missing from request.");
     json_error('Please upload a Photo of the Tenant.', 400);
@@ -191,7 +179,7 @@ if (!is_array($photo) || $photo['error'] !== UPLOAD_ERR_OK) {
 }
 
 $img_tmp = $photo['tmp_name'];
-$img_name = basename($photo['name']); // Security: remove path info
+$img_name = basename($photo['name']);
 $img_size = $photo['size'];
 $img_type = mime_content_type($img_tmp);
 
@@ -219,22 +207,6 @@ if (!$image_info) {
     json_error('Invalid image file.', 400);
 }
 
-// Remove EXIF data for privacy
-// if ($ext === 'jpg' || $ext === 'jpeg') {
-//     try {
-//         $image = imagecreatefromjpeg($img_tmp);
-//         if ($image) {
-//             $clean_tmp = tempnam(sys_get_temp_dir(), 'clean_img_');
-//             imagejpeg($image, $clean_tmp, 90);
-//             imagedestroy($image);
-//             $img_tmp = $clean_tmp;
-//             logActivity("EXIF data stripped from JPEG image");
-//         }
-//     } catch (Exception $e) {
-//         logActivity("Failed to process image: " . $e->getMessage());
-//     }
-// }
-
 $file_hash = hash_file('sha256', $img_tmp);
 $file_name = $file_hash . '.' . $ext;
 
@@ -244,7 +216,7 @@ $upload_dir = __DIR__ . '/tenant_photos/';
 $upload_path = $upload_dir . $file_name;
 
 if (!is_dir($upload_dir)) {
-    if (!mkdir($upload_dir, 0750, true)) { // More restrictive permissions
+    if (!mkdir($upload_dir, 0750, true)) {
         logActivity("Failed to create upload directory: {$upload_dir}");
         json_error("Server error preparing upload directory", 500);
     }
@@ -281,9 +253,9 @@ try {
     $check_stmt->close();
     logActivity("Duplicate check passed");
 
-    // 2. Check if Apartment is already leased (with foreign key validation)
+    // 2. Check if Apartment is already leased and get rent_amount and security_deposit
     $stmt = $conn->prepare("
-        SELECT a.occupancy_status, p.property_code 
+        SELECT a.occupancy_status, a.rent_amount, a.security_deposit, a.apartment_code, p.property_code 
         FROM apartments a
         INNER JOIN properties p ON a.property_code = p.property_code
         WHERE a.apartment_code = ? 
@@ -292,34 +264,21 @@ try {
     ");
     $stmt->bind_param("ss", $inputs['apartment_code'], $inputs['property_code']);
     $stmt->execute();
-    $stmt->bind_result($isOccupied, $property_code);
+    $stmt->bind_result($isOccupied, $rent_amount, $security_deposit, $apt_code, $prop_code);
 
     if (!$stmt->fetch()) {
         logActivity("Apartment {$inputs['apartment_code']} not found in property {$inputs['property_code']}");
         throw new Exception("Apartment not found in the specified property");
     }
 
-    if ($isOccupied == 1) {
+    if ($isOccupied == 'OCCUPIED') {
         logActivity("Apartment {$inputs['apartment_code']} is already occupied");
         throw new Exception("Apartment is already occupied by Another Tenant");
     }
     $stmt->close();
-    logActivity("Apartment availability check passed");
+    logActivity("Apartment availability check passed. Rent: {$rent_amount}, Deposit: {$security_deposit}");
 
-    // // 3. Validate agent exists
-    // $agent_stmt = $conn->prepare("SELECT agent_code FROM agents WHERE agent_code = ?");
-    // $agent_stmt->bind_param("s", $inputs['agent_code']);
-    // $agent_stmt->execute();
-    // $agent_result = $agent_stmt->get_result();
-
-    // if (!$agent_result || $agent_result->num_rows === 0) {
-    //     logActivity("Agent {$inputs['agent_code']} not found");
-    //     throw new Exception("Specified agent does not exist");
-    // }
-    // $agent_stmt->close();
-    // logActivity("Agent validation passed");
-
-    // 4. Check if same photo was already uploaded
+    // 3. Check if same photo was already uploaded
     if (is_file($upload_path)) {
         logActivity("Photo already exists on disk: {$file_name}");
         throw new Exception('This image has already been uploaded for another Tenant.');
@@ -342,18 +301,18 @@ try {
     $photo_check_stmt->close();
     logActivity("Photo duplicate check passed");
 
-    // 5. Move uploaded file
+    // 4. Move uploaded file
     if (!move_uploaded_file($img_tmp, $upload_path)) {
         throw new Exception('Failed to move uploaded file to ' . $upload_path);
     }
     logActivity("File uploaded to {$upload_path}");
 
-    // 6. Generate tenant code
+    // 5. Generate tenant code
     $tenant_code = "TNT" . random_unique_id();
     $encrypt_pass = password_hash($tenant_code, PASSWORD_ARGON2ID);
     logActivity("Generated unique Tenant code: {$tenant_code}");
 
-    // 7. Insert tenant - FIXED: Added ? for created_by
+    // 6. Insert tenant
     $insert_sql = "INSERT INTO tenants
     (tenant_code, property_code, apartment_code, firstname, lastname, gender, email, phone, 
      photo, occupation, name_of_employer, employer_address, employer_contact, lease_start_date, 
@@ -366,12 +325,10 @@ try {
         throw new Exception('Prepare failed for insert: ' . $conn->error);
     }
 
-    // Ensure created_by is properly typed
     $created_by = is_numeric($userId) ? (int) $userId : $userId;
 
-    // FIXED: Changed to 23 parameters, last one 'i' for integer
     $insert_stmt->bind_param(
-        'sssssssssssssssssssssi',  // 23 characters: 22 's' + 1 'i'
+        'sssssssssssssssssssssi',
         $tenant_code,
         $inputs['property_code'],
         $inputs['apartment_code'],
@@ -393,7 +350,7 @@ try {
         $inputs['emergency_contact_name'],
         $inputs['emergency_contact_phone'],
         $encrypt_pass,
-        $created_by  // This is the integer parameter
+        $created_by
     );
 
     if (!$insert_stmt->execute()) {
@@ -404,7 +361,7 @@ try {
     $insert_stmt->close();
     logActivity("Tenant inserted with ID: {$new_tenant_id}");
 
-    // 8. Update apartment occupancy status
+    // 7. Update apartment occupancy status
     $occupancy_status = 'OCCUPIED';
     $update_apt = $conn->prepare("UPDATE apartments SET occupied_by = ?, occupancy_status = ? WHERE apartment_code = ?");
     $update_apt->bind_param("sss", $tenant_code, $occupancy_status, $inputs['apartment_code']);
@@ -416,14 +373,223 @@ try {
     $update_apt->close();
     logActivity("Apartment occupancy status updated");
 
+    // 8. RECORD PAYMENTS - Double entry for rent payment and security deposit
+    
+    $current_date = date('Y-m-d');
+    $receipt_number = generateReceiptNumber();
+    $reference_number = generateReferenceNumber($tenant_code);
+    
+    // 8a. Record Security Deposit Payment
+    if ($security_deposit > 0) {
+        $deposit_description = "Security Deposit for apartment {$inputs['apartment_code']}";
+        
+        $insert_deposit = $conn->prepare("
+            INSERT INTO payments (
+                tenant_code, 
+                apartment_code, 
+                amount, 
+                balance, 
+                payment_date, 
+                due_date, 
+                payment_method, 
+                payment_status, 
+                receipt_number, 
+                reference_number, 
+                description, 
+                recorded_by, 
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ");
+        
+        if (!$insert_deposit) {
+            throw new Exception('Prepare failed for deposit payment insert: ' . $conn->error);
+        }
+        
+        $balance = 0; // Security deposit is fully paid
+        $due_date = $inputs['lease_start_date'];
+        $payment_method = 'cash';
+        $payment_status = 'completed';
+        $receipt_number =  $receipt_number . '-DEP';
+        $reference_number = $reference_number . '-DEP';
+        
+        $insert_deposit->bind_param(
+            "ssddsssssssi",
+            $tenant_code,
+            $inputs['apartment_code'],
+            $security_deposit,
+            $balance,
+            $current_date,
+            $due_date,
+            $payment_method,
+            $payment_status,
+            $receipt_number,
+            $reference_number,
+            $deposit_description,
+            $created_by
+        );
+        
+        if (!$insert_deposit->execute()) {
+            throw new Exception('Failed to record security deposit payment: ' . $insert_deposit->error);
+        }
+        
+        $deposit_payment_id = $insert_deposit->insert_id;
+        $insert_deposit->close();
+        logActivity("Security deposit recorded: ₦{$security_deposit} for tenant {$tenant_code}");
+        
+        // Also record in rent_payments table for consistency
+        $insert_rent_deposit = $conn->prepare("
+            INSERT INTO rent_payments (
+                tenant_code,
+                apartment_code,
+                amount,
+                payment_date,
+                payment_method,
+                reference_number,
+                status,
+                payment_type,
+                notes,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ");
+        
+        $payment_type = 'security_deposit';
+        $notes = "Security deposit payment for apartment {$inputs['apartment_code']}";
+        $reference_number = $reference_number . '-DEP';
+        
+        $insert_rent_deposit->bind_param(
+            "ssdssssss",
+            $tenant_code,
+            $inputs['apartment_code'],
+            $security_deposit,
+            $current_date,
+            $payment_method,
+            $reference_number,
+            $payment_status,
+            $payment_type,
+            $notes
+        );
+        
+        if (!$insert_rent_deposit->execute()) {
+            logActivity("Warning: Failed to record security deposit in rent_payments table: " . $insert_rent_deposit->error);
+        } else {
+            logActivity("Security deposit recorded in rent_payments table");
+        }
+        $insert_rent_deposit->close();
+    }
+    
+    // 8b. Record First Rent Payment (for the first month/period)
+    if ($rent_amount > 0) {
+        // Calculate first payment due date based on payment frequency
+        $first_payment_due_date = $inputs['lease_start_date'];
+        
+        $rent_description = "First rent payment for apartment {$inputs['apartment_code']} - {$inputs['payment_frequency']} payment";
+        
+        $insert_rent = $conn->prepare("
+            INSERT INTO payments (
+                tenant_code, 
+                apartment_code, 
+                amount, 
+                balance, 
+                payment_date, 
+                due_date, 
+                payment_method, 
+                payment_status, 
+                receipt_number, 
+                reference_number, 
+                description, 
+                recorded_by, 
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ");
+        
+        if (!$insert_rent) {
+            throw new Exception('Prepare failed for rent payment insert: ' . $conn->error);
+        }
+        
+        $balance = 0; // Assuming full payment
+        $payment_method = 'cash';
+        $payment_status = 'completed';
+        $receipt_number =  $receipt_number . '-RENT';
+        $reference_number = $reference_number . '-RENT';
+        
+        $insert_rent->bind_param(
+            "ssddsssssssi",
+            $tenant_code,
+            $inputs['apartment_code'],
+            $rent_amount,
+            $balance,
+            $current_date,
+            $first_payment_due_date,
+            $payment_method,
+            $payment_status,
+            $receipt_number,
+            $reference_number,
+            $rent_description,
+            $created_by
+        );
+        
+        if (!$insert_rent->execute()) {
+            throw new Exception('Failed to record rent payment: ' . $insert_rent->error);
+        }
+        
+        $rent_payment_id = $insert_rent->insert_id;
+        $insert_rent->close();
+        logActivity("First rent payment recorded: ₦{$rent_amount} for tenant {$tenant_code}");
+        
+        // Also record in rent_payments table
+        $insert_rent_only = $conn->prepare("
+            INSERT INTO rent_payments (
+                tenant_code,
+                apartment_code,
+                amount,
+                payment_date,
+                payment_method,
+                reference_number,
+                status,
+                receipt_number,
+                payment_type,
+                notes,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ");
+        
+        $payment_type = 'rent';
+        $notes = "First rent payment for lease starting {$inputs['lease_start_date']}";
+        $reference_number = $reference_number . '-RENT';
+        
+        $insert_rent_only->bind_param(
+            "ssdssssss",
+            $tenant_code,
+            $inputs['apartment_code'],
+            $rent_amount,
+            $current_date,
+            $payment_method,
+            $reference_number,
+            $payment_status,
+            $payment_type,
+            $notes
+        );
+        
+        if (!$insert_rent_only->execute()) {
+            logActivity("Warning: Failed to record rent payment in rent_payments table: " . $insert_rent_only->error);
+        } else {
+            logActivity("Rent payment recorded in rent_payments table");
+        }
+        $insert_rent_only->close();
+    }
+    
+    logActivity("Payment records created successfully for tenant {$tenant_code}");
+
     // Commit transaction
     $conn->commit();
     logActivity("Transaction committed successfully");
+    
     // Log success
     logActivity("Tenant {$tenant_code} ({$inputs['firstname']} {$inputs['lastname']}) onboarded successfully by user {$userId}");
 
     // Consume CSRF token after successful operation
     consumeCsrfToken(CSRF_FORM_NAME);
+    
     // Return success response
     $response = [
         'success' => true,
@@ -433,7 +599,12 @@ try {
             'name' => $inputs['firstname'] . ' ' . $inputs['lastname'],
             'email' => $inputs['email'],
             'apartment' => $inputs['apartment_code'],
-            'lease_period' => $actual_months . ' months'
+            'lease_period' => $actual_months . ' months',
+            'payments_recorded' => [
+                'rent_amount' => $rent_amount,
+                'security_deposit' => $security_deposit,
+                'total_paid' => $rent_amount + $security_deposit
+            ]
         ]
     ];
 
@@ -467,4 +638,24 @@ try {
     }
 }
 
-// End of script
+/**
+ * Generate a unique receipt number
+ */
+function generateReceiptNumber() {
+    $prefix = 'RCP';
+    $date = date('Ymd');
+    $random = strtoupper(substr(uniqid(), -6));
+    return $prefix . '-' . $date . '-' . $random;
+}
+
+/**
+ * Generate a unique reference number
+ */
+function generateReferenceNumber($tenant_code) {
+    $prefix = 'REF';
+    $date = date('Ymd');
+    $tenant_short = substr($tenant_code, -6);
+    $random = rand(1000, 9999);
+    return $prefix . '-' . $date . '-' . $tenant_short . '-' . $random;
+}
+?>

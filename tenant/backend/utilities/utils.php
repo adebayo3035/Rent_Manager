@@ -254,3 +254,18 @@ function sanitizeNumberWithCommas($value, $allowNull = false, $min = null, $max 
     
     return $number;
 }
+/**
+ * Sanitize input data
+ * @param mixed $data The data to sanitize
+ * @return mixed Sanitized data
+ */
+function sanitize_input($data) {
+    if (is_array($data)) {
+        return array_map('sanitize_input', $data);
+    }
+    
+    $data = trim($data);
+    $data = stripslashes($data);
+    $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+    return $data;
+}

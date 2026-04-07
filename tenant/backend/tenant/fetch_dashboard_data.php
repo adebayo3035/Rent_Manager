@@ -52,7 +52,7 @@ try {
     $paymentsData = $paymentsResult->fetch_assoc();
     $stmt->close();
 
-    // Get tenant and apartment details
+    // Get tenant, apartment, and property details with rent_amount from apartments table
     $tenantQuery = "
         SELECT 
             t.tenant_code,
@@ -63,8 +63,12 @@ try {
             t.payment_frequency,
             a.apartment_number,
             a.apartment_code,
+            a.rent_amount as tenant_rent_amount,
+            a.security_deposit,
+            a.occupancy_status,
             p.name as property_name,
             p.property_code,
+            p.address as property_address,
             CONCAT(ag.firstname, ' ', ag.lastname) as agent_name,
             ag.phone as agent_phone,
             ag.email as agent_email
@@ -72,7 +76,7 @@ try {
         LEFT JOIN apartments a ON t.apartment_code = a.apartment_code
         LEFT JOIN properties p ON t.property_code = p.property_code
         LEFT JOIN agents ag ON p.agent_code = ag.agent_code
-        WHERE t.tenant_code = ?
+        WHERE t.tenant_code = ? AND t.status = 1
         LIMIT 1
     ";
     $stmt = $conn->prepare($tenantQuery);
@@ -81,6 +85,10 @@ try {
     $tenantResult = $stmt->get_result();
     $tenantData = $tenantResult->fetch_assoc();
     $stmt->close();
+
+    if (!$tenantData) {
+        json_error("Tenant data not found", 404, null, 'TENANT_NOT_FOUND');
+    }
 
     // Calculate days remaining on lease
     $days_remaining = 0;
@@ -93,11 +101,14 @@ try {
         }
     }
 
+    // Get the correct rent amount (prioritize apartments table)
+    $rent_amount = (float)($tenantData['rent_amount'] ?? $tenantData['tenant_rent_amount'] ?? 0);
+
     // Get last payment date to calculate next payment
     $lastPaymentQuery = "
-        SELECT payment_date, amount
+        SELECT payment_date, amount, payment_period
         FROM rent_payments
-        WHERE tenant_code = ? AND status = 'completed'
+        WHERE tenant_code = ? AND status = 'completed' AND payment_type = 'rent'
         ORDER BY payment_date DESC LIMIT 1
     ";
     $stmt = $conn->prepare($lastPaymentQuery);
@@ -107,20 +118,66 @@ try {
     $lastPayment = $lastPaymentResult->fetch_assoc();
     $stmt->close();
 
-    // Calculate next payment date
+    // Calculate next payment date and period
     $next_payment_date = date('Y-m-d');
-    $next_payment_amount = (float)($tenantData['rent_amount'] ?? 0);
+    $next_payment_amount = $rent_amount;
+    $next_payment_period = '';
+    
+    $payment_frequency = $tenantData['payment_frequency'] ?? 'Monthly';
     
     if ($lastPayment) {
-        $payment_frequency = $tenantData['payment_frequency'] ?? 'Monthly';
-        $interval = match($payment_frequency) {
-            'Monthly' => '+1 month',
-            'Quarterly' => '+3 months',
-            'Semi-Annually' => '+6 months',
-            'Annually' => '+1 year',
-            default => '+1 month'
-        };
-        $next_payment_date = date('Y-m-d', strtotime($lastPayment['payment_date'] . ' ' . $interval));
+        // Calculate based on last payment
+        $last_date = new DateTime($lastPayment['payment_date']);
+        switch($payment_frequency) {
+            case 'Monthly':
+                $next_date = $last_date->modify('+1 month');
+                $next_payment_period = $next_date->format('F Y');
+                break;
+            case 'Quarterly':
+                $next_date = $last_date->modify('+3 months');
+                $quarter = ceil($next_date->format('n') / 3);
+                $next_payment_period = "Q{$quarter} {$next_date->format('Y')}";
+                break;
+            case 'Semi-Annually':
+                $next_date = $last_date->modify('+6 months');
+                $half = $next_date->format('n') <= 6 ? 'H1' : 'H2';
+                $next_payment_period = "{$half} {$next_date->format('Y')}";
+                break;
+            case 'Annually':
+                $next_date = $last_date->modify('+1 year');
+                $next_payment_period = $next_date->format('Y');
+                break;
+            default:
+                $next_date = $last_date->modify('+1 month');
+                $next_payment_period = $next_date->format('F Y');
+        }
+        $next_payment_date = $next_date->format('Y-m-d');
+    } else {
+        // First payment - use lease start date
+        $start_date = new DateTime($tenantData['lease_start_date']);
+        switch($payment_frequency) {
+            case 'Monthly':
+                $next_payment_period = $start_date->format('F Y');
+                $next_payment_date = $start_date->format('Y-m-d');
+                break;
+            case 'Quarterly':
+                $quarter = ceil($start_date->format('n') / 3);
+                $next_payment_period = "Q{$quarter} {$start_date->format('Y')}";
+                $next_payment_date = $start_date->format('Y-m-d');
+                break;
+            case 'Semi-Annually':
+                $half = $start_date->format('n') <= 6 ? 'H1' : 'H2';
+                $next_payment_period = "{$half} {$start_date->format('Y')}";
+                $next_payment_date = $start_date->format('Y-m-d');
+                break;
+            case 'Annually':
+                $next_payment_period = $start_date->format('Y');
+                $next_payment_date = $start_date->format('Y-m-d');
+                break;
+            default:
+                $next_payment_period = $start_date->format('F Y');
+                $next_payment_date = $start_date->format('Y-m-d');
+        }
     }
 
     // Get recent maintenance requests
@@ -134,7 +191,10 @@ try {
     $stmt->bind_param("s", $tenant_code);
     $stmt->execute();
     $recentRequestsResult = $stmt->get_result();
-    $recent_requests = $recentRequestsResult->fetch_all(MYSQLI_ASSOC);
+    $recent_requests = [];
+    while ($row = $recentRequestsResult->fetch_assoc()) {
+        $recent_requests[] = $row;
+    }
     $stmt->close();
 
     $conn->close();
@@ -142,14 +202,21 @@ try {
     // Prepare dashboard data
     $dashboardData = [
         'property_name' => $tenantData['property_name'] ?? 'N/A',
+        'property_address' => $tenantData['property_address'] ?? 'N/A',
         'apartment_number' => $tenantData['apartment_number'] ?? 'Not Assigned',
+        'apartment_code' => $tenantData['apartment_code'] ?? 'N/A',
         'active_requests' => (int)($maintenanceData['active_requests'] ?? 0),
         'days_remaining' => $days_remaining,
         'payments_count' => (int)($paymentsData['payments_count'] ?? 0),
         'total_paid' => (float)($paymentsData['total_paid'] ?? 0),
-        'rent_amount' => (float)($tenantData['rent_amount'] ?? 0),
+        'rent_amount' => $rent_amount,
+        'security_deposit' => (float)($tenantData['security_deposit'] ?? 0),
         'next_payment_amount' => $next_payment_amount,
         'next_payment_date' => $next_payment_date,
+        'next_payment_period' => $next_payment_period,
+        'payment_frequency' => $payment_frequency,
+        'lease_start_date' => $tenantData['lease_start_date'],
+        'lease_end_date' => $tenantData['lease_end_date'],
         'agent_name' => $tenantData['agent_name'] ?? 'N/A',
         'agent_phone' => $tenantData['agent_phone'] ?? null,
         'agent_email' => $tenantData['agent_email'] ?? null,
@@ -163,3 +230,4 @@ try {
     logActivity("Error in fetch_dashboard_data: " . $e->getMessage());
     json_error("Failed to fetch dashboard data", 500, null, 'SERVER_ERROR');
 }
+?>

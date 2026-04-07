@@ -45,7 +45,11 @@
                 </a>
                 <a href="payments.php" class="nav-item" data-page="payments">
                     <i class="fas fa-credit-card"></i>
-                    <span>Payments</span>
+                    <span> Rent Payments</span>
+                </a>
+                 <a href="fees.php" class="nav-item" data-page="fees">
+                    <i class="fas fa-money"></i>
+                    <span>Manage Fees</span>
                 </a>
                 <a href="documents.php" class="nav-item" data-page="documents">
                     <i class="fas fa-file-alt"></i>
@@ -150,6 +154,9 @@
     .password-requirements li::before {
         content: "✗ ";
         font-weight: bold;
+    }
+    #forcePasswordModal{
+        display: none;
     }
     .modal .modal-close {
         background: none;

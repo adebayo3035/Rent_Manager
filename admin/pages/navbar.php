@@ -64,6 +64,9 @@
                             <a href="payment.php" class="dropdown-item">
                                 <i class="fas fa-money-check-alt"></i> Rent Payments
                             </a>
+                             <a href="fee_management.php" class="dropdown-item">
+                                <i class="fas fa-money-check-alt"></i> Manage Fees
+                            </a>
                             <a href="client.php" class="dropdown-item">
                                 <i class="fas fa-users"></i> Clients
                             </a>
@@ -206,6 +209,9 @@
                                 </a> -->
                                 <a href="payment.php" class="mobile-nav-link sub">
                                     <i class="fas fa-money-check-alt"></i> Rent Payments
+                                </a>
+                                <a href="fee_management.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-money-check-alt"></i> Manage Fees
                                 </a>
                                 <a href="client.php" class="mobile-nav-link sub">
                                     <i class="fas fa-users"></i> Clients
