@@ -4,6 +4,7 @@ class AccountUnlockManager {
         this.limit = 20;
         this.searchTerm = '';
         this.selectedAccounts = new Set();
+        this.currentUserType = 'admin'; // admin, tenant, agent, client
         this.apiUrl = '../backend/utilities/unlock_account.php';
         this.init();
     }
@@ -12,7 +13,41 @@ class AccountUnlockManager {
         this.loadAccounts();
         this.setupEventListeners();
         this.setupModals();
+        this.setupUserTypeSelector();
         this.setupToasts();
+    }
+
+    setupUserTypeSelector() {
+        // Create user type filter dropdown
+        const controlsDiv = document.querySelector('.controls');
+        if (controlsDiv) {
+            const userTypeHtml = `
+                <div class="user-type-filter">
+                    <label><i class="fas fa-users"></i> User Type:</label>
+                    <select id="userTypeSelect" class="user-type-select">
+                        <option value="admin">Administrators</option>
+                        <option value="tenant">Tenants</option>
+                        <option value="agent">Agents</option>
+                        <option value="client">Clients</option>
+                    </select>
+                </div>
+            `;
+            
+            const searchBox = document.querySelector('.search-box');
+            if (searchBox) {
+                searchBox.insertAdjacentHTML('afterend', userTypeHtml);
+            }
+        }
+        
+        const userTypeSelect = document.getElementById('userTypeSelect');
+        if (userTypeSelect) {
+            userTypeSelect.addEventListener('change', (e) => {
+                this.currentUserType = e.target.value;
+                this.currentPage = 1;
+                this.selectedAccounts.clear();
+                this.loadAccounts();
+            });
+        }
     }
 
     async loadAccounts() {
@@ -20,22 +55,23 @@ class AccountUnlockManager {
         const emptyState = document.getElementById('emptyState');
         const tableBody = document.getElementById('accountsTableBody');
         
-        // Show loading
-        loadingRow.style.display = '';
-        emptyState.style.display = 'none';
+        if (loadingRow) loadingRow.style.display = '';
+        if (emptyState) emptyState.style.display = 'none';
         
         // Clear existing rows except loading row
-        Array.from(tableBody.children).forEach(row => {
-            if (row.id !== 'loadingRow') {
-                row.remove();
-            }
-        });
+        if (tableBody) {
+            Array.from(tableBody.children).forEach(row => {
+                if (row.id !== 'loadingRow') {
+                    row.remove();
+                }
+            });
+        }
 
         try {
-            // Build query parameters
             const params = new URLSearchParams({
                 page: this.currentPage,
-                limit: this.limit
+                limit: this.limit,
+                user_type: this.currentUserType
             });
 
             if (this.searchTerm) {
@@ -51,83 +87,86 @@ class AccountUnlockManager {
                 this.updateStats(data.accounts);
                 this.updateSelectedCount();
                 
-                // Show empty state if no accounts
                 if (data.accounts.length === 0) {
-                    loadingRow.style.display = 'none';
-                    emptyState.style.display = 'block';
+                    if (loadingRow) loadingRow.style.display = 'none';
+                    if (emptyState) emptyState.style.display = 'block';
                 } else {
-                    loadingRow.style.display = 'none';
+                    if (loadingRow) loadingRow.style.display = 'none';
                 }
             } else {
                 this.showError('Failed to load accounts: ' + (data.message || 'Unknown error'));
-                loadingRow.style.display = 'none';
-                emptyState.style.display = 'block';
+                if (loadingRow) loadingRow.style.display = 'none';
+                if (emptyState) emptyState.style.display = 'block';
             }
         } catch (error) {
             console.error('Error loading accounts:', error);
             this.showError('Failed to load accounts');
-            loadingRow.style.display = 'none';
-            emptyState.style.display = 'block';
+            if (loadingRow) loadingRow.style.display = 'none';
+            if (emptyState) emptyState.style.display = 'block';
         }
     }
 
     renderAccounts(accounts) {
         const tableBody = document.getElementById('accountsTableBody');
+        if (!tableBody) return;
         
         accounts.forEach(account => {
             const row = document.createElement('tr');
-            row.dataset.accountId = account.unique_id;
+            row.dataset.accountId = account.user_id;
             
-            // Determine lock type and status
-            const lockType = account.lock_type || 'login_attempts';
-            const lockTypeText = lockType === 'login_attempts' ? 'Failed Logins' : 'Manual Lock';
-            const lockTypeClass = lockType === 'login_attempts' ? 'lock-type-login' : 'lock-type-manual';
+            const lockTypeText = account.lock_type === 'login_attempts' ? 'Failed Logins' : 'Manual Lock';
+            const lockTypeClass = account.lock_type === 'login_attempts' ? 'lock-type-login' : 'lock-type-manual';
+            const statusClass = 'status-locked';
             
-            // Determine status
-            const isLocked = account.is_locked || (account.locked_until && new Date(account.locked_until) > new Date());
-            const statusText = isLocked ? 'LOCKED' : 'UNLOCKED';
-            const statusClass = isLocked ? 'status-locked' : 'status-unlocked';
+            // Get user type icon
+            const userIcon = this.getUserTypeIcon(account.user_type);
             
             row.innerHTML = `
                 <td>
                     <input type="checkbox" class="account-checkbox" 
-                           data-id="${account.unique_id}"
-                           ${!isLocked ? 'disabled' : ''}>
+                           data-id="${account.user_id}"
+                           data-user-type="${account.user_type}">
                 </td>
-                <td>${account.unique_id}</td>
-                <td><strong>${account.firstname} ${account.lastname}</strong></td>
-                <td>${account.email}</td>
+                <td><i class="fas ${userIcon}"></i> ${this.escapeHtml(account.user_id)}</td>
+                <td><strong>${this.escapeHtml(account.name)}</strong></td>
+                <td>${this.escapeHtml(account.email)}</td>
                 <td>${account.role}</td>
                 <td><span class="lock-type-badge ${lockTypeClass}">${lockTypeText}</span></td>
-                <td>${account.lock_reason || 'Too many failed login attempts'}</td>
+                <td>${this.escapeHtml(account.lock_reason)}</td>
                 <td>${account.attempts || 'N/A'}</td>
-                <td>${account.locked_until ? this.formatDateTime(account.locked_until) : 'N/A'}</td>
-                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                <td>${this.formatDateTime(account.locked_until) || 'N/A'}</td>
+                <td><span class="status-badge ${statusClass}">LOCKED</span></td>
                 <td>
-                    <div class="action-buttons">
-                        ${isLocked ? `
-                            <button class="btn-unlock" data-id="${account.unique_id}" 
-                                    data-email="${account.email}" 
-                                    data-name="${account.firstname} ${account.lastname}"
-                                    data-reason="${account.lock_reason || ''}">
-                                <i class="fas fa-unlock-alt"></i> Unlock
-                            </button>
-                        ` : `
-                            <span class="text-muted">Already unlocked</span>
-                        `}
-                    </div>
+                    <button class="btn-unlock" 
+                            data-id="${account.user_id}"
+                            data-user-type="${account.user_type}"
+                            data-email="${this.escapeHtml(account.email)}" 
+                            data-name="${this.escapeHtml(account.name)}"
+                            data-reason="${this.escapeHtml(account.lock_reason || '')}">
+                        <i class="fas fa-unlock-alt"></i> Unlock
+                    </button>
                 </td>
             `;
             
             tableBody.appendChild(row);
         });
 
-        // Add event listeners to checkboxes and unlock buttons
         this.setupRowEventListeners();
+    }
+
+    getUserTypeIcon(userType) {
+        const icons = {
+            'admin': 'fa-user-shield',
+            'tenant': 'fa-user',
+            'agent': 'fa-user-tie',
+            'client': 'fa-briefcase'
+        };
+        return icons[userType] || 'fa-user';
     }
 
     updatePagination(pagination) {
         const paginationContainer = document.getElementById('pagination');
+        if (!paginationContainer) return;
         
         if (pagination.total_pages <= 1) {
             paginationContainer.innerHTML = '';
@@ -181,8 +220,6 @@ class AccountUnlockManager {
         `;
 
         paginationContainer.innerHTML = buttons + pageInfo;
-
-        // Add event listeners to page buttons
         this.setupPaginationEventListeners();
     }
 
@@ -190,147 +227,194 @@ class AccountUnlockManager {
         const totalLocked = accounts.length;
         const loginLocks = accounts.filter(a => a.lock_type === 'login_attempts').length;
         const manualLocks = accounts.filter(a => a.lock_type === 'manual_lock').length;
-        
-        // For unlocked today, we'd need additional API call or keep track
-        // For now, we'll show 0 and update if we implement that feature
         const unlockedToday = 0;
 
-        document.getElementById('totalLocked').textContent = totalLocked;
-        document.getElementById('loginLocks').textContent = loginLocks;
-        document.getElementById('manualLocks').textContent = manualLocks;
-        document.getElementById('unlockedToday').textContent = unlockedToday;
+        const totalLockedEl = document.getElementById('totalLocked');
+        const loginLocksEl = document.getElementById('loginLocks');
+        const manualLocksEl = document.getElementById('manualLocks');
+        const unlockedTodayEl = document.getElementById('unlockedToday');
+        
+        if (totalLockedEl) totalLockedEl.textContent = totalLocked;
+        if (loginLocksEl) loginLocksEl.textContent = loginLocks;
+        if (manualLocksEl) manualLocksEl.textContent = manualLocks;
+        if (unlockedTodayEl) unlockedTodayEl.textContent = unlockedToday;
     }
 
     updateSelectedCount() {
         const selectedCount = this.selectedAccounts.size;
-        document.getElementById('selectedCount').textContent = `${selectedCount} selected`;
-        
+        const selectedCountSpan = document.getElementById('selectedCount');
         const bulkUnlockBtn = document.getElementById('bulkUnlockBtn');
-        bulkUnlockBtn.disabled = selectedCount === 0;
-        
         const selectAllHeader = document.getElementById('selectAllHeader');
         const selectAll = document.getElementById('selectAll');
         
-        if (selectedCount > 0) {
-            selectAll.checked = true;
-            selectAllHeader.checked = true;
-        } else {
-            selectAll.checked = false;
-            selectAllHeader.checked = false;
+        if (selectedCountSpan) {
+            selectedCountSpan.textContent = `${selectedCount} selected`;
         }
+        
+        if (bulkUnlockBtn) {
+            bulkUnlockBtn.disabled = selectedCount === 0;
+        }
+        
+        // Update select all checkboxes
+        const totalCheckboxes = document.querySelectorAll('.account-checkbox:not(:disabled)').length;
+        const checkedCheckboxes = document.querySelectorAll('.account-checkbox:checked').length;
+        const allChecked = totalCheckboxes > 0 && checkedCheckboxes === totalCheckboxes;
+        
+        if (selectAllHeader) selectAllHeader.checked = allChecked;
+        if (selectAll) selectAll.checked = allChecked;
     }
 
     setupEventListeners() {
         // Search
-        document.getElementById('searchBtn').addEventListener('click', () => {
-            this.searchTerm = document.getElementById('searchInput').value.trim();
-            this.currentPage = 1;
-            this.selectedAccounts.clear();
-            this.loadAccounts();
-        });
+        const searchBtn = document.getElementById('searchBtn');
+        const searchInput = document.getElementById('searchInput');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const bulkUnlockBtn = document.getElementById('bulkUnlockBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const selectAllHeader = document.getElementById('selectAllHeader');
+        const selectAll = document.getElementById('selectAll');
+        
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                if (searchInput) {
+                    this.searchTerm = searchInput.value.trim();
+                    this.currentPage = 1;
+                    this.selectedAccounts.clear();
+                    this.loadAccounts();
+                }
+            });
+        }
 
-        document.getElementById('searchInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.searchTerm = e.target.value.trim();
+        if (searchInput) {
+            searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.searchTerm = e.target.value.trim();
+                    this.currentPage = 1;
+                    this.selectedAccounts.clear();
+                    this.loadAccounts();
+                }
+            });
+        }
+
+        // Refresh
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.searchTerm = '';
+                if (searchInput) searchInput.value = '';
                 this.currentPage = 1;
                 this.selectedAccounts.clear();
                 this.loadAccounts();
-            }
-        });
-
-        // Refresh
-        document.getElementById('refreshBtn').addEventListener('click', () => {
-            this.searchTerm = '';
-            document.getElementById('searchInput').value = '';
-            this.currentPage = 1;
-            this.selectedAccounts.clear();
-            this.loadAccounts();
-            this.showSuccess('Accounts list refreshed');
-        });
+                this.showSuccess('Accounts list refreshed');
+            });
+        }
 
         // Bulk unlock
-        document.getElementById('bulkUnlockBtn').addEventListener('click', () => {
-            this.showBulkUnlockModal();
-        });
+        if (bulkUnlockBtn) {
+            bulkUnlockBtn.addEventListener('click', () => {
+                this.showBulkUnlockModal();
+            });
+        }
 
         // Export CSV
-        document.getElementById('exportBtn').addEventListener('click', () => {
-            this.exportToCSV();
-        });
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                this.exportToCSV();
+            });
+        }
 
         // Select all checkboxes
-        document.getElementById('selectAllHeader').addEventListener('change', (e) => {
-            const isChecked = e.target.checked;
-            document.querySelectorAll('.account-checkbox:not(:disabled)').forEach(checkbox => {
-                checkbox.checked = isChecked;
-                const accountId = checkbox.dataset.id;
-                if (isChecked) {
-                    this.selectedAccounts.add(accountId);
-                } else {
-                    this.selectedAccounts.delete(accountId);
-                }
+        if (selectAllHeader) {
+            selectAllHeader.addEventListener('change', (e) => {
+                const isChecked = e.target.checked;
+                document.querySelectorAll('.account-checkbox:not(:disabled)').forEach(checkbox => {
+                    checkbox.checked = isChecked;
+                    const accountId = checkbox.dataset.id;
+                    const userType = checkbox.dataset.userType;
+                    const accountKey = `${userType}|${accountId}`;
+                    if (isChecked) {
+                        this.selectedAccounts.add(accountKey);
+                    } else {
+                        this.selectedAccounts.delete(accountKey);
+                    }
+                });
+                this.updateSelectedCount();
             });
-            this.updateSelectedCount();
-        });
+        }
 
-        document.getElementById('selectAll').addEventListener('change', (e) => {
-            const isChecked = e.target.checked;
-            document.querySelectorAll('.account-checkbox:not(:disabled)').forEach(checkbox => {
-                checkbox.checked = isChecked;
-                const accountId = checkbox.dataset.id;
-                if (isChecked) {
-                    this.selectedAccounts.add(accountId);
-                } else {
-                    this.selectedAccounts.delete(accountId);
-                }
+        if (selectAll) {
+            selectAll.addEventListener('change', (e) => {
+                const isChecked = e.target.checked;
+                document.querySelectorAll('.account-checkbox:not(:disabled)').forEach(checkbox => {
+                    checkbox.checked = isChecked;
+                    const accountId = checkbox.dataset.id;
+                    const userType = checkbox.dataset.userType;
+                    const accountKey = `${userType}|${accountId}`;
+                    if (isChecked) {
+                        this.selectedAccounts.add(accountKey);
+                    } else {
+                        this.selectedAccounts.delete(accountKey);
+                    }
+                });
+                this.updateSelectedCount();
             });
-            this.updateSelectedCount();
-        });
+        }
     }
 
     setupRowEventListeners() {
         // Checkbox events
         document.querySelectorAll('.account-checkbox').forEach(checkbox => {
-            checkbox.addEventListener('change', (e) => {
+            checkbox.removeEventListener('change', this.handleCheckboxChange);
+            this.handleCheckboxChange = (e) => {
                 const accountId = e.target.dataset.id;
+                const userType = e.target.dataset.userType;
+                const accountKey = `${userType}|${accountId}`;
                 if (e.target.checked) {
-                    this.selectedAccounts.add(accountId);
+                    this.selectedAccounts.add(accountKey);
                 } else {
-                    this.selectedAccounts.delete(accountId);
+                    this.selectedAccounts.delete(accountKey);
                 }
                 this.updateSelectedCount();
-            });
+            };
+            checkbox.addEventListener('change', this.handleCheckboxChange.bind(this));
         });
 
         // Unlock button events
         document.querySelectorAll('.btn-unlock').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const accountId = e.target.dataset.id || e.target.closest('.btn-unlock').dataset.id;
-                const email = e.target.dataset.email || e.target.closest('.btn-unlock').dataset.email;
-                const name = e.target.dataset.name || e.target.closest('.btn-unlock').dataset.name;
-                const reason = e.target.dataset.reason || e.target.closest('.btn-unlock').dataset.reason;
+            button.removeEventListener('click', this.handleUnlockClick);
+            this.handleUnlockClick = (e) => {
+                e.stopPropagation();
+                const accountId = button.dataset.id;
+                const userType = button.dataset.userType;
+                const email = button.dataset.email;
+                const name = button.dataset.name;
+                const reason = button.dataset.reason;
                 
-                this.showUnlockModal(accountId, email, name, reason);
-            });
+                this.showUnlockModal(accountId, userType, email, name, reason);
+            };
+            button.addEventListener('click', this.handleUnlockClick.bind(this));
         });
     }
 
     setupPaginationEventListeners() {
         document.querySelectorAll('.page-btn').forEach(button => {
-            button.addEventListener('click', (e) => {
+            button.removeEventListener('click', this.handlePageClick);
+            this.handlePageClick = (e) => {
                 const page = parseInt(e.target.dataset.page);
                 if (page && page !== this.currentPage) {
                     this.currentPage = page;
                     this.loadAccounts();
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
-            });
+            };
+            button.addEventListener('click', this.handlePageClick.bind(this));
         });
     }
 
     setupModals() {
         // Single unlock modal
         const unlockModal = document.getElementById('unlockModal');
+        if (!unlockModal) return;
+        
         const closeUnlockModal = unlockModal.querySelector('.close-modal');
         const cancelUnlock = unlockModal.querySelector('.cancel-unlock');
         const confirmUnlock = unlockModal.querySelector('.confirm-unlock');
@@ -345,40 +429,70 @@ class AccountUnlockManager {
             document.body.style.overflow = '';
         };
 
-        [closeUnlockModal, cancelUnlock].forEach(btn => {
-            btn.addEventListener('click', () => hideModal(unlockModal));
-        });
+        if (closeUnlockModal) {
+            closeUnlockModal.addEventListener('click', () => hideModal(unlockModal));
+        }
+        
+        if (cancelUnlock) {
+            cancelUnlock.addEventListener('click', () => hideModal(unlockModal));
+        }
 
-        confirmUnlock.addEventListener('click', () => {
-            const accountId = unlockModal.dataset.accountId;
-            const reason = document.getElementById('unlockReason').value.trim();
-            this.unlockSingleAccount(accountId, reason);
-            hideModal(unlockModal);
-        });
+        if (confirmUnlock) {
+            confirmUnlock.addEventListener('click', () => {
+                const accountId = unlockModal.dataset.accountId;
+                const userType = unlockModal.dataset.userType;
+                const reason = document.getElementById('unlockReason')?.value.trim() || '';
+                
+                if (accountId && userType) {
+                    this.unlockSingleAccount(accountId, userType, reason);
+                } else {
+                    console.error('Missing account ID or user type');
+                    this.showError('Unable to unlock account: Missing information');
+                }
+                hideModal(unlockModal);
+            });
+        }
 
         // Bulk unlock modal
         const bulkModal = document.getElementById('bulkUnlockModal');
-        const closeBulkModal = bulkModal.querySelector('.close-modal');
-        const cancelBulkUnlock = bulkModal.querySelector('.cancel-bulk-unlock');
-        const confirmBulkUnlock = bulkModal.querySelector('.confirm-bulk-unlock');
+        if (bulkModal) {
+            const closeBulkModal = bulkModal.querySelector('.close-modal');
+            const cancelBulkUnlock = bulkModal.querySelector('.cancel-bulk-unlock');
+            const confirmBulkUnlock = bulkModal.querySelector('.confirm-bulk-unlock');
 
-        [closeBulkModal, cancelBulkUnlock].forEach(btn => {
-            btn.addEventListener('click', () => hideModal(bulkModal));
-        });
+            if (closeBulkModal) {
+                closeBulkModal.addEventListener('click', () => hideModal(bulkModal));
+            }
+            
+            if (cancelBulkUnlock) {
+                cancelBulkUnlock.addEventListener('click', () => hideModal(bulkModal));
+            }
 
-        confirmBulkUnlock.addEventListener('click', () => {
-            const reason = document.getElementById('bulkUnlockReason').value.trim();
-            this.unlockBulkAccounts(reason);
-            hideModal(bulkModal);
-        });
+            if (confirmBulkUnlock) {
+                confirmBulkUnlock.addEventListener('click', () => {
+                    const reason = document.getElementById('bulkUnlockReason')?.value.trim() || '';
+                    if (this.selectedAccounts.size > 0) {
+                        this.unlockBulkAccounts(reason);
+                    } else {
+                        this.showWarning('No accounts selected for unlocking');
+                    }
+                    hideModal(bulkModal);
+                });
+            }
 
-        // Close modals on outside click
-        [unlockModal, bulkModal].forEach(modal => {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    hideModal(modal);
+            // Close modals on outside click
+            bulkModal.addEventListener('click', (e) => {
+                if (e.target === bulkModal) {
+                    hideModal(bulkModal);
                 }
             });
+        }
+
+        // Close single modal on outside click
+        unlockModal.addEventListener('click', (e) => {
+            if (e.target === unlockModal) {
+                hideModal(unlockModal);
+            }
         });
 
         // Store references
@@ -388,49 +502,64 @@ class AccountUnlockManager {
         this.hideModal = hideModal;
     }
 
-    showUnlockModal(accountId, email, name, lockReason) {
-        document.getElementById('modalUserId').textContent = accountId;
-        document.getElementById('modalUserName').textContent = name;
-        document.getElementById('modalUserEmail').textContent = email;
-        document.getElementById('modalLockReason').textContent = lockReason || 'Too many failed login attempts';
-        document.getElementById('unlockReason').value = '';
+    showUnlockModal(accountId, userType, email, name, lockReason) {
+        const modalUserId = document.getElementById('modalUserId');
+        const modalUserName = document.getElementById('modalUserName');
+        const modalUserEmail = document.getElementById('modalUserEmail');
+        const modalLockReason = document.getElementById('modalLockReason');
+        const unlockReason = document.getElementById('unlockReason');
         
-        this.unlockModal.dataset.accountId = accountId;
-        this.showModal(this.unlockModal);
+        if (modalUserId) modalUserId.textContent = accountId;
+        if (modalUserName) modalUserName.textContent = name;
+        if (modalUserEmail) modalUserEmail.textContent = email;
+        if (modalLockReason) modalLockReason.textContent = lockReason || 'Too many failed login attempts';
+        if (unlockReason) unlockReason.value = '';
+        
+        if (this.unlockModal) {
+            this.unlockModal.dataset.accountId = accountId;
+            this.unlockModal.dataset.userType = userType;
+            this.showModal(this.unlockModal);
+        }
     }
 
     showBulkUnlockModal() {
         const selectedCount = this.selectedAccounts.size;
-        document.getElementById('bulkUnlockCount').textContent = selectedCount;
-        document.getElementById('bulkUnlockReason').value = '';
+        const bulkUnlockCount = document.getElementById('bulkUnlockCount');
+        const bulkUnlockReason = document.getElementById('bulkUnlockReason');
+        const selectedAccountsList = document.getElementById('selectedAccountsList');
         
-        // Clear and populate selected accounts list
-        const accountsList = document.getElementById('selectedAccountsList');
-        accountsList.innerHTML = '';
+        if (bulkUnlockCount) bulkUnlockCount.textContent = selectedCount;
+        if (bulkUnlockReason) bulkUnlockReason.value = '';
         
-        // We need to get account details for display
-        const selectedRows = document.querySelectorAll('.account-checkbox:checked');
-        selectedRows.forEach(checkbox => {
-            const row = checkbox.closest('tr');
-            const accountId = row.dataset.accountId;
-            const name = row.cells[2].querySelector('strong').textContent;
-            const email = row.cells[3].textContent;
+        if (selectedAccountsList) {
+            selectedAccountsList.innerHTML = '';
             
-            const accountItem = document.createElement('div');
-            accountItem.className = 'selected-account-item';
-            accountItem.innerHTML = `
-                <div>
-                    <strong>${name}</strong>
-                    <div class="text-muted">${email} (ID: ${accountId})</div>
-                </div>
-            `;
-            accountsList.appendChild(accountItem);
-        });
+            const selectedRows = document.querySelectorAll('.account-checkbox:checked');
+            selectedRows.forEach(checkbox => {
+                const row = checkbox.closest('tr');
+                const accountId = checkbox.dataset.id;
+                const userType = checkbox.dataset.userType;
+                const name = row.cells[2]?.querySelector('strong')?.textContent || 'N/A';
+                const email = row.cells[3]?.textContent || 'N/A';
+                
+                const accountItem = document.createElement('div');
+                accountItem.className = 'selected-account-item';
+                accountItem.innerHTML = `
+                    <div>
+                        <strong>${this.escapeHtml(name)}</strong>
+                        <div class="text-muted">${this.escapeHtml(email)} (${userType}: ${accountId})</div>
+                    </div>
+                `;
+                selectedAccountsList.appendChild(accountItem);
+            });
+        }
         
-        this.showModal(this.bulkModal);
+        if (this.bulkModal) {
+            this.showModal(this.bulkModal);
+        }
     }
 
-    async unlockSingleAccount(accountId, reason) {
+    async unlockSingleAccount(accountId, userType, reason) {
         try {
             const response = await fetch(this.apiUrl, {
                 method: 'POST',
@@ -439,7 +568,8 @@ class AccountUnlockManager {
                 },
                 body: JSON.stringify({
                     action: 'unlock_account',
-                    account_id: parseInt(accountId),
+                    user_type: userType,
+                    account_id: accountId,
                     reason: reason
                 })
             });
@@ -449,8 +579,8 @@ class AccountUnlockManager {
             if (data.success) {
                 this.showSuccess(`Account unlocked: ${data.account.email}`);
                 // Remove from selected accounts if present
-                this.selectedAccounts.delete(accountId.toString());
-                // Reload accounts
+                const accountKey = `${userType}|${accountId}`;
+                this.selectedAccounts.delete(accountKey);
                 this.loadAccounts();
             } else {
                 this.showError('Failed to unlock account: ' + data.message);
@@ -462,45 +592,58 @@ class AccountUnlockManager {
     }
 
     async unlockBulkAccounts(reason) {
-        const accountIds = Array.from(this.selectedAccounts).map(id => parseInt(id));
+        const accountsByType = {};
         
-        if (accountIds.length === 0) {
+        // Group accounts by user type
+        this.selectedAccounts.forEach(accountKey => {
+            const [userType, accountId] = accountKey.split('|');
+            if (!accountsByType[userType]) {
+                accountsByType[userType] = [];
+            }
+            accountsByType[userType].push(accountId);
+        });
+        
+        if (Object.keys(accountsByType).length === 0) {
             this.showWarning('No accounts selected');
             return;
         }
 
         try {
-            const response = await fetch(this.apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    action: 'bulk_unlock',
-                    account_ids: accountIds,
-                    reason: reason
-                })
-            });
+            let totalSuccess = 0;
+            let totalFailed = 0;
+            
+            for (const [userType, accountIds] of Object.entries(accountsByType)) {
+                const response = await fetch(this.apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'bulk_unlock',
+                        user_type: userType,
+                        account_ids: accountIds,
+                        reason: reason
+                    })
+                });
 
-            const data = await response.json();
-
-            if (data.success) {
-                const successful = data.summary.successful;
-                const failed = data.summary.failed;
+                const data = await response.json();
                 
-                if (failed === 0) {
-                    this.showSuccess(`Successfully unlocked ${successful} account(s)`);
+                if (data.success) {
+                    totalSuccess += data.summary.successful;
+                    totalFailed += data.summary.failed;
                 } else {
-                    this.showWarning(`Unlocked ${successful} account(s), ${failed} failed`);
+                    totalFailed += accountIds.length;
                 }
-                
-                // Clear selected accounts
-                this.selectedAccounts.clear();
-                // Reload accounts
-                this.loadAccounts();
-            } else {
-                this.showError('Bulk unlock failed: ' + data.message);
             }
+            
+            if (totalFailed === 0) {
+                this.showSuccess(`Successfully unlocked ${totalSuccess} account(s)`);
+            } else {
+                this.showWarning(`Unlocked ${totalSuccess} account(s), ${totalFailed} failed`);
+            }
+            
+            this.selectedAccounts.clear();
+            this.loadAccounts();
         } catch (error) {
             console.error('Error in bulk unlock:', error);
             this.showError('Failed to perform bulk unlock');
@@ -519,27 +662,29 @@ class AccountUnlockManager {
         
         rows.forEach(row => {
             const cells = row.querySelectorAll('td');
-            const data = [
-                cells[1].textContent, // User ID
-                cells[2].querySelector('strong').textContent, // Name
-                cells[3].textContent, // Email
-                cells[4].textContent, // Role
-                cells[5].querySelector('.lock-type-badge').textContent, // Lock Type
-                cells[6].textContent, // Lock Reason
-                cells[7].textContent, // Failed Attempts
-                cells[8].textContent, // Locked Until
-                cells[9].querySelector('.status-badge').textContent // Status
-            ];
-            
-            // Escape commas and quotes
-            const escapedData = data.map(cell => {
-                if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
-                    return `"${cell.replace(/"/g, '""')}"`;
-                }
-                return cell;
-            });
-            
-            csv += escapedData.join(',') + '\n';
+            if (cells.length >= 10) {
+                const data = [
+                    cells[1]?.textContent.trim() || '', // User ID
+                    cells[2]?.querySelector('strong')?.textContent || cells[2]?.textContent.trim() || '', // Name
+                    cells[3]?.textContent.trim() || '', // Email
+                    cells[4]?.textContent.trim() || '', // Role
+                    cells[5]?.querySelector('.lock-type-badge')?.textContent || cells[5]?.textContent.trim() || '', // Lock Type
+                    cells[6]?.textContent.trim() || '', // Lock Reason
+                    cells[7]?.textContent.trim() || '', // Failed Attempts
+                    cells[8]?.textContent.trim() || '', // Locked Until
+                    cells[9]?.querySelector('.status-badge')?.textContent || cells[9]?.textContent.trim() || '' // Status
+                ];
+                
+                // Escape commas and quotes
+                const escapedData = data.map(cell => {
+                    if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+                        return `"${cell.replace(/"/g, '""')}"`;
+                    }
+                    return cell;
+                });
+                
+                csv += escapedData.join(',') + '\n';
+            }
         });
 
         // Create download link
@@ -557,45 +702,64 @@ class AccountUnlockManager {
     }
 
     setupToasts() {
-        toastr.options = {
-            "closeButton": true,
-            "debug": false,
-            "newestOnTop": true,
-            "progressBar": true,
-            "positionClass": "toast-top-right",
-            "preventDuplicates": false,
-            "onclick": null,
-            "showDuration": "300",
-            "hideDuration": "1000",
-            "timeOut": "5000",
-            "extendedTimeOut": "1000",
-            "showEasing": "swing",
-            "hideEasing": "linear",
-            "showMethod": "fadeIn",
-            "hideMethod": "fadeOut"
-        };
+        if (typeof toastr !== 'undefined') {
+            toastr.options = {
+                "closeButton": true,
+                "debug": false,
+                "newestOnTop": true,
+                "progressBar": true,
+                "positionClass": "toast-top-right",
+                "preventDuplicates": false,
+                "onclick": null,
+                "showDuration": "300",
+                "hideDuration": "1000",
+                "timeOut": "5000",
+                "extendedTimeOut": "1000",
+                "showEasing": "swing",
+                "hideEasing": "linear",
+                "showMethod": "fadeIn",
+                "hideMethod": "fadeOut"
+            };
+        }
     }
 
     showSuccess(message) {
-        toastr.success(message, 'Success');
+        if (typeof toastr !== 'undefined') {
+            toastr.success(message, 'Success');
+        } else {
+            console.log('Success:', message);
+        }
     }
 
     showError(message) {
-        toastr.error(message, 'Error');
+        if (typeof toastr !== 'undefined') {
+            toastr.error(message, 'Error');
+        } else {
+            console.error('Error:', message);
+        }
     }
 
     showWarning(message) {
-        toastr.warning(message, 'Warning');
+        if (typeof toastr !== 'undefined') {
+            toastr.warning(message, 'Warning');
+        } else {
+            console.warn('Warning:', message);
+        }
     }
 
     formatDateTime(dateTimeString) {
         if (!dateTimeString) return 'N/A';
         
-        const date = new Date(dateTimeString);
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        try {
+            const date = new Date(dateTimeString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+            return dateTimeString;
+        }
     }
 
     escapeHtml(text) {
+        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;

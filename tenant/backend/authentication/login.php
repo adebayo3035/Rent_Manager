@@ -176,7 +176,7 @@ class LoginSecurity
             return [false, "Database error", 500, null];
         }
 
-        $stmt->bind_param("i", $userId);
+        $stmt->bind_param("s", $userId);
 
         if (!$stmt->execute()) {
             logActivity("Lockout check execute failed: " . $stmt->error);
@@ -243,7 +243,7 @@ class LoginSecurity
                 throw new Exception("Prepare failed");
             }
 
-            $stmt->bind_param("i", $userId);
+            $stmt->bind_param("s", $userId);
             if (!$stmt->execute()) {
                 logActivity("Failed to execute delete statement: " . $stmt->error);
                 throw new Exception("Execute failed");
@@ -263,7 +263,7 @@ class LoginSecurity
             ");
 
             if ($stmt) {
-                $stmt->bind_param("i", $userId);
+                $stmt->bind_param("s", $userId);
                 if (!$stmt->execute()) {
                     logActivity("Failed to update lock history: " . $stmt->error);
                 }
@@ -312,9 +312,9 @@ class LoginSecurity
 
             // FIX: Bind parameters correctly based on query type
             if ($newAttempts === 1) {
-                $stmt->bind_param("ii", $userId, $newAttempts);
+                $stmt->bind_param("si", $userId, $newAttempts);
             } else {
-                $stmt->bind_param("ii", $newAttempts, $userId);
+                $stmt->bind_param("is", $newAttempts, $userId);
             }
 
             if (!$stmt->execute()) {
@@ -335,7 +335,7 @@ class LoginSecurity
                     throw new Exception("Prepare lock failed");
                 }
 
-                $stmt->bind_param("si", $lockPeriod, $userId);
+                $stmt->bind_param("ss", $lockPeriod, $userId);
                 if (!$stmt->execute()) {
                     logActivity("Failed to execute lock statement: " . $stmt->error);
                     throw new Exception("Execute lock failed");
@@ -351,7 +351,7 @@ class LoginSecurity
 
                 if ($stmt) {
                     $lockReason = "Account locked due to {$newAttempts} failed login attempts";
-                    $stmt->bind_param("is", $userId, $lockReason);
+                    $stmt->bind_param("ss", $userId, $lockReason);
                     if (!$stmt->execute()) {
                         logActivity("Failed to record lock history: " . $stmt->error);
                     }
@@ -400,7 +400,7 @@ class LoginSecurity
             return false;
         }
 
-        $stmt->bind_param("i", $userId);
+        $stmt->bind_param("s", $userId);
 
         if (!$stmt->execute()) {
             logActivity("Session check execute failed: " . $stmt->error);
@@ -442,7 +442,7 @@ class LoginSecurity
                 throw new Exception("Prepare delete failed");
             }
 
-            $stmt->bind_param("i", $userId);
+            $stmt->bind_param("s", $userId);
             if (!$stmt->execute()) {
                 logActivity("Failed to execute session delete statement: " . $stmt->error);
                 throw new Exception("Execute delete failed");
