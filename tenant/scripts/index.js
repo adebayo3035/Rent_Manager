@@ -541,85 +541,122 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Get Secret Question Form
-  const getSecretQuestionForm = document.getElementById(
-    "getSecretQuestionForm",
-  );
-  if (getSecretQuestionForm) {
-    getSecretQuestionForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
+const getSecretQuestionForm = document.getElementById("getSecretQuestionForm");
+if (getSecretQuestionForm) {
+  getSecretQuestionForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-      const email = document.getElementById("emailSecretQuestion").value.trim();
-      const password = document.getElementById("passwordSecretQuestion").value;
+    const identifier = document.getElementById("emailSecretQuestion").value.trim();
+    const password = document.getElementById("passwordSecretQuestion").value;
 
-      if (!email || !password) {
-        UI.toast("Email and password are required.", "danger");
-        return;
-      }
+    if (!identifier || !password) {
+      UI.toast("Email/Phone and password are required.", "danger");
+      return;
+    }
 
-      UI.confirm("Proceed to retrieve your secret question?", async () => {
-        try {
-          const response = await fetch(
-            "../backend/authentication/get_secret_question.php",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify({ email, password }),
-            },
-          );
+    // Show loading state on button
+    const submitBtn = getSecretQuestionForm.querySelector('.button');
+    const originalText = submitBtn.value;
+    submitBtn.value = 'Processing...';
+    submitBtn.disabled = true;
 
-          const data = await response.json();
-
-          if (data.success) {
-            UI.toast("Secret question retrieved successfully.", "success");
-            getSecretQuestionForm.reset();
-
-            const displayElement = document.getElementById("displayQuestion");
-            if (displayElement) {
-              const secretQuestion = data.secret_question;
-              let timeLeft = 10;
-
-              displayElement.innerHTML = `
-                <div style="color: green; font-weight: bold; padding: 10px; 
-                          background-color: #f0f8ff; border: 1px solid #4CAF50; 
-                          border-radius: 4px; margin-top: 5px;">
-                  Your Secret Question is: "${secretQuestion}"
-                </div>
-                <div id="countdownTimer" style="margin-top: 4px; font-size: 0.8em; color: #ff9800;">
-                  Clearing in ${timeLeft} seconds...
-                </div>
-              `;
-
-              const countdown = setInterval(() => {
-                timeLeft--;
-                const timerElement = document.getElementById("countdownTimer");
-                if (timerElement) {
-                  timerElement.textContent = `Clearing in ${timeLeft} second${
-                    timeLeft !== 1 ? "s" : ""
-                  }...`;
-                }
-
-                if (timeLeft <= 0) {
-                  clearInterval(countdown);
-                  displayElement.innerHTML = "";
-                  UI.toast("Secret question cleared for security.", "info");
-                }
-              }, 1000);
-            }
-          } else {
-            UI.toast(
-              data.message || "Failed to fetch secret question.",
-              "danger",
-            );
+    UI.confirm("Proceed to retrieve your secret question?", async () => {
+      try {
+        const response = await fetch(
+          "../backend/authentication/get_secret_question.php",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ 
+              identifier: identifier,  // Changed from 'email' to 'identifier'
+              password: password 
+            }),
           }
-        } catch (error) {
-          console.error("Secret Question Error:", error);
-          UI.toast("An unexpected error occurred. Please try again.", "danger");
-        }
-      });
-    });
-  }
+        );
 
+        const data = await response.json();
+
+        if (data.success) {
+          UI.toast("Secret question retrieved successfully.", "success");
+          getSecretQuestionForm.reset();
+
+          const displayElement = document.getElementById("displayQuestion");
+          if (displayElement) {
+            const secretQuestion = data.secret_question;
+            let timeLeft = 15; // Increased to 15 seconds for better readability
+
+            displayElement.innerHTML = `
+              <div style="color: #155724; font-weight: 500; padding: 15px; 
+                        background-color: #d4edda; border-left: 4px solid #28a745; 
+                        border-radius: 4px; margin-top: 15px;">
+                <strong>Your Security Question:</strong><br>
+                "${escapeHtml(secretQuestion)}"
+                <div id="countdownTimer" style="margin-top: 8px; font-size: 0.75em; color: #856404;">
+                  This message will clear in ${timeLeft} seconds for security purposes.
+                </div>
+              </div>
+            `;
+
+            const countdown = setInterval(() => {
+              timeLeft--;
+              const timerElement = document.getElementById("countdownTimer");
+              if (timerElement) {
+                timerElement.textContent = `This message will clear in ${timeLeft} second${timeLeft !== 1 ? "s" : ""} for security purposes.`;
+              }
+
+              if (timeLeft <= 0) {
+                clearInterval(countdown);
+                displayElement.innerHTML = "";
+                UI.toast("Secret question cleared for security.", "info");
+              }
+            }, 1000);
+          }
+        } else {
+          // Handle specific error messages
+          let errorMessage = data.message || "Failed to fetch secret question.";
+          
+          // Check for account lock message
+          if (data.message && data.message.includes("locked")) {
+            errorMessage = data.message;
+          }
+          
+          UI.toast(errorMessage, "danger");
+          
+          // If account is locked, disable the form temporarily
+          if (data.message && data.message.includes("locked")) {
+            getSecretQuestionForm.querySelectorAll('input, .button').forEach(el => {
+              el.disabled = true;
+            });
+            
+            // Re-enable after lockout period (assuming 15 minutes)
+            setTimeout(() => {
+              getSecretQuestionForm.querySelectorAll('input, .button').forEach(el => {
+                el.disabled = false;
+              });
+              UI.toast("You can now try again.", "info");
+            }, 15 * 60 * 1000);
+          }
+        }
+      } catch (error) {
+        console.error("Secret Question Error:", error);
+        UI.toast("An unexpected error occurred. Please try again.", "danger");
+      } finally {
+        // Reset button state
+        submitBtn.value = originalText;
+        submitBtn.disabled = false;
+      }
+    });
+  });
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
   // Login Form
   const loginForm = document.getElementById("loginForm");
   if (loginForm) {
@@ -798,7 +835,7 @@ document.addEventListener("DOMContentLoaded", () => {
       event.preventDefault();
 
       const email = document.getElementById("emailActivateAccount").value;
-      const user_type = "admin";
+      const user_type = "tenant";
       const title = "Account Reactivation OTP";
       const sendOTPButton = document.getElementById("sendOTP");
       const sendOTPEmail = document.getElementById("emailActivateAccount");
@@ -867,7 +904,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const email = document.getElementById("validateEmail").value;
       const otp = document.getElementById("otpInput").value;
       const requestReason = document.getElementById("reactivationReason").value;
-      const user_type = "admin";
+      const user_type = "tenant";
 
       const submitButton = document.getElementById("reactivationButton");
       const responseMessage = document.getElementById("ReactivationResponse");

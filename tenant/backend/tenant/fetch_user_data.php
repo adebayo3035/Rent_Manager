@@ -40,6 +40,7 @@ try {
             t.lease_end_date,
             t.payment_frequency,
             t.status,
+            t.has_secret_set,
             a.apartment_number,
             a.rent_amount,
             a.security_deposit,

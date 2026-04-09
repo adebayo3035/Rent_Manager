@@ -77,9 +77,9 @@ function renderFeesPage() {
     // Filter fees based on current tab
     let filteredFees = tenantFees;
     if (currentTab === 'recurring') {
-        filteredFees = tenantFees.filter(f => f.is_recurring === 1);
+        filteredFees = tenantFees.filter(f => f.is_recurring === true);
     } else if (currentTab === 'one-time') {
-        filteredFees = tenantFees.filter(f => f.is_recurring === 0);
+        filteredFees = tenantFees.filter(f => f.is_recurring === false);
     }
     
     // Apply status filter

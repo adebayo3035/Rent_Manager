@@ -687,7 +687,7 @@ $title = trim($data['title'] ?? 'From Rent Manager');
 logActivity("[FIELDS_EXTRACTED] [ID:{$requestId}] Extracted - Email: {$email}, User Type: {$userType}, Title: {$title}");
 
 // Validate user type
-$validUserTypes = ['admin', 'agent', 'client'];
+$validUserTypes = ['admin', 'agent', 'client', 'tenant'];
 if (!in_array($userType, $validUserTypes)) {
     $errorMsg = "Invalid user type: {$userType}. Valid types: " . implode(', ', $validUserTypes);
     logActivity("[INVALID_USER_TYPE_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] {$errorMsg}");
@@ -707,7 +707,8 @@ logActivity("[USER_TYPE_VALID] [ID:{$requestId}] User type '{$userType}' is vali
 $userTables = [
     'admin' => 'admin_tbl',
     'agent' => 'agents',
-    'client' => 'clients'
+    'client' => 'clients',
+    'tenant' => 'tenants'
 ];
 
 logActivity("[TABLE_MAPPING] [ID:{$requestId}] Mapping user type '{$userType}' to table '{$userTables[$userType]}'");

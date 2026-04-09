@@ -1,288 +1,249 @@
 <?php
+// Make sure NO white space before this line
+error_reporting(0);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+
 header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 
-// Error handling setup
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
+$requestId = uniqid('tenant_secret_', true);
+logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Request started");
 
-// Add this to log the start of the request
-$requestId = uniqid('secret_q_', true);
-logActivity("[SECRET_QUESTION_START] [ID:{$requestId}] Request for secret question retrieval");
-
-function logAndRespond($message, $response, $exit = true) {
-    global $requestId;
-    logActivity("[SECRET_QUESTION] [ID:{$requestId}] " . $message);
-    echo json_encode($response);
-    if ($exit) exit();
-}
-
-function getPostInput($key) {
-    $input = json_decode(file_get_contents('php://input'), true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] JSON decode error: " . json_last_error_msg());
-        return null;
-    }
-    return $input[$key] ?? null;
-}
-
-function getAdminByEmail($conn, $email) {
-    $stmt = $conn->prepare("SELECT unique_id, secret_question, password FROM admin_tbl WHERE email = ? LIMIT 1");
-    if (!$stmt) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Prepare failed for admin query: " . $conn->error);
-        return null;
-    }
-    $stmt->bind_param("s", $email);
-    if (!$stmt->execute()) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Execute failed for admin query: " . $stmt->error);
-        $stmt->close();
-        return null;
-    }
+// Get tenant by email or phone
+function getTenantByIdentifier($conn, $identifier) {
+    $stmt = $conn->prepare("
+        SELECT 
+            tenant_code, 
+            firstname, 
+            lastname, 
+            email, 
+            secret_question, 
+            has_secret_set,
+            status,
+            password
+        FROM tenants 
+        WHERE email = ? OR phone = ?
+        LIMIT 1
+    ");
+    if (!$stmt) return null;
+    $stmt->bind_param("ss", $identifier, $identifier);
+    $stmt->execute();
     $result = $stmt->get_result();
-    $admin = $result->fetch_assoc();
+    $tenant = $result->fetch_assoc();
     $stmt->close();
-    return $admin;
+    return $tenant;
 }
 
-function getLoginAttempts($conn, $unique_id) {
-    $stmt = $conn->prepare("SELECT attempts, locked_until FROM admin_login_attempts WHERE unique_id = ? LIMIT 1");
-    if (!$stmt) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Prepare failed for attempts query: " . $conn->error);
-        return null;
-    }
-    $stmt->bind_param("s", $unique_id);
-    if (!$stmt->execute()) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Execute failed for attempts query: " . $stmt->error);
-        $stmt->close();
-        return null;
-    }
+// Get login attempts
+function getLoginAttempts($conn, $identifier) {
+    $stmt = $conn->prepare("SELECT attempts, locked_until FROM tenant_login_attempts WHERE tenant_code = ? LIMIT 1");
+    if (!$stmt) return null;
+    $stmt->bind_param("s", $identifier);
+    $stmt->execute();
     $result = $stmt->get_result();
     $attempts = $result->fetch_assoc();
     $stmt->close();
     return $attempts;
 }
 
-function updateLoginAttempts($conn, $unique_id, $attempts, $locked_until = null) {
-    $stmt = $conn->prepare("UPDATE admin_login_attempts SET attempts = ?, locked_until = ? WHERE unique_id = ?");
-    if (!$stmt) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Prepare failed for update attempts: " . $conn->error);
-        return false;
+// Update login attempts
+function updateLoginAttempts($conn, $identifier, $attempts, $locked_until = null) {
+    // Check if record exists
+    $checkStmt = $conn->prepare("SELECT id FROM tenant_login_attempts WHERE tenant_code = ?");
+    $checkStmt->bind_param("s", $identifier);
+    $checkStmt->execute();
+    $exists = $checkStmt->get_result()->num_rows > 0;
+    $checkStmt->close();
+    
+    if ($exists) {
+        $stmt = $conn->prepare("UPDATE tenant_login_attempts SET attempts = ?, locked_until = ?, last_attempt = NOW() WHERE tenant_code = ?");
+        if (!$stmt) return false;
+        $stmt->bind_param("iss", $attempts, $locked_until, $identifier);
+    } else {
+        $stmt = $conn->prepare("INSERT INTO tenant_login_attempts (tenant_code, attempts, locked_until, last_attempt) VALUES (?, ?, ?, NOW())");
+        if (!$stmt) return false;
+        $stmt->bind_param("sis", $identifier, $attempts, $locked_until);
     }
-    $stmt->bind_param("iss", $attempts, $locked_until, $unique_id);
+    
     $success = $stmt->execute();
-    if (!$success) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Execute failed for update attempts: " . $stmt->error);
-    }
     $stmt->close();
     return $success;
 }
 
-function insertLoginAttempt($conn, $unique_id) {
-    $attempts = 1;
-    $stmt = $conn->prepare("INSERT INTO admin_login_attempts (unique_id, attempts, locked_until) VALUES (?, ?, NULL)");
-    if (!$stmt) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Prepare failed for insert attempt: " . $conn->error);
-        return false;
-    }
-    $stmt->bind_param("si", $unique_id, $attempts);
+// Reset login attempts
+function resetLoginAttempts($conn, $identifier) {
+    $stmt = $conn->prepare("DELETE FROM tenant_login_attempts WHERE tenant_code = ?");
+    if (!$stmt) return false;
+    $stmt->bind_param("s", $identifier);
     $success = $stmt->execute();
-    if (!$success) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Execute failed for insert attempt: " . $stmt->error);
-    }
     $stmt->close();
     return $success;
 }
 
-function insertLockHistory($conn, $unique_id) {
-    $status = "locked";
-    $locked_by = "0";
-    $lock_reason = "Account locked due to too many failed authentication attempts at get secret question";
-    $lock_method = "Automatic lock";
-    $stmt = $conn->prepare("INSERT INTO admin_lock_history (unique_id, status, locked_by, lock_reason, lock_method, locked_at) VALUES (?, ?, ?, ?, ?, NOW())");
-    if (!$stmt) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Prepare failed for lock history: " . $conn->error);
-        return false;
-    }
-    $stmt->bind_param("sssss", $unique_id, $status, $locked_by, $lock_reason, $lock_method);
-    $success = $stmt->execute();
-    if (!$success) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Execute failed for lock history: " . $stmt->error);
-    }
-    $stmt->close();
-    return $success;
-}
-
-function resetLoginAttempts($conn, $unique_id) {
-    $stmt = $conn->prepare("DELETE FROM admin_login_attempts WHERE unique_id = ?");
-    if (!$stmt) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Prepare failed for reset attempts: " . $conn->error);
-        return false;
-    }
-    $stmt->bind_param("s", $unique_id);
-    $success = $stmt->execute();
-    if (!$success) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Execute failed for reset attempts: " . $stmt->error);
-    }
-    $stmt->close();
-    return $success;
-}
-
-function updateLockHistory($conn, $unique_id) {
+// Insert lock history - matches your table structure
+function insertLockHistory($conn, $tenant_code, $attempts) {
     $stmt = $conn->prepare("
-        UPDATE admin_lock_history 
+        INSERT INTO tenant_lock_history 
+        (tenant_code, status, locked_by, lock_reason, lock_method, locked_at) 
+        VALUES (?, 'locked', 0, ?, 'Automatic lock', NOW())
+    ");
+    if (!$stmt) return false;
+    $lock_reason = "Account locked due to {$attempts} failed secret question attempts";
+    $stmt->bind_param("ss", $tenant_code, $lock_reason);
+    $success = $stmt->execute();
+    $stmt->close();
+    return $success;
+}
+
+// Update lock history when unlocked
+function updateLockHistory($conn, $tenant_code) {
+    $stmt = $conn->prepare("
+        UPDATE tenant_lock_history 
         SET status = 'unlocked', 
             unlocked_by = 0, 
-            unlock_method = 'System auto-unlock', 
+            unlock_method = 'Auto after successful verification',
             unlocked_at = NOW() 
-        WHERE unique_id = ? 
-        AND status = 'locked'
-        AND unlocked_at IS NULL
+        WHERE tenant_code = ? AND status = 'locked' AND unlocked_at IS NULL
     ");
-    
-    if (!$stmt) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Prepare failed for unlock history: " . $conn->error);
-        return false;
-    }
-    
-    $stmt->bind_param("i", $unique_id);
+    if (!$stmt) return false;
+    $stmt->bind_param("s", $tenant_code);
     $success = $stmt->execute();
-    if (!$success) {
-        global $requestId;
-        logActivity("[SECRET_QUESTION_ERROR] [ID:{$requestId}] Execute failed for unlock history: " . $stmt->error);
-    }
     $stmt->close();
     return $success;
 }
 
 // ========== MAIN EXECUTION ==========
 
-// Check request method
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    logAndRespond("Invalid request method: " . $_SERVER['REQUEST_METHOD'], 
-        ['success' => false, 'message' => 'Invalid request method. Use POST.']
-    );
-}
-
-// Get and validate input
-$email = getPostInput('email');
-$password = getPostInput('password');
-
-logActivity("[SECRET_QUESTION_INPUT] [ID:{$requestId}] Email: " . ($email ? substr($email, 0, 10) . '...' : 'empty'));
-
-if (!$email || !$password) {
-    logAndRespond("Missing credentials: email or password", 
-        ['success' => false, 'message' => 'Email and password are required']
-    );
-}
-
-// Get admin data
-$admin = getAdminByEmail($conn, $email);
-if (!$admin) {
-    // Generic error for security
-    logAndRespond("Admin not found with email: " . substr($email, 0, 10) . '...', 
-        ['success' => false, 'message' => 'Invalid credentials']
-    );
-}
-
-$unique_id = $admin['unique_id'];
-$hashedPassword = $admin['password'];
-$secret_question = $admin['secret_question'];
-
-logActivity("[SECRET_QUESTION_ADMIN] [ID:{$requestId}] Found admin ID: {$unique_id}");
-
-// Check login attempts
-$attemptData = getLoginAttempts($conn, $unique_id);
-$current_time = new DateTime();
-$max_attempts = 3;
-$lockout_duration = 15; // minutes
-
-if ($attemptData) {
-    $attempts = $attemptData['attempts'] ?? 0;
-    $locked_until = $attemptData['locked_until'] ? new DateTime($attemptData['locked_until']) : null;
-    
-    logActivity("[SECRET_QUESTION_ATTEMPTS] [ID:{$requestId}] Current attempts: {$attempts}, Locked until: " . ($locked_until ? $locked_until->format('Y-m-d H:i:s') : 'null'));
-
-    if ($attempts >= $max_attempts && $locked_until && $current_time < $locked_until) {
-        $remaining = $current_time->diff($locked_until);
-        $remaining_minutes = $remaining->i;
-        $remaining_seconds = $remaining->s;
-        
-        logAndRespond("Account locked for user: {$unique_id}", [
-            'success' => false,
-            'message' => "Your account is locked. Try again in {$remaining_minutes} minutes {$remaining_seconds} seconds."
-        ]);
+try {
+    // Check request method
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'Invalid request method. Use POST.']);
+        exit;
     }
-} else {
-    $attempts = 0;
-    $locked_until = null;
-    logActivity("[SECRET_QUESTION_ATTEMPTS] [ID:{$requestId}] No previous attempts found");
-}
 
-// Verify password
-$passwordValid = verifyAndRehashPassword($conn, $unique_id, $password, $hashedPassword);
-logActivity("[SECRET_QUESTION_PASSWORD] [ID:{$requestId}] Password validation: " . ($passwordValid ? 'valid' : 'invalid'));
-
-if (!$passwordValid) {
-    // Increment failed attempts
-    $newAttempts = $attempts + 1;
-    logActivity("[SECRET_QUESTION_ATTEMPTS] [ID:{$requestId}] New failed attempt count: {$newAttempts}");
+    // Get input
+    $input = json_decode(file_get_contents('php://input'), true);
     
-    $lockedUntilTime = null;
-    if ($newAttempts >= $max_attempts) {
-        $lockedUntilTime = (new DateTime())->modify("+{$lockout_duration} minutes")->format('Y-m-d H:i:s');
-        logActivity("[SECRET_QUESTION_LOCK] [ID:{$requestId}] Locking account until: {$lockedUntilTime}");
-        
-        // Record lock in history
-        insertLockHistory($conn, $unique_id);
+    if (!$input) {
+        echo json_encode(['success' => false, 'message' => 'Invalid JSON input']);
+        exit;
     }
+
+    $identifier = isset($input['identifier']) ? trim($input['identifier']) : '';
+    $password = isset($input['password']) ? $input['password'] : '';
+
+    if (empty($identifier) || empty($password)) {
+        echo json_encode(['success' => false, 'message' => 'Email/Phone and password are required']);
+        exit;
+    }
+
+    logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Looking for tenant: " . substr($identifier, 0, 10) . '...');
+
+    // Get tenant
+    $tenant = getTenantByIdentifier($conn, $identifier);
     
+    if (!$tenant) {
+        logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Tenant not found");
+        echo json_encode(['success' => false, 'message' => 'Invalid credentials']);
+        exit;
+    }
+
+    $tenant_code = $tenant['tenant_code'];
+
+    // Check status
+    if ($tenant['status'] != 1) {
+        echo json_encode(['success' => false, 'message' => 'Account is inactive. Please contact support.']);
+        exit;
+    }
+
+    // Check if secret question exists
+    if (!$tenant['has_secret_set'] || empty($tenant['secret_question'])) {
+        echo json_encode(['success' => false, 'message' => 'Secret question has not been set for this account.']);
+        exit;
+    }
+
+    // Check login attempts
+    $attemptData = getLoginAttempts($conn, $tenant_code);
+    $current_time = new DateTime();
+    $max_attempts = 3;
+    $lockout_duration = 15; // minutes
+
     if ($attemptData) {
-        updateLoginAttempts($conn, $unique_id, $newAttempts, $lockedUntilTime);
+        $attempts = $attemptData['attempts'] ?? 0;
+        $locked_until = $attemptData['locked_until'] ? new DateTime($attemptData['locked_until']) : null;
+        
+        logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Current attempts: {$attempts}");
+
+        if ($attempts >= $max_attempts && $locked_until && $current_time < $locked_until) {
+            $remaining = $current_time->diff($locked_until);
+            $remaining_minutes = $remaining->i;
+            $remaining_seconds = $remaining->s;
+            
+            echo json_encode([
+                'success' => false, 
+                'message' => "Too many failed attempts. Please try again in {$remaining_minutes} minutes and {$remaining_seconds} seconds."
+            ]);
+            exit;
+        }
     } else {
-        insertLoginAttempt($conn, $unique_id);
+        $attempts = 0;
     }
-    
-    logAndRespond("Invalid password for user: {$unique_id}", [
-        'success' => false,
-        'message' => 'Invalid password. Please try again.'
-    ]);
-} else {
-    // Password is valid - reset attempts and unlock if needed
-    logActivity("[SECRET_QUESTION_SUCCESS] [ID:{$requestId}] Password validated successfully");
-    
-    resetLoginAttempts($conn, $unique_id);
-    
-    // Update lock history if account was locked
+
+    // Verify password
+    $passwordValid = password_verify($password, $tenant['password']);
+    logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Password validation: " . ($passwordValid ? 'valid' : 'invalid'));
+
+    if (!$passwordValid) {
+        $newAttempts = $attempts + 1;
+        logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Failed attempt count: {$newAttempts}");
+        
+        $lockedUntilTime = null;
+        if ($newAttempts >= $max_attempts) {
+            $lockedUntilTime = (new DateTime())->modify("+{$lockout_duration} minutes")->format('Y-m-d H:i:s');
+            logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Locking account until: {$lockedUntilTime}");
+            insertLockHistory($conn, $tenant_code, $newAttempts);
+        }
+        
+        updateLoginAttempts($conn, $tenant_code, $newAttempts, $lockedUntilTime);
+        
+        $remainingAttempts = $max_attempts - $newAttempts;
+        $message = $remainingAttempts > 0 
+            ? "Invalid password. You have {$remainingAttempts} attempt(s) remaining."
+            : "Account locked for {$lockout_duration} minutes due to too many failed attempts.";
+        
+        echo json_encode([
+            'success' => false, 
+            'message' => $message,
+            'remaining_attempts' => $remainingAttempts > 0 ? $remainingAttempts : 0
+        ]);
+        exit;
+    }
+
+    // Success - password is valid
+    logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Success for tenant: {$tenant_code}");
+
+    // Reset attempts on successful verification
+    resetLoginAttempts($conn, $tenant_code);
     if ($attempts >= $max_attempts) {
-        updateLockHistory($conn, $unique_id);
+        updateLockHistory($conn, $tenant_code);
     }
-    
-    logAndRespond("Secret question retrieved for user: {$unique_id}", [
+
+    echo json_encode([
         'success' => true,
-        'secret_question' => $secret_question
-    ], false);
+        'secret_question' => $tenant['secret_question'],
+        'tenant_name' => $tenant['firstname'] . ' ' . $tenant['lastname']
+    ]);
+
+} catch (Exception $e) {
+    logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Exception: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'An internal error occurred. Please try again later.']);
 }
 
-// Close connection
 if (isset($conn) && $conn instanceof mysqli) {
     $conn->close();
 }
-
-logActivity("[SECRET_QUESTION_END] [ID:{$requestId}] Script execution completed");
+exit;
+?>
