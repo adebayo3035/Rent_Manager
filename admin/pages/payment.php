@@ -10,7 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-     <?php include('navbar.php'); ?>
+    <?php include ('navbar.php'); ?>
     <div class="container">
         <!-- Header -->
         <div class="header">
@@ -91,10 +91,10 @@
 
             <div class="sidebar">
                 <!-- Revenue Chart -->
-                <div class="chart-card">
+                <!-- <div class="chart-card">
                     <h3>Revenue Overview</h3>
                     <canvas id="revenueChart"></canvas>
-                </div>
+                </div> -->
 
                 <!-- Quick Record -->
                 <div class="chart-card">
@@ -146,7 +146,7 @@
                         </div>
                         <div class="form-group">
                             <label>Apartment</label>
-                            <select class="form-control" id="apartment_id" name="apartment_id">
+                            <select class="form-control" id="apartment_code" name="apartment_code">
                                 <!-- Auto-populated based on tenant -->
                             </select>
                         </div>
