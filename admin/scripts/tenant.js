@@ -1,4 +1,111 @@
 //tenant.js
+
+
+// Get form elements
+    const leaseStartDate = document.getElementById('lease_start_date');
+    const paymentFrequency = document.getElementById('payment_frequency');
+    const leaseEndDate = document.getElementById('lease_end_date');
+    
+    
+    
+    // Calculate lease end date function
+    function calculateLeaseEndDate() {
+        const startDate = leaseStartDate.value;
+        const frequency = paymentFrequency.value;
+        
+        if (!startDate || !frequency) {
+            if (leaseEndDate) {
+                leaseEndDate.value = '';
+            }
+            return;
+        }
+        
+        // Create date object from start date
+        const start = new Date(startDate);
+        let end = new Date(start);
+        
+        // Calculate end date based on payment frequency
+        switch(frequency) {
+            case 'Monthly':
+                end.setMonth(end.getMonth() + 1);
+                break;
+            case 'Quarterly':
+                end.setMonth(end.getMonth() + 3);
+                break;
+            case 'Semi-Annually':
+                end.setMonth(end.getMonth() + 6);
+                break;
+            case 'Annually':
+                end.setFullYear(end.getFullYear() + 1);
+                break;
+            default:
+                return;
+        }
+        
+        // Subtract one day to get the correct end date
+        end.setDate(end.getDate() - 1);
+        
+        // Format the date to YYYY-MM-DD
+        const year = end.getFullYear();
+        const month = String(end.getMonth() + 1).padStart(2, '0');
+        const day = String(end.getDate()).padStart(2, '0');
+        
+        const formattedEndDate = `${year}-${month}-${day}`;
+        
+        // Set the lease end date value
+        if (leaseEndDate) {
+            leaseEndDate.value = formattedEndDate;
+        }
+        
+        // Optional: Show a message to the user
+        showEndDateInfo(frequency, startDate, formattedEndDate);
+    }
+    
+    // Optional: Show information message about the calculated end date
+    function showEndDateInfo(frequency, startDate, endDate) {
+        const startFormatted = new Date(startDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        const endFormatted = new Date(endDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        
+        let periodText = '';
+        switch(frequency) {
+            case 'Monthly':
+                periodText = '1 month';
+                break;
+            case 'Quarterly':
+                periodText = '3 months';
+                break;
+            case 'Semi-Annually':
+                periodText = '6 months';
+                break;
+            case 'Annually':
+                periodText = '1 year';
+                break;
+        }
+        
+        const message = `Lease period: ${startFormatted} to ${endFormatted} (${periodText})`;
+        
+        // Show message in a small info div
+        let infoDiv = document.getElementById('leaseEndDateInfo');
+        if (!infoDiv) {
+            infoDiv = document.createElement('div');
+            infoDiv.id = 'leaseEndDateInfo';
+            infoDiv.className = 'info-message';
+            const leaseEndGroup = document.getElementById('lease_end_date').closest('.form-group');
+            if (leaseEndGroup) {
+                leaseEndGroup.appendChild(infoDiv);
+            }
+        }
+        infoDiv.innerHTML = `<small><i class="fas fa-info-circle"></i> ${message}</small>`;
+        infoDiv.style.display = 'block';
+    }
 // ===============================
 // Preview uploaded tenant photo
 // ===============================
@@ -175,6 +282,26 @@ document.addEventListener("DOMContentLoaded", () => {
     maxFileSizeMB: 2,
     allowedFileTypes: ["jpg", "jpeg", "png"],
   });
+
+  // Make lease end date readonly
+    if (leaseEndDate) {
+        leaseEndDate.readOnly = true;
+        leaseEndDate.style.backgroundColor = '#f5f5f5';
+        leaseEndDate.style.cursor = 'not-allowed';
+    }
+    
+    // Add event listeners
+    if (leaseStartDate) {
+        leaseStartDate.addEventListener('change', function() {
+            calculateLeaseEndDate();
+        });
+    }
+    
+    if (paymentFrequency) {
+        paymentFrequency.addEventListener('change', function() {
+            calculateLeaseEndDate();
+        });
+    }
 
   // pre-load support data for add form selects
   loadSupportData();

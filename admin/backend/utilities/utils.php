@@ -3,6 +3,13 @@ function json_error($message, $code = 400)
 {
     http_response_code($code);
 
+    // Get caller location for error logging
+    $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
+    $caller = $backtrace[0];
+    $callerFile = basename($caller['file'] ?? 'unknown');
+    $callerLine = $caller['line'] ?? 0;
+    $callerFunction = $caller['function'] ?? 'unknown';
+
     $payload = [
         'success'      => false,
         'responseCode' => $code,
@@ -12,16 +19,22 @@ function json_error($message, $code = 400)
     // Convert message safely for logs
     $safeMessage = is_array($message) ? json_encode($message) : $message;
 
-    logActivity("Response error: {$safeMessage} | Code: {$code}");
+    logActivity("Response error: {$safeMessage} | Code: {$code} | Called from: {$callerFile}:{$callerLine} ({$callerFunction})");
 
     echo json_encode($payload);
     exit();
 }
 
-
 function json_success($message, $data = null, $code = 200)
 {
     http_response_code($code);
+
+    // Get caller location for success logging
+    $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
+    $caller = $backtrace[0];
+    $callerFile = basename($caller['file'] ?? 'unknown');
+    $callerLine = $caller['line'] ?? 0;
+    $callerFunction = $caller['function'] ?? 'unknown';
 
     $payload = [
         'success'      => true,
@@ -36,7 +49,7 @@ function json_success($message, $data = null, $code = 200)
     // Convert message to string safely for logging
     $safeMessage = is_array($message) ? json_encode($message) : $message;
 
-    $logMessage = "Response success: {$safeMessage} | Code: {$code}";
+    $logMessage = "Response success: {$safeMessage} | Code: {$code} | Called from: {$callerFile}:{$callerLine} ({$callerFunction})";
 
     if ($data !== null) {
         $logMessage .= " | Data: " . json_encode($data);
@@ -47,7 +60,6 @@ function json_success($message, $data = null, $code = 200)
     echo json_encode($payload);
     exit();
 }
-
 
 function sanitize_inputs(array $data) : array {
     return array_map(function($v){

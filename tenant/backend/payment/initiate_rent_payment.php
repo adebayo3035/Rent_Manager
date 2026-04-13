@@ -66,6 +66,52 @@ try {
         json_error("Tenant code not found", 400);
     }
 
+    // ==================== CHECK FOR PENDING RENT PAYMENTS ONLY ====================
+    // Check payments table for pending/overdue rent payments
+    $pending_payments_query = "
+    SELECT COUNT(*) as pending_count, SUM(amount) as pending_amount
+    FROM payments
+    WHERE tenant_code = ? 
+    AND payment_status IN ('pending', 'overdue')
+    AND is_deleted = 0
+    AND payment_category = 'rent'
+";
+    $pending_stmt = $conn->prepare($pending_payments_query);
+    $pending_stmt->bind_param("s", $tenant_code);
+    $pending_stmt->execute();
+    $pending_result = $pending_stmt->get_result();
+    $pending_data = $pending_result->fetch_assoc();
+    $pending_stmt->close();
+
+    // Check rent_payments table for pending/overdue rent payments
+    $pending_rent_query = "
+        SELECT COUNT(*) as pending_count, SUM(amount) as pending_amount
+        FROM rent_payments
+        WHERE tenant_code = ? 
+        AND status IN ('pending', 'overdue')
+        AND payment_type = 'rent'
+    ";
+    $pending_rent_stmt = $conn->prepare($pending_rent_query);
+    $pending_rent_stmt->bind_param("s", $tenant_code);
+    $pending_rent_stmt->execute();
+    $pending_rent_result = $pending_rent_stmt->get_result();
+    $pending_rent_data = $pending_rent_result->fetch_assoc();
+    $pending_rent_stmt->close();
+
+    $total_pending_count = ($pending_data['pending_count'] ?? 0) + ($pending_rent_data['pending_count'] ?? 0);
+    $total_pending_amount = ($pending_rent_data['pending_amount'] ?? 0);
+
+    // Only block if there are pending RENT payments
+    if ($total_pending_count > 0) {
+        json_error(
+            "You have pending rent payment(s) totaling ₦" . number_format($total_pending_amount, 2) .
+            ". Please complete your pending rent payment(s) before initiating a new rent payment.",
+            400,
+            null,
+            'PENDING_RENT_PAYMENTS_EXIST'
+        );
+    }
+
     // Get input data
     $input = json_decode(file_get_contents('php://input'), true);
 
@@ -199,7 +245,7 @@ try {
                 payment_period,
                 notes,
                 created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'completed', 'rent', ?, ?, ?, NOW())
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 'rent', ?, ?, ?, NOW())
         ";
 
         $rent_notes = "Rent payment for period: {$payment_period}\nProperty: {$tenant['property_name']}\nApartment: {$tenant['apartment_number']}\n{$notes}";
@@ -222,22 +268,22 @@ try {
 
         // 8. Insert into payments table
         $payment_query = "
-    INSERT INTO payments (
-        tenant_code,
-        apartment_code,
-        amount,
-        balance,
-        payment_date,
-        due_date,
-        payment_method,
-        payment_status,
-        receipt_number,
-        reference_number,
-        description,
-        recorded_by,
-        created_at
-    ) VALUES (?, ?, ?, 0, NOW(), ?, ?, 'completed', ?, ?, ?, ?, NOW())
-";
+            INSERT INTO payments (
+                tenant_code,
+                apartment_code,
+                amount,
+                balance,
+                payment_date,
+                due_date,
+                payment_method,
+                payment_status,
+                receipt_number,
+                reference_number,
+                description,
+                recorded_by,
+                created_at
+            ) VALUES (?, ?, ?, 0, NOW(), ?, ?, 'pending', ?, ?, ?, ?, NOW())
+        ";
 
         $payment_description = "Rent payment for period: {$payment_period}\nProperty: {$tenant['property_name']}\nApartment: {$tenant['apartment_number']}";
         $payment_stmt = $conn->prepare($payment_query);
@@ -260,7 +306,7 @@ try {
         // 9. Update tenant's lease end date
         $update_tenant_query = "
             UPDATE tenants 
-            SET lease_end_date = ?, 
+            SET temp_lease_end_date = ?, 
                 last_updated_at = NOW()
             WHERE tenant_code = ?
         ";
@@ -270,7 +316,7 @@ try {
         $update_stmt->close();
 
         // 10. Log the payment activity
-        logActivity("Rent payment completed | Tenant: $tenant_code | Amount: $amount | Period: $payment_period | Receipt: $receipt_number | New lease end date: $new_lease_end_date");
+        logActivity("Rent payment initiated | Tenant: $tenant_code | Amount: $amount | Period: $payment_period | Receipt: $receipt_number | New Temporary lease end date: $new_lease_end_date");
 
         $conn->commit();
 
@@ -289,11 +335,11 @@ try {
             'new_lease_end_date' => $new_lease_end_date,
             'property_name' => $tenant['property_name'],
             'apartment_number' => $tenant['apartment_number'],
-            'status' => 'completed',
-            'message' => 'Payment processed successfully'
+            'status' => 'pending',
+            'message' => 'Payment initiated successfully. Please complete the payment process.'
         ];
 
-        json_success($response_data, "Payment processed successfully");
+        json_success($response_data, "Payment initiated successfully");
 
     } catch (Exception $e) {
         $conn->rollback();

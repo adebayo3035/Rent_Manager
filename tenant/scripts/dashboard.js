@@ -153,20 +153,34 @@ function renderDashboard() {
             <!-- Payment Section -->
             <div class="payment-section">
                 <div class="section-header">
-                    <h2> Rent Information</h2>
+                    <h2> Current Rent Information</h2>
                     <span class="btn-link" onclick="navigateToPage('apartment')">View More →</span>
                 </div>
                 <div class="payment-card">
                     <div class="payment-details">
                         <div class="payment-amount">
                             <label>Rent Amount </label>
-                            <span class="amount">₦${formatNumber(currentUser.rent_amount || 0)}</span>
+                            <span class="amount">₦${formatNumber(dashboardData.last_payment.amount || 0)}</span>
                         </div>
                         <div class="payment-date">
                             <label>Payment Frequency</label>
                             <span class="date">${currentUser.payment_frequency}</span>
                         </div>
+                         
                     </div>
+
+                    <div class="payment-details">
+                        
+                         <div class="payment-date">
+                            <label>Start Date</label>
+                            <span class="date">${dashboardData.last_payment.period_start_date}</span>
+                        </div>
+                         <div class="payment-date">
+                            <label>End Date</label>
+                            <span class="date">${dashboardData.last_payment.period_end_date}</span>
+                        </div>
+                    </div>
+
                    
                 </div>
             </div>
@@ -181,11 +195,12 @@ function renderDashboard() {
                     <div class="payment-details">
                         <div class="payment-amount">
                             <label>Amount Due</label>
-                            <span class="amount">₦${formatNumber(dashboardData.next_payment_amount || 0)}</span>
+                            <span class="amount">₦${formatNumber(dashboardData.rent_amount || 0)}</span>
                         </div>
+                        
                         <div class="payment-date">
-                            <label>Due Date</label>
-                            <span class="date">${formatDate(dashboardData.lease_end_date)}</span>
+                            <label> Current Rent Payment Due Date</label>
+                            <span class="date">${formatDate(dashboardData.last_payment.due_date)}</span>
                         </div>
                     </div>
                     <button class="btn-primary" onclick="makePayment()">Make Payment</button>
