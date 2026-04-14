@@ -22,6 +22,16 @@ try {
         json_error("Tenant code not found", 400);
     }
 
+    // Get tenant's apartment code for filtering
+    $apartment_query = "SELECT apartment_code FROM tenants WHERE tenant_code = ? AND status = 1 LIMIT 1";
+    $apt_stmt = $conn->prepare($apartment_query);
+    $apt_stmt->bind_param("s", $tenant_code);
+    $apt_stmt->execute();
+    $apt_result = $apt_stmt->get_result();
+    $tenant_apt = $apt_result->fetch_assoc();
+    $apt_stmt->close();
+    $apartment_code = $tenant_apt['apartment_code'] ?? null;
+
     // Pagination parameters
     $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
     $limit = isset($_GET['limit']) ? max(1, (int)$_GET['limit']) : 10;
@@ -29,6 +39,7 @@ try {
     
     // Filter parameters
     $status = isset($_GET['status']) ? htmlspecialchars(trim($_GET['status'])) : null;
+    $payment_type = isset($_GET['payment_type']) ? htmlspecialchars(trim($_GET['payment_type'])) : null;
     $start_date = isset($_GET['start_date']) ? htmlspecialchars(trim($_GET['start_date'])) : null;
     $end_date = isset($_GET['end_date']) ? htmlspecialchars(trim($_GET['end_date'])) : null;
 
@@ -37,9 +48,15 @@ try {
     $params = [$tenant_code];
     $types = "s";
 
-    if ($status && in_array($status, ['pending', 'completed', 'failed', 'refunded'])) {
+    if ($status && in_array($status, ['pending', 'completed', 'failed', 'refunded', 'overdue'])) {
         $where_clauses[] = "status = ?";
         $params[] = $status;
+        $types .= "s";
+    }
+
+    if ($payment_type && in_array($payment_type, ['rent', 'security_deposit', 'fee'])) {
+        $where_clauses[] = "payment_type = ?";
+        $params[] = $payment_type;
         $types .= "s";
     }
 
@@ -73,7 +90,8 @@ try {
     $total = $count_result->fetch_assoc()['total'];
     $count_stmt->close();
 
-    // Get payment history with pagination
+    // Get payment history with all columns including period dates and due dates
+    // Removed the ucfirst() function from SQL - will handle in PHP
     $query = "
         SELECT 
             payment_id,
@@ -81,21 +99,19 @@ try {
             payment_date,
             payment_method,
             payment_period,
+            period_start_date,
+            period_end_date,
+            due_date,
             reference_number,
             status,
             receipt_number,
+            payment_type,
             notes,
             created_at,
-            updated_at,
-            CASE 
-                WHEN status = 'completed' THEN 'success'
-                WHEN status = 'pending' THEN 'warning'
-                WHEN status = 'failed' THEN 'danger'
-                ELSE 'info'
-            END as status_color
+            updated_at
         FROM rent_payments
         $where_sql
-        ORDER BY payment_date DESC, created_at DESC
+        ORDER BY payment_date DESC, created_at DESC, payment_id DESC
         LIMIT ? OFFSET ?
     ";
 
@@ -111,35 +127,71 @@ try {
     
     $payments = [];
     while ($row = $result->fetch_assoc()) {
+        // Determine if payment is overdue
+        $is_overdue = false;
+        if ($row['status'] === 'pending' && $row['due_date'] && new DateTime($row['due_date']) < new DateTime()) {
+            $is_overdue = true;
+        }
+        
+        // Format payment type display in PHP
+        $payment_type_display = ucfirst(str_replace('_', ' ', $row['payment_type']));
+        
+        // Determine status color
+        $status_color = 'info';
+        if ($row['status'] === 'completed') {
+            $status_color = 'success';
+        } elseif ($row['status'] === 'pending') {
+            $status_color = 'warning';
+        } elseif ($row['status'] === 'overdue' || $row['status'] === 'failed') {
+            $status_color = 'danger';
+        }
+        
         $payments[] = [
             'payment_id' => (int)$row['payment_id'],
             'amount' => (float)$row['amount'],
+            'amount_formatted' => '₦' . number_format($row['amount'], 2),
             'payment_date' => $row['payment_date'],
+            'payment_date_formatted' => date('F j, Y', strtotime($row['payment_date'])),
             'payment_method' => $row['payment_method'],
-            'payment_period' => $row['payment_period'],
             'payment_method_display' => ucfirst(str_replace('_', ' ', $row['payment_method'])),
+            'payment_period' => $row['payment_period'],
+            'period_start_date' => $row['period_start_date'],
+            'period_start_formatted' => $row['period_start_date'] ? date('F j, Y', strtotime($row['period_start_date'])) : null,
+            'period_end_date' => $row['period_end_date'],
+            'period_end_formatted' => $row['period_end_date'] ? date('F j, Y', strtotime($row['period_end_date'])) : null,
+            'due_date' => $row['due_date'],
+            'due_date_formatted' => $row['due_date'] ? date('F j, Y', strtotime($row['due_date'])) : null,
+            'is_overdue' => $is_overdue,
             'reference_number' => $row['reference_number'],
             'status' => $row['status'],
-            'receipt_number' => $row['receipt_number'],
-            'status_color' => $row['status_color'],
+            'status_color' => $status_color,
             'status_display' => ucfirst($row['status']),
+            'receipt_number' => $row['receipt_number'],
+            'payment_type' => $row['payment_type'],
+            'payment_type_display' => $payment_type_display,
             'notes' => $row['notes'],
             'created_at' => $row['created_at'],
+            'created_at_formatted' => date('F j, Y g:i A', strtotime($row['created_at'])),
             'updated_at' => $row['updated_at']
         ];
     }
     $stmt->close();
 
-    // Calculate summary statistics
+    // Calculate summary statistics with more details
     $summary_query = "
         SELECT 
             COUNT(*) as total_payments,
             SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as total_paid,
+            SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_pending,
+            SUM(CASE WHEN status = 'overdue' OR (status = 'pending' AND due_date < CURDATE()) THEN amount ELSE 0 END) as total_overdue,
             COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_payments,
             COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_payments,
             COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_payments,
+            COUNT(CASE WHEN status = 'overdue' OR (status = 'pending' AND due_date < CURDATE()) THEN 1 END) as overdue_payments,
             MAX(CASE WHEN status = 'completed' THEN payment_date END) as last_payment_date,
-            SUM(CASE WHEN YEAR(payment_date) = YEAR(CURDATE()) AND status = 'completed' THEN amount ELSE 0 END) as paid_this_year
+            SUM(CASE WHEN YEAR(payment_date) = YEAR(CURDATE()) AND status = 'completed' THEN amount ELSE 0 END) as paid_this_year,
+            SUM(CASE WHEN payment_type = 'rent' AND status = 'completed' THEN amount ELSE 0 END) as total_rent_paid,
+            SUM(CASE WHEN payment_type = 'security_deposit' AND status = 'completed' THEN amount ELSE 0 END) as total_deposit_paid
         FROM rent_payments
         $where_sql
     ";
@@ -157,50 +209,84 @@ try {
     $summary = $summary_result->fetch_assoc();
     $summary_stmt->close();
 
-    // Get last payment date to calculate next payment
-    $last_payment_query = "
-        SELECT payment_date, amount 
-        FROM rent_payments 
-        WHERE tenant_code = ? AND status = 'completed'
-        ORDER BY payment_date DESC LIMIT 1
+    // Get payment trends by month (last 12 months)
+    $trend_query = "
+        SELECT 
+            DATE_FORMAT(payment_date, '%Y-%m') as month,
+            DATE_FORMAT(payment_date, '%b %Y') as month_name,
+            COUNT(*) as payment_count,
+            SUM(amount) as total_amount,
+            SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as completed_amount
+        FROM rent_payments
+        WHERE tenant_code = ? 
+        AND payment_date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+        GROUP BY DATE_FORMAT(payment_date, '%Y-%m'), DATE_FORMAT(payment_date, '%b %Y')
+        ORDER BY month DESC
     ";
-    $last_stmt = $conn->prepare($last_payment_query);
-    $last_stmt->bind_param("s", $tenant_code);
-    $last_stmt->execute();
-    $last_result = $last_stmt->get_result();
-    $last_payment = $last_result->fetch_assoc();
-    $last_stmt->close();
+    $trend_stmt = $conn->prepare($trend_query);
+    $trend_stmt->bind_param("s", $tenant_code);
+    $trend_stmt->execute();
+    $trend_result = $trend_stmt->get_result();
+    $payment_trends = [];
+    while ($row = $trend_result->fetch_assoc()) {
+        $payment_trends[] = $row;
+    }
+    $trend_stmt->close();
 
-    // Get tenant's payment frequency and apartment code, then fetch rent amount from apartments table
-    $tenant_query = "
-        SELECT t.payment_frequency, t.apartment_code, a.rent_amount 
-        FROM tenants t
-        LEFT JOIN apartments a ON t.apartment_code = a.apartment_code
-        WHERE t.tenant_code = ? AND t.status = 1
+    // Get upcoming payments (pending/overdue)
+    $upcoming_query = "
+        SELECT 
+            payment_id,
+            amount,
+            payment_period,
+            period_start_date,
+            period_end_date,
+            due_date,
+            status,
+            payment_type
+        FROM rent_payments
+        WHERE tenant_code = ? 
+        AND status IN ('pending', 'overdue')
+        AND payment_type = 'rent'
+        ORDER BY due_date ASC
+    ";
+    $upcoming_stmt = $conn->prepare($upcoming_query);
+    $upcoming_stmt->bind_param("s", $tenant_code);
+    $upcoming_stmt->execute();
+    $upcoming_result = $upcoming_stmt->get_result();
+    $upcoming_payments = [];
+    while ($row = $upcoming_result->fetch_assoc()) {
+        $upcoming_payments[] = [
+            'payment_id' => (int)$row['payment_id'],
+            'amount' => (float)$row['amount'],
+            'amount_formatted' => '₦' . number_format($row['amount'], 2),
+            'payment_period' => $row['payment_period'],
+            'period_start_date' => $row['period_start_date'],
+            'period_end_date' => $row['period_end_date'],
+            'due_date' => $row['due_date'],
+            'due_date_formatted' => $row['due_date'] ? date('F j, Y', strtotime($row['due_date'])) : null,
+            'status' => $row['status'],
+            'payment_type' => $row['payment_type']
+        ];
+    }
+    $upcoming_stmt->close();
+
+    // Get tenant's lease information
+    $lease_query = "
+        SELECT 
+            lease_start_date,
+            lease_end_date,
+            payment_frequency
+        FROM tenants 
+        WHERE tenant_code = ? AND status = 1
         LIMIT 1
     ";
-    $tenant_stmt = $conn->prepare($tenant_query);
-    $tenant_stmt->bind_param("s", $tenant_code);
-    $tenant_stmt->execute();
-    $tenant_result = $tenant_stmt->get_result();
-    $tenant_data = $tenant_result->fetch_assoc();
-    $tenant_stmt->close();
-
-    $next_payment_amount = (float)($tenant_data['rent_amount'] ?? 0);
-    $next_payment_date = date('Y-m-d');
-    
-    // If there's a last payment, calculate next payment date based on payment frequency
-    if ($last_payment && isset($tenant_data['payment_frequency'])) {
-        $payment_frequency = $tenant_data['payment_frequency'];
-        $interval = match($payment_frequency) {
-            'Monthly' => '+1 month',
-            'Quarterly' => '+3 months',
-            'Semi-Annually' => '+6 months',
-            'Annually' => '+1 year',
-            default => '+1 month'
-        };
-        $next_payment_date = date('Y-m-d', strtotime($last_payment['payment_date'] . ' ' . $interval));
-    }
+    $lease_stmt = $conn->prepare($lease_query);
+    $lease_stmt->bind_param("s", $tenant_code);
+    $lease_stmt->execute();
+    $lease_result = $lease_stmt->get_result();
+    $lease_info = $lease_result->fetch_assoc();
+    $lease_stmt->close();
 
     $conn->close();
 
@@ -209,17 +295,25 @@ try {
         'summary' => [
             'total_payments' => (int)($summary['total_payments'] ?? 0),
             'total_paid' => (float)($summary['total_paid'] ?? 0),
+            'total_pending' => (float)($summary['total_pending'] ?? 0),
+            'total_overdue' => (float)($summary['total_overdue'] ?? 0),
             'successful_payments' => (int)($summary['successful_payments'] ?? 0),
             'pending_payments' => (int)($summary['pending_payments'] ?? 0),
             'failed_payments' => (int)($summary['failed_payments'] ?? 0),
+            'overdue_payments' => (int)($summary['overdue_payments'] ?? 0),
             'last_payment_date' => $summary['last_payment_date'],
-            'paid_this_year' => (float)($summary['paid_this_year'] ?? 0)
+            'last_payment_formatted' => $summary['last_payment_date'] ? date('F j, Y', strtotime($summary['last_payment_date'])) : null,
+            'paid_this_year' => (float)($summary['paid_this_year'] ?? 0),
+            'total_rent_paid' => (float)($summary['total_rent_paid'] ?? 0),
+            'total_deposit_paid' => (float)($summary['total_deposit_paid'] ?? 0)
         ],
-        'upcoming_payment' => [
-            'amount' => $next_payment_amount,
-            'due_date' => $next_payment_date,
-            'formatted_amount' => '₦' . number_format($next_payment_amount, 2),
-            'formatted_date' => date('F j, Y', strtotime($next_payment_date))
+        'upcoming_payments' => $upcoming_payments,
+        'has_upcoming_payments' => !empty($upcoming_payments),
+        'payment_trends' => $payment_trends,
+        'lease_info' => [
+            'start_date' => $lease_info['lease_start_date'],
+            'end_date' => $lease_info['lease_end_date'],
+            'payment_frequency' => $lease_info['payment_frequency']
         ],
         'pagination' => [
             'current_page' => $page,

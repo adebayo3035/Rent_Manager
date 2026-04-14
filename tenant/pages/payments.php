@@ -20,6 +20,7 @@
             <button class="modal-close" onclick="closeModal('paymentModal')">&times;</button>
         </div>
         <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 20px;">
+            <div id="paymentWarningContainer" style="display: none;"></div>
             <form id="paymentForm">
                 <!-- Payment Summary Section -->
                 <div class="payment-summary">
@@ -33,7 +34,7 @@
                         <span class="summary-value" id="summaryAmount">-</span>
                     </div>
                     <div class="summary-row">
-                        <span class="summary-label">Payment Start Date:</span>
+                        <span class="summary-label">Payment Due Date:</span>
                         <span class="summary-value" id="summaryDueDate">-</span>
                     </div>
                     <div class="summary-row">

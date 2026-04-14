@@ -766,20 +766,6 @@ async function processPayment() {
     referenceNumber = `CHQ-${chequeNumber}`;
   }
 
-  // For advance payment, confirm with user
-  if (currentPaymentData.is_advance_payment) {
-    const confirmed = await showConfirmationDialog(
-      "Advance Payment",
-      "You are about to make an advance payment that will extend your lease period. Do you want to continue?",
-      "Yes, Continue",
-      "Cancel"
-    );
-    if (!confirmed) {
-      closeModal("processingModal");
-      return;
-    }
-  }
-
   closeModal("paymentModal");
   openModal("processingModal");
 
@@ -793,27 +779,20 @@ async function processPayment() {
       await simulateCardPayment();
     }
 
-    // Prepare payment data with all necessary fields
-    const paymentData = {
-      payment_method: paymentMethod,
-      payment_period: currentPaymentData.period || currentPaymentData.raw_period,
-      period_start_date: currentPaymentData.period_start,
-      period_end_date: currentPaymentData.period_end,
-      amount: currentPaymentData.amount,
-      reference_number: referenceNumber,
-      notes: `${paymentNotes}\nPayment period: ${currentPaymentData.period}\nPeriod start: ${currentPaymentData.period_start}\nPeriod end: ${currentPaymentData.period_end}\n${currentPaymentData.is_advance_payment ? 'Advance payment' : ''}`,
-      is_advance: currentPaymentData.is_advance_payment || false
-    };
-
-    console.log("Sending payment data:", paymentData);
-
     const response = await fetch(
       "../backend/payment/initiate_rent_payment.php",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(paymentData),
-      }
+        body: JSON.stringify({
+          payment_method: paymentMethod,
+          payment_period:
+            currentPaymentData.raw_period || currentPaymentData.period,
+          amount: currentPaymentData.amount,
+          reference_number: referenceNumber,
+          notes: `${paymentNotes}\nPayment period: ${currentPaymentData.period}`,
+        }),
+      },
     );
 
     const data = await response.json();
@@ -829,34 +808,11 @@ async function processPayment() {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     closeModal("processingModal");
-    
-    // Prepare success data with all details
-    const successData = {
-      payment_id: paymentResult.payment_id,
-      rent_payment_id: paymentResult.rent_payment_id,
-      receipt_number: paymentResult.receipt_number,
-      reference_number: paymentResult.reference_number,
-      transaction_id: paymentResult.transaction_id,
-      amount: paymentResult.amount,
+    showPaymentSuccessModal({
+      ...paymentResult,
       payment_period: currentPaymentData.period,
-      period_start_date: currentPaymentData.period_start,
-      period_end_date: currentPaymentData.period_end,
-      due_date: currentPaymentData.due_date,
-      formatted_due_date: currentPaymentData.formatted_due_date,
-      payment_date: paymentResult.payment_date || new Date().toISOString().split('T')[0],
-      payment_method: paymentMethod,
-      new_lease_end_date: paymentResult.new_lease_end_date,
-      property_name: currentPaymentData.property_name,
-      apartment_number: currentPaymentData.apartment_number,
-      is_advance_payment: currentPaymentData.is_advance_payment || false,
-      status: paymentResult.status || "completed",
-      message: paymentResult.message || "Payment processed successfully"
-    };
+    });
 
-    showPaymentSuccessModal(successData);
-
-    // Update last payment tracking
-    lastPaymentEndDate = currentPaymentData.period_end;
     lastPaymentDate = new Date().toISOString().split("T")[0];
 
     await Promise.all([fetchDashboardData(), fetchPaymentHistory()]);
@@ -868,159 +824,54 @@ async function processPayment() {
 }
 
 function showPaymentSuccessModal(paymentData) {
-  // Format dates for display
-  const formatDisplayDate = (dateString) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric"
-    });
-  };
-
-  // Determine payment type display
-  let paymentTypeDisplay = "Rent Payment";
-  let additionalInfo = "";
-  
-  if (paymentData.is_advance_payment) {
-    paymentTypeDisplay = "Advance Rent Payment";
-    additionalInfo = `
-      <div class="detail-row" style="background: #fff3cd; padding: 10px; border-radius: 6px; margin-top: 10px;">
-        <span class="detail-label" style="color: #856404;">Note:</span>
-        <span class="detail-value" style="color: #856404;">This is an advance payment that extends your lease period.</span>
-      </div>
-    `;
-  }
-
-  // Calculate period display
-  let periodDisplay = paymentData.payment_period;
-  if (paymentData.period_start_date && paymentData.period_end_date) {
-    periodDisplay = `${formatDisplayDate(paymentData.period_start_date)} - ${formatDisplayDate(paymentData.period_end_date)}`;
-  }
-
   const modalHtml = `
-    <div class="modal active" id="paymentSuccessModal">
-      <div class="modal-content" style="max-width: 500px;">
-        <div class="modal-header">
-          <h3>${paymentTypeDisplay} - Successful!</h3>
-          <button class="modal-close" onclick="closeModal('paymentSuccessModal')">&times;</button>
+        <div class="modal active" id="paymentSuccessModal">
+            <div class="modal-content" style="max-width: 450px;">
+                <div class="modal-header">
+                    <h3>Payment Successful!</h3>
+                    <button class="modal-close" onclick="closeModal('paymentSuccessModal')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <i class="fas fa-check-circle" style="font-size: 64px; color: #10b981;"></i>
+                    </div>
+                    <div class="payment-details">
+                        <div class="detail-row">
+                            <span class="detail-label">Payment Period:</span>
+                            <span class="detail-value">${escapeHtml(paymentData.payment_period)}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Amount Paid:</span>
+                            <span class="detail-value">₦${formatNumber(paymentData.amount)}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Receipt Number:</span>
+                            <span class="detail-value">${escapeHtml(paymentData.receipt_number)}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Reference Number:</span>
+                            <span class="detail-value">${escapeHtml(paymentData.reference_number)}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Payment Date:</span>
+                            <span class="detail-value">${new Date().toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeModal('paymentSuccessModal')">Close</button>
+                    <button class="btn-primary" onclick="downloadReceipt('${paymentData.receipt_number}')">
+                        <i class="fas fa-download"></i> Download Receipt
+                    </button>
+                </div>
+            </div>
         </div>
-        <div class="modal-body">
-          <div style="text-align: center; margin-bottom: 20px;">
-            <i class="fas fa-check-circle" style="font-size: 64px; color: #10b981;"></i>
-            <p style="margin-top: 10px; color: #666;">Your payment has been processed successfully</p>
-          </div>
-          
-          <div class="payment-details">
-            <div class="detail-row">
-              <span class="detail-label">Payment Period:</span>
-              <span class="detail-value">${escapeHtml(periodDisplay)}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Amount Paid:</span>
-              <span class="detail-value">₦${formatNumber(paymentData.amount)}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Payment Date:</span>
-              <span class="detail-value">${formatDisplayDate(paymentData.payment_date)}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Due Date:</span>
-              <span class="detail-value">${paymentData.formatted_due_date || formatDisplayDate(paymentData.due_date)}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Receipt Number:</span>
-              <span class="detail-value">${escapeHtml(paymentData.receipt_number)}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Reference Number:</span>
-              <span class="detail-value">${escapeHtml(paymentData.reference_number)}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Payment Method:</span>
-              <span class="detail-value">${formatPaymentMethod(paymentData.payment_method)}</span>
-            </div>
-            ${paymentData.new_lease_end_date ? `
-            <div class="detail-row" style="background: #e8f0fe; padding: 10px; border-radius: 6px; margin-top: 5px;">
-              <span class="detail-label" style="color: #1a73e8;">New Lease End Date:</span>
-              <span class="detail-value" style="color: #1a73e8; font-weight: bold;">${formatDisplayDate(paymentData.new_lease_end_date)}</span>
-            </div>
-            ` : ''}
-            ${additionalInfo}
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-secondary" onclick="closeModal('paymentSuccessModal')">Close</button>
-          <button class="btn-primary" onclick="downloadReceipt('${paymentData.receipt_number}')">
-            <i class="fas fa-download"></i> Download Receipt
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
+    `;
 
   const existingModal = document.getElementById("paymentSuccessModal");
   if (existingModal) existingModal.remove();
 
   document.body.insertAdjacentHTML("beforeend", modalHtml);
-}
-
-// Helper function for confirmation dialog
-function showConfirmationDialog(title, message, confirmText, cancelText) {
-  return new Promise((resolve) => {
-    // Remove any existing confirmation modal
-    const existingModal = document.getElementById("confirmationModal");
-    if (existingModal) existingModal.remove();
-
-    const modalHtml = `
-      <div class="modal active" id="confirmationModal">
-        <div class="modal-content" style="max-width: 400px;">
-          <div class="modal-header">
-            <h3>${escapeHtml(title)}</h3>
-            <button class="modal-close" id="confirmationModalClose">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p>${escapeHtml(message)}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-secondary" id="confirmCancelBtn">${escapeHtml(cancelText)}</button>
-            <button class="btn-primary" id="confirmOkBtn">${escapeHtml(confirmText)}</button>
-          </div>
-        </div>
-      </div>
-    `;
-    
-    document.body.insertAdjacentHTML("beforeend", modalHtml);
-    
-    const modal = document.getElementById("confirmationModal");
-    
-    const cleanup = () => {
-      if (modal) modal.remove();
-    };
-    
-    document.getElementById("confirmOkBtn").onclick = () => {
-      cleanup();
-      resolve(true);
-    };
-    
-    document.getElementById("confirmCancelBtn").onclick = () => {
-      cleanup();
-      resolve(false);
-    };
-    
-    document.getElementById("confirmationModalClose").onclick = () => {
-      cleanup();
-      resolve(false);
-    };
-    
-    // Click outside to close
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) {
-        cleanup();
-        resolve(false);
-      }
-    });
-  });
 }
 
 async function simulateCardPayment() {
