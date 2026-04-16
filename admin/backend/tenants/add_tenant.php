@@ -11,7 +11,7 @@ define('MAX_FIELD_LENGTH', 255);
 define('RATE_LIMIT_COUNT', 10);
 define('RATE_LIMIT_SECONDS', 60);
 define('MIN_LEASE_MONTHS', 1);
-define('MAX_LEASE_MONTHS', 12); //  1 year maxs
+define('MAX_LEASE_MONTHS', 12); // 1 year max
 // Configurable due date offsets (in days)
 define('DUE_DATE_OFFSET_MONTHLY', 7);        // 1 week
 define('DUE_DATE_OFFSET_QUARTERLY', 14);     // 2 weeks
@@ -69,7 +69,6 @@ $optional_fields = [];
 $inputs = [];
 
 logActivity("Step 1.1: Checking required fields");
-// Check required fields
 foreach ($required_fields as $field) {
     if (!isset($_POST[$field]) || trim($_POST[$field]) === '') {
         logActivity("Missing required field: {$field}");
@@ -79,13 +78,11 @@ foreach ($required_fields as $field) {
 }
 
 logActivity("Step 1.2: Processing optional fields");
-// Add optional fields
 foreach ($optional_fields as $field) {
     $inputs[$field] = isset($_POST[$field]) ? trim($_POST[$field]) : '';
 }
 
 logActivity("Step 1.3: Sanitizing inputs");
-// Sanitize inputs
 $inputs = sanitize_inputs($inputs);
 
 // Log non-sensitive input summary
@@ -168,9 +165,6 @@ $actual_months = ($interval->y * 12) + $interval->m;
 
 logActivity("Expected months: {$expected_months}, Actual months: {$actual_months}");
 
-// Allow a tolerance of +/- 1 day due to date calculations
-// The lease end date should be exactly the expected months minus 1 day
-// For example: 2026-04-21 to 2027-04-20 is 12 months - 1 day
 $expected_end_date = clone $start_date;
 $expected_end_date->modify("+{$expected_months} months");
 $expected_end_date->modify('-1 day');
@@ -178,12 +172,10 @@ $expected_end_date_str = $expected_end_date->format('Y-m-d');
 
 logActivity("Expected end date: {$expected_end_date_str}, Actual end date: {$inputs['lease_end_date']}");
 
-// Compare dates instead of month count for more accurate validation
 if ($inputs['lease_end_date'] !== $expected_end_date_str) {
     logActivity("Lease duration mismatch. Expected end date: {$expected_end_date_str}, Got: {$inputs['lease_end_date']}");
     json_error("For {$inputs['payment_frequency']} payment frequency, lease end date must be " . date('F j, Y', strtotime($expected_end_date_str)) . ".", 400);
 }
-
 
 // Check maximum lease duration
 if ($actual_months > MAX_LEASE_MONTHS) {
@@ -317,7 +309,7 @@ try {
         throw new Exception("Apartment is already occupied by Another Tenant");
     }
     $stmt->close();
-    logActivity("Apartment availability check passed. Rent: {$rent_amount}, Deposit: {$security_deposit}");
+    logActivity("Apartment availability check passed. Annual Rent: {$rent_amount}, Deposit: {$security_deposit}");
 
     // 3. Check if same photo was already uploaded
     logActivity("Step 3.3: Checking for duplicate photo");
@@ -358,13 +350,18 @@ try {
 
     // 6. Insert tenant
     logActivity("Step 3.6: Preparing to insert tenant into database");
+    // Calculate rent period end Date (1 year from start date)
+    $start_period= $inputs['lease_start_date'];
+    $end_period_date= new DateTime($start_period);
+    $end_period_date->modify('+1 year')->modify('-1 day');
+    $end_period = $end_period_date->format('Y-m-d');
 
     $insert_sql = "INSERT INTO tenants
     (tenant_code, property_code, apartment_code, firstname, lastname, gender, email, phone, 
      photo, occupation, name_of_employer, employer_address, employer_contact, lease_start_date, 
-     lease_end_date, payment_frequency, referee_name, referee_phone, emergency_contact_name, 
+     lease_end_date, temp_lease_end_date, payment_frequency, referee_name, referee_phone, emergency_contact_name, 
      emergency_contact_phone, password, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
 
     logActivity("SQL Query: " . $insert_sql);
 
@@ -375,36 +372,8 @@ try {
 
     $created_by = is_numeric($userId) ? (int) $userId : $userId;
 
-    $bind_params = [
-        $tenant_code,
-        $inputs['property_code'],
-        $inputs['apartment_code'],
-        $inputs['firstname'],
-        $inputs['lastname'],
-        $inputs['gender'],
-        $inputs['email'],
-        $inputs['phone'],
-        $file_name,
-        $inputs['occupation'],
-        $inputs['name_of_employer'],
-        $inputs['employer_address'],
-        $inputs['employer_contact'],
-        $inputs['lease_start_date'],
-        $inputs['lease_end_date'],
-        $inputs['payment_frequency'],
-        $inputs['referee_name'],
-        $inputs['referee_phone'],
-        $inputs['emergency_contact_name'],
-        $inputs['emergency_contact_phone'],
-        $encrypt_pass,
-        $created_by
-    ];
-
-    logActivity("Number of bind parameters: " . count($bind_params));
-    logActivity("Bind parameters (excluding sensitive): " . json_encode(array_slice($bind_params, 0, 15)));
-
     $insert_stmt->bind_param(
-        'sssssssssssssssssssssi',
+        'ssssssssssssssssssssssi',
         $tenant_code,
         $inputs['property_code'],
         $inputs['apartment_code'],
@@ -419,6 +388,8 @@ try {
         $inputs['employer_address'],
         $inputs['employer_contact'],
         $inputs['lease_start_date'],
+        // $inputs['lease_end_date'],
+        $end_period,
         $inputs['lease_end_date'],
         $inputs['payment_frequency'],
         $inputs['referee_name'],
@@ -453,80 +424,263 @@ try {
     $update_apt->close();
     logActivity("Apartment occupancy status updated to OCCUPIED");
 
-    // 8. RECORD PAYMENTS - Double entry for rent payment and security deposit
+    // ==================== PAYMENT RECORDING ====================
     logActivity("Step 3.8: Recording payments");
 
     $current_date = date('Y-m-d');
 
-    // Calculate payment period range for rent based on lease start date and payment frequency
-    $rentPeriod = calculatePaymentPeriodRange($inputs['payment_frequency'], $inputs['lease_start_date']);
-    $rent_payment_period = $rentPeriod['period_display'];
-    $rent_period_start = $rentPeriod['start_date'];
-    $rent_period_end = $rentPeriod['end_date'];
+    // Calculate payment amounts based on frequency
+    $annual_rent = (float) $rent_amount;
+    $payment_amount_per_period = 0;
 
-    // Calculate due date based on payment frequency and period end date
-    $rent_due_date = calculateDueDate($inputs['payment_frequency'], $rent_period_end);
+    switch ($inputs['payment_frequency']) {
+        case 'Monthly':
+            $payment_amount_per_period = $annual_rent / 12;
+            break;
+        case 'Quarterly':
+            $payment_amount_per_period = $annual_rent / 4;
+            break;
+        case 'Semi-Annually':
+            $payment_amount_per_period = $annual_rent / 2;
+            break;
+        case 'Annually':
+            $payment_amount_per_period = $annual_rent;
+            break;
+        default:
+            $payment_amount_per_period = $annual_rent;
+    }
 
-    logActivity("Calculated rent payment period: {$rent_payment_period}");
+    $payment_amount_per_period = round($payment_amount_per_period, 2);
+    $balance = round($annual_rent - $payment_amount_per_period, 2);
+
+    logActivity("Payment calculation - Annual Rent: {$annual_rent}, Frequency: {$inputs['payment_frequency']}, Payment per period: {$payment_amount_per_period}, Balance: {$balance}");
+
+    // Generate unique identifiers
+    $receipt_number = generateReceiptNumber();
+    $reference_number = generateReferenceNumber($tenant_code);
+
+    // Calculate rent period (1 year from start date)
+    $rent_period_start = $inputs['lease_start_date'];
+    $rent_period_end_date = new DateTime($rent_period_start);
+    $rent_period_end_date->modify('+1 year')->modify('-1 day');
+    $rent_period_end = $rent_period_end_date->format('Y-m-d');
+
+    // Calculate due date for the payment
+    $due_date = calculateDueDate($inputs['payment_frequency'], $rent_period_end);
+
     logActivity("Rent period: {$rent_period_start} to {$rent_period_end}");
-    logActivity("Rent due date: {$rent_due_date}");
+    logActivity("Due date: {$due_date}");
 
-    // Generate separate numbers for each payment
-    $deposit_receipt = generateReceiptNumber() . '-DEP';
-    $deposit_reference = generateReferenceNumber($tenant_code) . '-DEP';
-    $rent_receipt = generateReceiptNumber() . '-RENT';
-    $rent_reference = generateReferenceNumber($tenant_code) . '-RENT';
+    // ==================== INSERT INTO RENT_PAYMENTS TABLE ====================
+    logActivity("Step 3.8a: Inserting into rent_payments table");
 
-    logActivity("Deposit receipt: {$deposit_receipt}, Deposit reference: {$deposit_reference}");
-    logActivity("Rent receipt: {$rent_receipt}, Rent reference: {$rent_reference}");
+    $rent_payment_id = 'RENT_' . strtoupper(uniqid());
+    $payment_period_label = ($inputs['payment_frequency'] === 'Monthly') ? 'Monthly Payment' :
+        (($inputs['payment_frequency'] === 'Quarterly') ? 'Quarterly Payment' :
+            (($inputs['payment_frequency'] === 'Semi-Annually') ? 'Semi-Annual Payment' : 'Annual Payment'));
 
-    // 8a. Record Security Deposit Payment
+    $insert_rent_payment = $conn->prepare("
+        INSERT INTO rent_payments (
+            rent_payment_id,
+            tenant_code,
+            apartment_code,
+            amount,
+            amount_paid,
+            balance,
+            payment_date,
+            payment_method,
+            payment_period,
+            period_start_date,
+            period_end_date,
+            due_date,
+            reference_number,
+            status,
+            payment_type,
+            receipt_number,
+            notes,
+            agreed_rent_amount,
+            payment_amount_per_period,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    ");
+
+    if (!$insert_rent_payment) {
+        throw new Exception('Prepare failed for rent_payments insert: ' . $conn->error);
+    }
+
+    $payment_method = 'cash';
+    $status = "";
+    if($inputs['payment_frequency'] == 'Annually'){
+        $status = 'completed';
+    }
+    else{
+        $status = 'ongoing';
+    }
+    $payment_type = 'rent';
+    $notes = "Initial rent payment for period: {$rent_period_start} to {$rent_period_end}";
+
+    $insert_rent_payment->bind_param(
+        "sssdddsssssssssssdd",
+        $rent_payment_id,
+        $tenant_code,
+        $inputs['apartment_code'],
+        $annual_rent,
+        $payment_amount_per_period,
+        $balance,
+        $current_date,
+        $payment_method,
+        $payment_period_label,
+        $rent_period_start,
+        $rent_period_end,
+        $due_date,
+        $reference_number,
+        $status,
+        $payment_type,
+        $receipt_number,
+        $notes,
+        $annual_rent,
+        $payment_amount_per_period
+    );
+
+    if (!$insert_rent_payment->execute()) {
+        logActivity("SQL Error (Rent Payment): " . $insert_rent_payment->error);
+        throw new Exception('Failed to insert rent_payments record: ' . $insert_rent_payment->error);
+    }
+
+    logActivity("Rent payment record inserted successfully. Rent Payment ID: {$rent_payment_id}");
+
+    // ==================== CREATE PAYMENT TRACKER RECORDS ====================
+    logActivity("Step 3.8b: Creating payment tracker records");
+
+    $tracker_start_date = new DateTime($rent_period_start);
+    $tracker_end_date = clone $tracker_start_date;
+    $lease_end = new DateTime($inputs['lease_end_date']);
+    
+    $remaining_balance = round($annual_rent - $payment_amount_per_period, 2);
+
+    // Calculate tracker intervals based on payment frequency
+    $interval_months = 0;
+    switch ($inputs['payment_frequency']) {
+        case 'Monthly':
+            $interval_months = 1;
+            break;
+        case 'Quarterly':
+            $interval_months = 3;
+            break;
+        case 'Semi-Annually':
+            $interval_months = 6;
+            break;
+        case 'Annually':
+            $interval_months = 12;
+            break;
+        default:
+            $interval_months = 1;
+    }
+
+    $tracker_count = 0;
+    $insert_tracker = $conn->prepare("
+        INSERT INTO rent_payment_tracker (
+            rent_payment_id,
+            tenant_code,
+            apartment_code,
+            period_number,
+            start_date,
+            end_date,
+            remaining_balance,
+            amount_paid,
+            payment_date,
+            status,
+            payment_id,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'paid', ?, NOW())
+    ");
+
+    // IMPORTANT: Use <= for the condition to include the last period
+    while ($tracker_start_date <= $lease_end) {
+        $tracker_end_date = clone $tracker_start_date;
+        $tracker_end_date->modify("+{$interval_months} months");
+        $tracker_end_date->modify('-1 day'); // End date is the last day of the period
+
+        // Adjust if end date exceeds lease end
+        if ($tracker_end_date > $lease_end) {
+            $tracker_end_date = clone $lease_end;
+        }
+
+        $tracker_count++;
+        $period_number_label = $tracker_count;
+        $tracker_start_date_formatted = $tracker_start_date->format('Y-m-d');
+        $tracker_end_date_formatted = $tracker_end_date->format('Y-m-d');
+        $tracker_id = 'RTK_' . strtoupper(uniqid());
+
+        logActivity("Creating tracker record #{$period_number_label}: {$tracker_start_date_formatted} to {$tracker_end_date_formatted}");
+
+        $insert_tracker->bind_param(
+            "sssissdds",
+            $rent_payment_id,
+            $tenant_code,
+            $inputs['apartment_code'],
+            $period_number_label,
+            $tracker_start_date_formatted,
+            $tracker_end_date_formatted,
+            $remaining_balance,
+            $payment_amount_per_period,
+            $tracker_id
+        );
+
+        if (!$insert_tracker->execute()) {
+            logActivity("Warning: Failed to insert tracker record for period {$period_number_label}: " . $insert_tracker->error);
+        } else {
+            logActivity("Tracker record #{$period_number_label} inserted successfully");
+        }
+
+        // Move to next period (add 1 day to start the next period after the current end date)
+        $tracker_start_date = clone $tracker_end_date;
+        $tracker_start_date->modify('+1 day');
+    }
+
+    $insert_tracker->close();
+    logActivity("Created {$tracker_count} payment tracker records");
+
+    // ==================== RECORD SECURITY DEPOSIT IN PAYMENTS TABLE ====================
     if ($security_deposit > 0) {
-        logActivity("Step 3.8a: Recording security deposit payment of ₦{$security_deposit}");
+        logActivity("Step 3.8c: Recording security deposit payment of ₦{$security_deposit}");
+
         $deposit_description = "Security Deposit for apartment {$inputs['apartment_code']}";
         $payment_category = 'security_deposit';
-
-        // Security deposit due date is at lease start (paid upfront)
         $deposit_due_date = $inputs['lease_start_date'];
+        $deposit_receipt = generateReceiptNumber() . '-DEP';
+        $deposit_reference = generateReferenceNumber($tenant_code) . '-DEP';
 
         $insert_deposit = $conn->prepare("
-        INSERT INTO payments (
-            tenant_code, 
-            apartment_code, 
-            amount, 
-            balance, 
-            payment_date, 
-            due_date, 
-            payment_method, 
-            payment_status, 
-            receipt_number, 
-            reference_number, 
-            description, 
-            recorded_by, 
-            created_at,
-            payment_category
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
-    ");
+            INSERT INTO payments (
+                tenant_code,
+                apartment_code,
+                amount,
+                balance,
+                payment_date,
+                due_date,
+                payment_method,
+                payment_status,
+                receipt_number,
+                reference_number,
+                description,
+                recorded_by,
+                created_at,
+                payment_category
+            ) VALUES (?, ?, ?, 0, NOW(), ?, ?, 'completed', ?, ?, ?, ?, NOW(), ?)
+        ");
 
         if (!$insert_deposit) {
             throw new Exception('Prepare failed for deposit payment insert: ' . $conn->error);
         }
 
-        $balance = 0;
-        $payment_method = 'cash';
-        $payment_status = 'completed';
-
-        logActivity("Binding deposit payment parameters");
         $insert_deposit->bind_param(
-            "ssddsssssssis",
+            "ssdsssssss",
             $tenant_code,
             $inputs['apartment_code'],
             $security_deposit,
-            $balance,
-            $current_date,
             $deposit_due_date,
             $payment_method,
-            $payment_status,
             $deposit_receipt,
             $deposit_reference,
             $deposit_description,
@@ -534,7 +688,6 @@ try {
             $payment_category
         );
 
-        logActivity("About to execute deposit payment insert");
         if (!$insert_deposit->execute()) {
             logActivity("SQL Error (Deposit Payment): " . $insert_deposit->error);
             throw new Exception('Failed to record security deposit payment: ' . $insert_deposit->error);
@@ -543,179 +696,28 @@ try {
         $deposit_payment_id = $insert_deposit->insert_id;
         $insert_deposit->close();
         logActivity("Security deposit recorded successfully. Payment ID: {$deposit_payment_id}");
-
-        // Also record in rent_payments table for consistency
-        logActivity("Recording security deposit in rent_payments table");
-        $insert_rent_deposit = $conn->prepare("
-        INSERT INTO rent_payments (
-            tenant_code,
-            apartment_code,
-            amount,
-            payment_date,
-            payment_method,
-            reference_number,
-            status,
-            payment_type,
-            receipt_number,
-            payment_period,
-            period_start_date,
-            period_end_date,
-            due_date,
-            notes,
-            created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-    ");
-
-        $payment_type = 'security_deposit';
-        $payment_period = 'Security Deposit';
-        $notes = "Security deposit payment for apartment {$inputs['apartment_code']}";
-
-        $insert_rent_deposit->bind_param(
-            "ssdsssssssssss",
-            $tenant_code,
-            $inputs['apartment_code'],
-            $security_deposit,
-            $current_date,
-            $payment_method,
-            $deposit_reference,
-            $payment_status,
-            $payment_type,
-            $deposit_receipt,
-            $payment_period,
-            $rent_period_start,
-            $rent_period_end,
-            $deposit_due_date,
-            $notes
-        );
-
-        if (!$insert_rent_deposit->execute()) {
-            logActivity("Warning: Failed to record security deposit in rent_payments table: " . $insert_rent_deposit->error);
-        } else {
-            logActivity("Security deposit recorded in rent_payments table");
-        }
-        $insert_rent_deposit->close();
     } else {
         logActivity("Security deposit amount is 0, skipping deposit payment");
     }
 
-    // 8b. Record First Rent Payment
-    if ($rent_amount > 0) {
-        logActivity("Step 3.8b: Recording first rent payment of ₦{$rent_amount}");
-        logActivity("Payment period: {$rent_payment_period} ({$rent_period_start} to {$rent_period_end})");
-        logActivity("Due date: {$rent_due_date}");
+    // ==================== UPDATE TENANT WITH AGREED RENT INFORMATION ====================
+    logActivity("Step 3.8d: Updating tenant with agreed rent information");
 
-        $rent_description = "Rent payment for period: {$rent_payment_period} - {$inputs['payment_frequency']} payment";
-        $payment_category = 'rent';
-
-        $insert_rent = $conn->prepare("
-        INSERT INTO payments (
-            tenant_code, 
-            apartment_code, 
-            amount, 
-            balance, 
-            payment_date, 
-            due_date, 
-            payment_method, 
-            payment_status, 
-            receipt_number, 
-            reference_number, 
-            description, 
-            recorded_by, 
-            created_at,
-            payment_category
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+    // FIXED: Added agreed_payment_frequency to the UPDATE statement
+    $update_tenant = $conn->prepare("
+        UPDATE tenants 
+        SET agreed_rent_amount = ?,
+            payment_amount_per_period = ?,
+            rent_balance = ?,
+            agreed_payment_frequency = ?
+        WHERE tenant_code = ?
     ");
 
-        if (!$insert_rent) {
-            throw new Exception('Prepare failed for rent payment insert: ' . $conn->error);
-        }
+    $update_tenant->bind_param("dddss", $annual_rent, $payment_amount_per_period, $balance, $inputs['payment_frequency'], $tenant_code);
+    $update_tenant->execute();
+    $update_tenant->close();
 
-        $balance = 0;
-        $payment_method = 'cash';
-        $payment_status = 'completed'; // Set to pending, will be updated when payment is confirmed
-
-        logActivity("Binding rent payment parameters");
-        $insert_rent->bind_param(
-            "ssddsssssssis",
-            $tenant_code,
-            $inputs['apartment_code'],
-            $rent_amount,
-            $balance,
-            $current_date,
-            $rent_due_date,
-            $payment_method,
-            $payment_status,
-            $rent_receipt,
-            $rent_reference,
-            $rent_description,
-            $created_by,
-            $payment_category
-        );
-
-        logActivity("About to execute rent payment insert");
-        if (!$insert_rent->execute()) {
-            logActivity("SQL Error (Rent Payment): " . $insert_rent->error);
-            throw new Exception('Failed to record rent payment: ' . $insert_rent->error);
-        }
-
-        $rent_payment_id = $insert_rent->insert_id;
-        $insert_rent->close();
-        logActivity("First rent payment recorded successfully. Payment ID: {$rent_payment_id}");
-
-        // Also record in rent_payments table with date range and due date
-        logActivity("Recording rent payment in rent_payments table");
-        $insert_rent_only = $conn->prepare("
-        INSERT INTO rent_payments (
-            tenant_code,
-            apartment_code,
-            amount,
-            payment_date,
-            payment_method,
-            reference_number,
-            status,
-            receipt_number,
-            payment_type,
-            payment_period,
-            period_start_date,
-            period_end_date,
-            due_date,
-            notes,
-            created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-    ");
-
-        $payment_type = 'rent';
-        $notes = "Rent payment for period: {$rent_payment_period}";
-
-        $insert_rent_only->bind_param(
-            "ssdsssssssssss",
-            $tenant_code,
-            $inputs['apartment_code'],
-            $rent_amount,
-            $current_date,
-            $payment_method,
-            $rent_reference,
-            $payment_status,
-            $rent_receipt,
-            $payment_type,
-            $rent_payment_period,
-            $rent_period_start,
-            $rent_period_end,
-            $rent_due_date,
-            $notes
-        );
-
-        if (!$insert_rent_only->execute()) {
-            logActivity("Warning: Failed to record rent payment in rent_payments table: " . $insert_rent_only->error);
-        } else {
-            logActivity("Rent payment recorded in rent_payments table with period: {$rent_payment_period}");
-        }
-        $insert_rent_only->close();
-    } else {
-        logActivity("Rent amount is 0, skipping rent payment");
-    }
-
-    logActivity("Payment records created successfully for tenant {$tenant_code}");
+    logActivity("Tenant updated with agreed rent - Annual: {$annual_rent}, Per Period: {$payment_amount_per_period}, Balance: {$balance}, Frequency: {$inputs['payment_frequency']}");
 
     // Commit transaction
     logActivity("Step 3.9: Committing transaction");
@@ -724,6 +726,8 @@ try {
 
     // Log success
     logActivity("Tenant {$tenant_code} ({$inputs['firstname']} {$inputs['lastname']}) onboarded successfully by user {$userId}");
+    logActivity("Rent Payment ID: {$rent_payment_id}");
+    logActivity("Payment tracker records created: {$tracker_count}");
 
     // Consume CSRF token after successful operation
     consumeCsrfToken(CSRF_FORM_NAME);
@@ -733,15 +737,20 @@ try {
         'success' => true,
         'message' => 'New Tenant has been successfully Onboarded!',
         'tenant_code' => $tenant_code,
+        'rent_payment_id' => $rent_payment_id,
         'data' => [
             'name' => $inputs['firstname'] . ' ' . $inputs['lastname'],
             'email' => $inputs['email'],
             'apartment' => $inputs['apartment_code'],
             'lease_period' => $actual_months . ' months',
+            'payment_frequency' => $inputs['payment_frequency'],
+            'payment_amount_per_period' => $payment_amount_per_period,
+            'annual_rent' => $annual_rent,
+            'balance' => $balance,
+            'payment_tracker_count' => $tracker_count,
             'payments_recorded' => [
-                'rent_amount' => $rent_amount,
                 'security_deposit' => $security_deposit,
-                'total_paid' => $rent_amount + $security_deposit
+                'total_initial_paid' => $payment_amount_per_period + $security_deposit
             ]
         ]
     ];
@@ -798,66 +807,26 @@ function generateReferenceNumber($tenant_code)
 }
 
 /**
- * Calculate payment period range based on payment frequency and start date
- * 
- * @param string $payment_frequency Monthly, Quarterly, Semi-Annually, Annually
- * @param string $start_date The start date of the payment period (Y-m-d format)
- * @return array Associative array with period_display, start_date, end_date
- */
-function calculatePaymentPeriodRange($payment_frequency, $start_date)
-{
-    $startDate = new DateTime($start_date);
-    $endDate = clone $startDate;
-
-    switch ($payment_frequency) {
-        case 'Monthly':
-            $endDate->modify('+1 month')->modify('-1 day');
-            $period_display = $startDate->format('F j, Y') . ' to ' . $endDate->format('F j, Y');
-            break;
-        case 'Quarterly':
-            $endDate->modify('+3 months')->modify('-1 day');
-            $period_display = $startDate->format('F j, Y') . ' to ' . $endDate->format('F j, Y');
-            break;
-        case 'Semi-Annually':
-            $endDate->modify('+6 months')->modify('-1 day');
-            $period_display = $startDate->format('F j, Y') . ' to ' . $endDate->format('F j, Y');
-            break;
-        case 'Annually':
-            $endDate->modify('+1 year')->modify('-1 day');
-            $period_display = $startDate->format('F j, Y') . ' to ' . $endDate->format('F j, Y');
-            break;
-        default:
-            $endDate->modify('+1 month')->modify('-1 day');
-            $period_display = $startDate->format('F j, Y') . ' to ' . $endDate->format('F j, Y');
-    }
-
-    return [
-        'period_display' => $period_display,
-        'start_date' => $startDate->format('Y-m-d'),
-        'end_date' => $endDate->format('Y-m-d')
-    ];
-}
-
-/**
  * Calculate due date based on payment frequency and period end date
  * 
  * @param string $payment_frequency Monthly, Quarterly, Semi-Annually, Annually
  * @param string $period_end_date The end date of the payment period (Y-m-d format)
  * @return string The calculated due date (Y-m-d format)
  */
-function calculateDueDate($payment_frequency, $period_end_date) {
+function calculateDueDate($payment_frequency, $period_end_date)
+{
     $dueDateConfig = [
         'Monthly' => DUE_DATE_OFFSET_MONTHLY,
         'Quarterly' => DUE_DATE_OFFSET_QUARTERLY,
         'Semi-Annually' => DUE_DATE_OFFSET_SEMI_ANNUALLY,
         'Annually' => DUE_DATE_OFFSET_ANNUALLY
     ];
-    
+
     $daysToAdd = $dueDateConfig[$payment_frequency] ?? 7;
-    
+
     $dueDate = new DateTime($period_end_date);
     $dueDate->modify("+{$daysToAdd} days");
-    
+
     return $dueDate->format('Y-m-d');
 }
 ?>

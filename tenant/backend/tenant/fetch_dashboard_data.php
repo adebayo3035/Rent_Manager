@@ -23,6 +23,9 @@ try {
         json_error("Tenant code not found", 400, null, 'TENANT_CODE_MISSING');
     }
 
+    logActivity("=== FETCH DASHBOARD DATA START ===");
+    logActivity("Tenant Code: {$tenant_code}");
+
     // Get active maintenance requests count
     $maintenanceQuery = "
         SELECT COUNT(*) as active_requests
@@ -53,7 +56,7 @@ try {
     $paymentsData = $paymentsResult->fetch_assoc();
     $stmt->close();
 
-    // Get tenant, apartment, and property details with rent_amount from apartments table
+    // Get tenant, apartment, and property details
     $tenantQuery = "
         SELECT 
             t.tenant_code,
@@ -62,6 +65,7 @@ try {
             t.lease_start_date,
             t.lease_end_date,
             t.payment_frequency,
+            t.temp_lease_end_date,
             a.apartment_number,
             a.apartment_code,
             a.rent_amount,
@@ -91,14 +95,15 @@ try {
         json_error("Tenant data not found", 404, null, 'TENANT_NOT_FOUND');
     }
 
+    logActivity("Tenant Data - Lease Start: {$tenantData['lease_start_date']}, Lease End: {$tenantData['lease_end_date']}, Frequency: {$tenantData['payment_frequency']}");
+
     // Calculate days remaining on lease
     $days_remaining = 0;
-    $lease_end_date = null;
     if ($tenantData['lease_end_date']) {
-        $lease_end_date = new DateTime($tenantData['lease_end_date']);
+        $end_date = new DateTime($tenantData['lease_end_date']);
         $today = new DateTime();
-        $days_remaining = $today->diff($lease_end_date)->days;
-        if ($today > $lease_end_date) {
+        $days_remaining = $today->diff($end_date)->days;
+        if ($today > $end_date) {
             $days_remaining = 0;
         }
     }
@@ -154,7 +159,86 @@ try {
         ];
     }
 
-    // Get ALL completed rent payments for the current apartment with due dates
+    // Function to determine which period a date falls into
+    function getPeriodForDate($date, $start_date, $frequency) {
+        $dateObj = new DateTime($date);
+        $start = new DateTime($start_date);
+        $period_start = clone $start;
+        $period_end = clone $start;
+        
+        // If date is before lease start, return the first period
+        if ($dateObj < $start) {
+            switch($frequency) {
+                case 'Monthly':
+                    $period_end->modify('+1 month')->modify('-1 day');
+                    break;
+                case 'Quarterly':
+                    $period_end->modify('+3 months')->modify('-1 day');
+                    break;
+                case 'Semi-Annually':
+                    $period_end->modify('+6 months')->modify('-1 day');
+                    break;
+                case 'Annually':
+                    $period_end->modify('+1 year')->modify('-1 day');
+                    break;
+                default:
+                    $period_end->modify('+1 month')->modify('-1 day');
+            }
+            return [
+                'start' => $period_start->format('Y-m-d'),
+                'end' => $period_end->format('Y-m-d'),
+                'start_obj' => $period_start,
+                'end_obj' => $period_end
+            ];
+        }
+        
+        switch($frequency) {
+            case 'Monthly':
+                $months_diff = ($dateObj->format('Y') - $start->format('Y')) * 12 + 
+                              ($dateObj->format('n') - $start->format('n'));
+                $period_start->modify("+{$months_diff} months");
+                $period_end = clone $period_start;
+                $period_end->modify('+1 month')->modify('-1 day');
+                break;
+                
+            case 'Quarterly':
+                $quarters_diff = floor(($dateObj->format('Y') - $start->format('Y')) * 4 + 
+                                      ($dateObj->format('n') - $start->format('n')) / 3);
+                $period_start->modify("+{$quarters_diff} months");
+                $period_end = clone $period_start;
+                $period_end->modify('+3 months')->modify('-1 day');
+                break;
+                
+            case 'Semi-Annually':
+                $half_years_diff = floor(($dateObj->format('Y') - $start->format('Y')) * 2 + 
+                                        ($dateObj->format('n') - $start->format('n')) / 6);
+                $period_start->modify("+{$half_years_diff} months");
+                $period_end = clone $period_start;
+                $period_end->modify('+6 months')->modify('-1 day');
+                break;
+                
+            case 'Annually':
+                $years_diff = $dateObj->format('Y') - $start->format('Y');
+                $period_start->modify("+{$years_diff} years");
+                $period_end = clone $period_start;
+                $period_end->modify('+1 year')->modify('-1 day');
+                break;
+                
+            default:
+                $period_start = clone $start;
+                $period_end = clone $start;
+                $period_end->modify('+1 month')->modify('-1 day');
+        }
+        
+        return [
+            'start' => $period_start->format('Y-m-d'),
+            'end' => $period_end->format('Y-m-d'),
+            'start_obj' => $period_start,
+            'end_obj' => $period_end
+        ];
+    }
+
+    // Get ALL completed rent payments
     $allPaymentsQuery = "
         SELECT 
             payment_id,
@@ -180,7 +264,57 @@ try {
     $allPayments = $allPaymentsResult->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 
-    // Get the last completed rent payment with its due date
+    logActivity("Found " . count($allPayments) . " completed rent payments");
+
+    // Get pending/overdue payments
+    $pendingPaymentsQuery = "
+        SELECT 
+            payment_id,
+            payment_period,
+            period_start_date,
+            period_end_date,
+            due_date,
+            amount,
+            status,
+            created_at
+        FROM rent_payments
+        WHERE tenant_code = ? 
+        AND apartment_code = ?
+        AND payment_type = 'rent'
+        AND status IN ('pending', 'overdue')
+        ORDER BY due_date ASC
+    ";
+    $stmt = $conn->prepare($pendingPaymentsQuery);
+    $stmt->bind_param("ss", $tenant_code, $tenantData['apartment_code']);
+    $stmt->execute();
+    $pendingResult = $stmt->get_result();
+    $pendingPayments = $pendingResult->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    // Calculate paid periods summary
+    $last_paid_end_date = null;
+    $last_payment_date = null;
+    $last_payment_due_date = null;
+    $last_payment_period = null;
+    $paid_periods = [];
+    
+    foreach ($allPayments as $payment) {
+        $paid_periods[] = [
+            'period' => $payment['payment_period'],
+            'start_date' => $payment['period_start_date'],
+            'end_date' => $payment['period_end_date'],
+            'due_date' => $payment['due_date'],
+            'payment_date' => $payment['payment_date']
+        ];
+        if ($payment['period_end_date'] && (!$last_paid_end_date || $payment['period_end_date'] > $last_paid_end_date)) {
+            $last_paid_end_date = $payment['period_end_date'];
+            $last_payment_date = $payment['payment_date'];
+            $last_payment_due_date = $payment['due_date'];
+            $last_payment_period = $payment['payment_period'];
+        }
+    }
+
+    // Get last completed payment
     $lastCompletedPaymentQuery = "
         SELECT 
             payment_id,
@@ -207,55 +341,140 @@ try {
     $lastCompletedPayment = $lastPaymentResult->fetch_assoc();
     $stmt->close();
 
-    // Get any pending/overdue payments with their due dates
-    $pendingPaymentsQuery = "
-        SELECT 
-            payment_id,
-            payment_period,
-            period_start_date,
-            period_end_date,
-            due_date,
-            amount,
-            status,
-            created_at
-        FROM rent_payments
-        WHERE tenant_code = ? 
-        AND apartment_code = ?
-        AND payment_type = 'rent'
-        AND status IN ('pending', 'overdue')
-        ORDER BY due_date ASC
-    ";
-    $stmt = $conn->prepare($pendingPaymentsQuery);
-    $stmt->bind_param("ss", $tenant_code, $tenantData['apartment_code']);
-    $stmt->execute();
-    $pendingResult = $stmt->get_result();
-    $pendingPayments = $pendingResult->fetch_all(MYSQLI_ASSOC);
-    $stmt->close();
+    // ==================== CURRENT PERIOD CALCULATION ====================
+    $current_period = null;
+    $upcoming_period = null;
+    $today_date = new DateTime();
+    $today_date->setTime(0, 0, 0);
+    $lease_start = new DateTime($tenantData['lease_start_date']);
+    $lease_end = new DateTime($tenantData['lease_end_date']);
 
-    // Calculate the last paid period end date
-    $last_paid_end_date = null;
-    $last_payment_date = null;
-    $last_payment_due_date = null;
-    $last_payment_period = null;
-    $paid_periods = [];
+    logActivity("=== CURRENT PERIOD CALCULATION ===");
+    logActivity("Today: " . $today_date->format('Y-m-d'));
+    logActivity("Lease: {$tenantData['lease_start_date']} to {$tenantData['lease_end_date']}");
+
+    // First, check if any paid period covers today's date (including periods before lease start)
+    $found_paid_period = null;
+    foreach ($paid_periods as $period) {
+        if ($period['start_date'] && $period['end_date']) {
+            $period_start = new DateTime($period['start_date']);
+            $period_end = new DateTime($period['end_date']);
+            $period_end_inclusive = clone $period_end;
+            $period_end_inclusive->modify('+1 day');
+            
+            if ($today_date >= $period_start && $today_date <= $period_end_inclusive) {
+                $found_paid_period = $period;
+                logActivity("Found paid period covering today: {$period['period']} ({$period['start_date']} to {$period['end_date']})");
+                break;
+            }
+        }
+    }
     
-    foreach ($allPayments as $payment) {
-        $paid_periods[] = [
-            'period' => $payment['payment_period'],
-            'start_date' => $payment['period_start_date'],
-            'end_date' => $payment['period_end_date'],
-            'due_date' => $payment['due_date'],
-            'payment_date' => $payment['payment_date']
+    if ($found_paid_period) {
+        // Use the found paid period as current period
+        $period_start = new DateTime($found_paid_period['start_date']);
+        $period_end = new DateTime($found_paid_period['end_date']);
+        
+        $current_period = [
+            'period' => $found_paid_period['period'],
+            'start_date' => $found_paid_period['start_date'],
+            'end_date' => $found_paid_period['end_date'],
+            'start_formatted' => $period_start->format('F j, Y'),
+            'end_formatted' => $period_end->format('F j, Y'),
+            'is_paid' => true,
+            'payment_id' => null,
+            'payment_date' => $found_paid_period['payment_date'],
+            'due_date' => $found_paid_period['due_date'],
+            'status' => 'active',
+            'days_elapsed' => $today_date->diff($period_start)->days,
+            'days_remaining' => $period_end->diff($today_date)->days
         ];
-        if ($payment['period_end_date'] && (!$last_paid_end_date || $payment['period_end_date'] > $last_paid_end_date)) {
-            $last_paid_end_date = $payment['period_end_date'];
-            $last_payment_date = $payment['payment_date'];
-            $last_payment_due_date = $payment['due_date'];
-            $last_payment_period = $payment['payment_period'];
+        logActivity("Current period set from paid period: {$current_period['period']}");
+    } else {
+        // No paid period covers today, calculate theoretical period
+        if ($today_date >= $lease_start && $today_date <= $lease_end) {
+            $theoretical_period = getPeriodForDate($today_date->format('Y-m-d'), $tenantData['lease_start_date'], $payment_frequency);
+            $period_start = new DateTime($theoretical_period['start']);
+            $period_end = new DateTime($theoretical_period['end']);
+            
+            $current_period = [
+                'period' => formatPeriod($period_start, $payment_frequency),
+                'start_date' => $theoretical_period['start'],
+                'end_date' => $theoretical_period['end'],
+                'start_formatted' => $period_start->format('F j, Y'),
+                'end_formatted' => $period_end->format('F j, Y'),
+                'is_paid' => false,
+                'payment_id' => null,
+                'payment_date' => null,
+                'due_date' => null,
+                'status' => 'pending',
+                'days_elapsed' => $today_date->diff($period_start)->days,
+                'days_remaining' => $period_end->diff($today_date)->days
+            ];
+            logActivity("Current period set as theoretical (unpaid): {$current_period['period']}");
+        } elseif ($today_date < $lease_start) {
+            // Before lease start - show the first period
+            $first_period = calculatePeriodRange($tenantData['lease_start_date'], $payment_frequency);
+            $period_start = new DateTime($first_period['start']);
+            $period_end = new DateTime($first_period['end']);
+            
+            $current_period = [
+                'period' => formatPeriod($period_start, $payment_frequency),
+                'start_date' => $first_period['start'],
+                'end_date' => $first_period['end'],
+                'start_formatted' => $period_start->format('F j, Y'),
+                'end_formatted' => $period_end->format('F j, Y'),
+                'is_paid' => false,
+                'payment_id' => null,
+                'payment_date' => null,
+                'due_date' => null,
+                'status' => 'upcoming',
+                'days_elapsed' => 0,
+                'days_remaining' => $period_end->diff($today_date)->days
+            ];
+            logActivity("Current period set as upcoming (before lease): {$current_period['period']}");
+        }
+    }
+    
+    // Calculate upcoming period (next period after current)
+    if ($current_period) {
+        $current_end = new DateTime($current_period['end_date']);
+        $next_start = clone $current_end;
+        $next_start->modify('+1 day');
+        
+        if ($next_start <= $lease_end) {
+            $next_period = calculatePeriodRange($next_start->format('Y-m-d'), $payment_frequency);
+            $next_start_display = new DateTime($next_period['start']);
+            $next_end_display = new DateTime($next_period['end']);
+            
+            // Check if this upcoming period is already paid
+            $is_upcoming_paid = false;
+            foreach ($paid_periods as $period) {
+                if ($period['start_date'] && $period['end_date']) {
+                    $paid_start = new DateTime($period['start_date']);
+                    $paid_end = new DateTime($period['end_date']);
+                    
+                    if ($paid_start <= new DateTime($next_period['end']) && $paid_end >= new DateTime($next_period['start'])) {
+                        $is_upcoming_paid = true;
+                        break;
+                    }
+                }
+            }
+            
+            $upcoming_period = [
+                'period' => formatPeriod($next_start_display, $payment_frequency),
+                'start_date' => $next_period['start'],
+                'end_date' => $next_period['end'],
+                'start_formatted' => $next_start_display->format('F j, Y'),
+                'end_formatted' => $next_end_display->format('F j, Y'),
+                'amount' => $rent_amount,
+                'is_paid' => $is_upcoming_paid
+            ];
+            logActivity("Upcoming period: {$upcoming_period['period']} (Paid: " . ($is_upcoming_paid ? 'Yes' : 'No') . ")");
         }
     }
 
-    // Determine next payment information
+    // ==================== NEXT PAYMENT CALCULATION ====================
     $next_payment_date = null;
     $next_payment_period = null;
     $next_payment_period_display = null;
@@ -265,13 +484,8 @@ try {
     $next_payment_period_start = null;
     $next_payment_period_end = null;
 
-    $lease_end = new DateTime($tenantData['lease_end_date']);
-    $today = new DateTime();
-    
-    // Get the latest payment record to check if there's an existing pending payment
     $latestPendingPayment = !empty($pendingPayments) ? $pendingPayments[0] : null;
     
-    // If there's a pending payment, use its information
     if ($latestPendingPayment) {
         $has_upcoming_payment = true;
         $next_payment_period = $latestPendingPayment['payment_period'];
@@ -280,21 +494,13 @@ try {
         $next_payment_period_display = calculatePeriodRange($next_payment_period_start, $payment_frequency)['display'];
         $next_payment_due_date = $latestPendingPayment['due_date'];
         $next_payment_date = $latestPendingPayment['period_start_date'];
-    }
-    // If there's a last paid period, calculate next period
-    elseif ($last_paid_end_date) {
+    } elseif ($last_paid_end_date) {
         $last_end = new DateTime($last_paid_end_date);
         $next_start = clone $last_end;
         $next_start->modify('+1 day');
         
-        // Calculate next period based on payment frequency
-        $next_period = calculatePeriodRange($next_start->format('Y-m-d'), $payment_frequency);
-        
-        // Check if next period is within or after lease end
-        $next_period_end = new DateTime($next_period['end']);
-        
-        if ($next_period_end <= $lease_end) {
-            // Next period is within current lease
+        if ($next_start <= $lease_end) {
+            $next_period = calculatePeriodRange($next_start->format('Y-m-d'), $payment_frequency);
             $next_payment_date = $next_period['start'];
             $next_payment_period = formatPeriod(new DateTime($next_period['start']), $payment_frequency);
             $next_payment_period_display = $next_period['display'];
@@ -302,36 +508,16 @@ try {
             $next_payment_period_end = $next_period['end'];
             $has_upcoming_payment = true;
             
-            // Calculate due date based on payment frequency
-            $dueDateConfig = [
-                'Monthly' => 7,
-                'Quarterly' => 14,
-                'Semi-Annually' => 30,
-                'Annually' => 90
-            ];
+            $dueDateConfig = ['Monthly' => 7, 'Quarterly' => 14, 'Semi-Annually' => 30, 'Annually' => 90];
             $daysToAdd = $dueDateConfig[$payment_frequency] ?? 7;
             $due_date = new DateTime($next_period['end']);
             $due_date->modify("+{$daysToAdd} days");
             $next_payment_due_date = $due_date->format('Y-m-d');
-        } elseif ($next_period['start'] <= $lease_end->format('Y-m-d')) {
-            // Partial period until lease end
-            $next_payment_date = $next_period['start'];
-            $next_payment_period = formatPeriod(new DateTime($next_period['start']), $payment_frequency);
-            $next_payment_period_display = "Partial period: " . $next_period['start'] . " to " . $lease_end->format('Y-m-d');
-            $next_payment_period_start = $next_period['start'];
-            $next_payment_period_end = $lease_end->format('Y-m-d');
-            $has_upcoming_payment = true;
-            
-            $due_date = clone $lease_end;
-            $due_date->modify('+7 days');
-            $next_payment_due_date = $due_date->format('Y-m-d');
         } else {
-            // No upcoming payment needed
             $has_upcoming_payment = false;
             $next_payment_period_display = "Lease paid in full";
         }
     } else {
-        // No payments yet - first payment is due at lease start
         $first_period = calculatePeriodRange($tenantData['lease_start_date'], $payment_frequency);
         $next_payment_date = $first_period['start'];
         $next_payment_period = formatPeriod(new DateTime($first_period['start']), $payment_frequency);
@@ -340,20 +526,14 @@ try {
         $next_payment_period_end = $first_period['end'];
         $has_upcoming_payment = true;
         
-        // Calculate due date for first payment
-        $dueDateConfig = [
-            'Monthly' => 7,
-            'Quarterly' => 14,
-            'Semi-Annually' => 30,
-            'Annually' => 90
-        ];
+        $dueDateConfig = ['Monthly' => 7, 'Quarterly' => 14, 'Semi-Annually' => 30, 'Annually' => 90];
         $daysToAdd = $dueDateConfig[$payment_frequency] ?? 7;
         $due_date = new DateTime($first_period['end']);
         $due_date->modify("+{$daysToAdd} days");
         $next_payment_due_date = $due_date->format('Y-m-d');
     }
 
-    // Check if there are any overdue payments
+    // Check for overdue payments
     $has_overdue_payments = false;
     $overdue_amount = 0;
     foreach ($pendingPayments as $pending) {
@@ -404,7 +584,10 @@ try {
         'agent_phone' => $tenantData['agent_phone'] ?? null,
         'agent_email' => $tenantData['agent_email'] ?? null,
         'recent_requests' => $recent_requests,
-        // Last completed payment info
+        // Current running period
+        'current_period' => $current_period,
+        'upcoming_period' => $upcoming_period,
+        // Last completed payment
         'last_payment' => $lastCompletedPayment ? [
             'payment_id' => $lastCompletedPayment['payment_id'],
             'payment_date' => $lastCompletedPayment['payment_date'],
@@ -423,7 +606,7 @@ try {
         'next_payment_period_end' => $next_payment_period_end,
         'next_payment_due_date' => $next_payment_due_date,
         'has_upcoming_payment' => $has_upcoming_payment,
-        // Pending payments info
+        // Pending payments
         'has_pending_payments' => $has_pending_payments,
         'has_overdue_payments' => $has_overdue_payments,
         'pending_payments_count' => count($pendingPayments),
@@ -439,7 +622,7 @@ try {
         'can_make_payment' => !$has_pending_payments && $has_upcoming_payment
     ];
 
-    // Return success with dashboard data
+    logActivity("=== FETCH DASHBOARD DATA COMPLETED ===");
     json_success($dashboardData, "Dashboard data retrieved successfully");
 
 } catch (Exception $e) {

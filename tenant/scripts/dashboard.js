@@ -173,11 +173,11 @@ function renderDashboard() {
                         
                          <div class="payment-date">
                             <label>Start Date</label>
-                            <span class="date">${dashboardData.last_payment.period_start_date}</span>
+                            <span class="date">${dashboardData.current_period.start_formatted}</span>
                         </div>
                          <div class="payment-date">
                             <label>End Date</label>
-                            <span class="date">${dashboardData.last_payment.period_end_date}</span>
+                            <span class="date">${dashboardData.current_period.end_formatted}</span>
                         </div>
                     </div>
 

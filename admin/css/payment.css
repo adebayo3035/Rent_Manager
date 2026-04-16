@@ -227,7 +227,7 @@
      letter-spacing: 0.5px;
  }
 
- .data-table td {
+ .data-table td, .update-input {
      padding: 15px;
      border-bottom: 1px solid #eee;
      font-size: 14px;
@@ -363,6 +363,47 @@
      justify-content: flex-end;
      gap: 10px;
  }
+ /* Add to your existing CSS */
+.status-select {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.status-select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.btn-edit-status {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.btn-edit-status:hover {
+    background: #5a67d8;
+    transform: translateY(-1px);
+}
+
+.alert-info {
+    background: #e8f0fe;
+    padding: 10px;
+    border-radius: 6px;
+    margin-top: 10px;
+}
+
+.alert-info i {
+    color: #1a73e8;
+    margin-right: 8px;
+}
 
  /* Responsive */
  @media (max-width: 1024px) {
@@ -378,11 +419,26 @@
 
      .header {
          flex-direction: column;
+         justify-content: center;
+         align-items: center;
          gap: 15px;
          text-align: center;
+        
      }
 
      .quick-actions {
+        display: flex;
          flex-direction: column;
+         justify-content: center;
+         align-items: center;
+         
+         width: 100%;
+         margin: auto;
+         align-self: center;
+     }
+     .quick-actions button{
+        min-width: 300px;
+        padding: 15px;
+        text-align: center;
      }
  }

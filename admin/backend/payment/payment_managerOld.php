@@ -41,8 +41,6 @@ try {
     // Route to appropriate function
     logActivity("Routing to action: $action");
     
-    // Helper function to get client IP and user agent for better logging
-    
     switch ($action) {
         case 'fetch':
             fetchPayments($conn, $adminId, $userRole);
@@ -57,10 +55,6 @@ try {
         case 'update':
             logActivity("Initiating payment update - User: $adminId");
             updatePayment($conn, $adminId);
-            break;
-        case 'update_status':
-            logActivity("Initiating payment status update - User: $adminId");
-            updatePaymentStatus($conn, $adminId);
             break;
         case 'delete':
             logActivity("Initiating payment deletion - User: $adminId");
@@ -107,6 +101,7 @@ try {
     ]);
     exit();
 }
+
 // ==================== FUNCTIONS ====================
 
 function fetchPayments($conn, $adminId, $userRole) {
@@ -657,9 +652,6 @@ function getPaymentStatistics($conn) {
                     AVG(amount) as average_payment,
                     COUNT(CASE WHEN payment_status = 'completed' THEN 1 END) as completed_payments,
                     COUNT(CASE WHEN payment_status = 'pending' THEN 1 END) as pending_payments,
-                    COUNT(CASE WHEN payment_status = 'failed' THEN 1 END) as failed_payments,
-                    COUNT(CASE WHEN payment_status = 'cancelled' THEN 1 END) as cancelled_payments,
-                    COUNT(CASE WHEN payment_status = 'refunded' THEN 1 END) as refunded_payments,
                     SUM(CASE WHEN payment_status = 'completed' THEN amount ELSE 0 END) as completed_revenue
                    FROM payments 
                    WHERE is_deleted = 0";
@@ -718,142 +710,5 @@ function getPaymentStatistics($conn) {
             "method_distribution" => $methodDistribution
         ]
     ]);
-}
-
-// ==================== NEW FUNCTION: UPDATE PAYMENT STATUS ====================
-
-function updatePaymentStatus($conn, $adminId) {
-    logActivity("Starting updatePaymentStatus() - Admin ID: $adminId");
-    
-    $input = json_decode(file_get_contents('php://input'), true);
-    if (!$input) {
-        $input = $_POST;
-    }
-    
-    $paymentId = isset($input['payment_id']) ? (int)$input['payment_id'] : 0;
-    $newStatus = isset($input['status']) ? trim($input['status']) : '';
-    $notes = isset($input['notes']) ? trim($input['notes']) : '';
-    
-    if (!$paymentId) {
-        echo json_encode(["success" => false, "message" => "Payment ID is required."]);
-        return;
-    }
-    
-    $allowedStatuses = ['pending', 'completed', 'failed', 'refunded'];
-    if (!in_array($newStatus, $allowedStatuses)) {
-        echo json_encode(["success" => false, "message" => "Invalid status. Allowed: " . implode(', ', $allowedStatuses)]);
-        return;
-    }
-    
-    $conn->begin_transaction();
-    logActivity("Transaction started for status update");
-    
-    try {
-        // 1. Get payment details from payments table
-        $paymentQuery = "
-            SELECT p.*, rp.payment_id as rent_payment_id, rp.payment_type, rp.period_end_date,
-                   t.tenant_code, t.lease_end_date, t.temp_lease_end_date
-            FROM payments p
-            LEFT JOIN rent_payments rp ON p.reference_number = rp.reference_number
-            LEFT JOIN tenants t ON p.tenant_code = t.tenant_code
-            WHERE p.id = ? AND p.is_deleted = 0
-            LIMIT 1
-        ";
-        
-        $paymentStmt = $conn->prepare($paymentQuery);
-        $paymentStmt->bind_param("i", $paymentId);
-        $paymentStmt->execute();
-        $paymentResult = $paymentStmt->get_result();
-        
-        if ($paymentResult->num_rows === 0) {
-            throw new Exception("Payment not found");
-        }
-        
-        $payment = $paymentResult->fetch_assoc();
-        $paymentStmt->close();
-        
-        $oldStatus = $payment['payment_status'];
-        logActivity("Updating payment ID: $paymentId from status: $oldStatus to: $newStatus");
-        
-        // 2. Update payments table
-        $updatePaymentQuery = "
-            UPDATE payments 
-            SET payment_status = ?, 
-                updated_at = NOW(),
-                notes = CONCAT(IFNULL(notes, ''), '\n[Admin Update] Status changed from {$oldStatus} to {$newStatus} on ', NOW(), ' by Admin ID: {$adminId}\nNotes: {$notes}')
-            WHERE id = ?
-        ";
-        $updateStmt = $conn->prepare($updatePaymentQuery);
-        $updateStmt->bind_param("si", $newStatus, $paymentId);
-        $updateStmt->execute();
-        $updateStmt->close();
-        
-        // 3. Update rent_payments table if it exists (for rent payments)
-        if ($payment['rent_payment_id']) {
-            $updateRentQuery = "
-                UPDATE rent_payments 
-                SET status = ?, 
-                    updated_at = NOW(),
-                    admin_notes = CONCAT(IFNULL(notes, ''), '\n[Admin Update] Status changed from {$oldStatus} to {$newStatus} on ', NOW())
-                WHERE payment_id = ?
-            ";
-            $updateRentStmt = $conn->prepare($updateRentQuery);
-            $updateRentStmt->bind_param("si", $newStatus, $payment['rent_payment_id']);
-            $updateRentStmt->execute();
-            $updateRentStmt->close();
-        }
-        
-        // 4. Handle lease end date update when status changes to completed or failed
-        if ($payment['payment_type'] === 'rent') {
-            if ($newStatus === 'completed') {
-                // Update lease end date to temp_lease_end_date
-                if ($payment['temp_lease_end_date']) {
-                    $updateLeaseQuery = "
-                        UPDATE tenants 
-                        SET lease_end_date = temp_lease_end_date,
-                            temp_lease_end_date = NULL,
-                            last_updated_by = ?,
-                            last_updated_at = NOW()
-                        WHERE tenant_code = ?
-                    ";
-                    $updateLeaseStmt = $conn->prepare($updateLeaseQuery);
-                    $updateLeaseStmt->bind_param("is", $adminId, $payment['tenant_code']);
-                    $updateLeaseStmt->execute();
-                    $updateLeaseStmt->close();
-                    logActivity("Lease end date updated to temp_lease_end_date: {$payment['temp_lease_end_date']} for tenant: {$payment['tenant_code']}");
-                }
-            } elseif ($newStatus === 'failed') {
-                // Revert temp_lease_end_date to original lease_end_date
-                $updateLeaseQuery = "
-                    UPDATE tenants 
-                    SET temp_lease_end_date = NULL,
-                        last_updated_by = ?,
-                        last_updated_at = NOW()
-                    WHERE tenant_code = ?
-                ";
-                $updateLeaseStmt = $conn->prepare($updateLeaseQuery);
-                $updateLeaseStmt->bind_param("is", $adminId, $payment['tenant_code']);
-                $updateLeaseStmt->execute();
-                $updateLeaseStmt->close();
-                logActivity("Temp lease end date cleared for tenant: {$payment['tenant_code']} due to failed payment");
-            }
-        }
-        
-        $conn->commit();
-        logActivity("Payment status updated successfully - ID: $paymentId, New Status: $newStatus");
-        
-        echo json_encode([
-            "success" => true,
-            "message" => "Payment status updated successfully from " . ucfirst($oldStatus) . " to " . ucfirst($newStatus),
-            "payment_id" => $paymentId,
-            "old_status" => $oldStatus,
-            "new_status" => $newStatus
-        ]);
-        
-    } catch (Exception $e) {
-        $conn->rollback();
-        logActivity("ERROR in updatePaymentStatus: " . $e->getMessage());
-        echo json_encode(["success" => false, "message" => "Failed to update payment status: " . $e->getMessage()]);
-    }
 }
 ?>

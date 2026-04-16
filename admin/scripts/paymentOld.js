@@ -291,24 +291,6 @@ function renderStatistics(stats) {
             value: summary.pending_payments || 0,
         },
         {
-            icon: "fas fa-warning",
-            color: "rgb(255, 85, 85)",
-            title: "Failed",
-            value: summary.failed_payments || 0,
-        },
-        {
-            icon: "fas fa-cancel",
-            color: "rgb(255, 201, 85)",
-            title: "Cancelled",
-            value: summary.cancelled_payments || 0,
-        },
-        {
-            icon: "fas fa-undo",
-            color: "rgb(255, 85, 232)",
-            title: "Refunded",
-            value: summary.refunded_payments || 0,
-        },
-        {
             icon: "fas fa-chart-line",
             color: "#8b5cf6",
             title: "Average Payment",
@@ -518,20 +500,6 @@ function renderPaymentDetails(payment) {
     const container = document.getElementById("paymentDetails");
     if (!container) return;
 
-    // Store payment ID for status update
-    window.currentViewingPaymentId = payment.id;
-    window.currentViewingPaymentStatus = payment.payment_status;
-    window.currentViewingPaymentType = payment.payment_type;
-
-    const statusOptions = `
-        <select id="paymentStatusSelect" class="status-select" onchange="confirmStatusChange()">
-            <option value="pending" ${payment.payment_status === 'pending' ? 'selected' : ''}>Pending</option>
-            <option value="completed" ${payment.payment_status === 'completed' ? 'selected' : ''}>Completed</option>
-            <option value="failed" ${payment.payment_status === 'failed' ? 'selected' : ''}>Failed</option>
-            <option value="refunded" ${payment.payment_status === 'refunded' ? 'selected' : ''}>Refunded</option>
-        </select>
-    `;
-
     const detailsHTML = `
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
             <div>
@@ -540,30 +508,13 @@ function renderPaymentDetails(payment) {
                     <tr><td><strong>Receipt #:</strong></td><td>${payment.receipt_number || 'N/A'}</td></tr>
                     <tr><td><strong>Amount:</strong></td><td>₦${formatNumber(payment.amount)}</td></tr>
                     <tr><td><strong>Date:</strong></td><td>${formatDate(payment.payment_date)}</td></tr>
-                    <tr><td><strong>Due Date:</strong></td><td>${formatDate(payment.due_date) || 'N/A'}</td></tr>
-                    <tr>
-                        <td><strong>Status:</strong></td>
-                        <td>
-                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                                <span class="status-badge status-${payment.payment_status}">
-                                    ${(payment.payment_status || 'pending').toUpperCase()}
-                                </span>
-                                ${payment.payment_status === 'pending' ? `
-                                    <button class="btn-edit-status" onclick="openStatusUpdateModal()" 
-                                            style="background: #667eea; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer;">
-                                        <i class="fas fa-edit"></i> Change Status
-                                    </button>
-                                ` : ''}
-                            </div>
-                        </td>
-                    </tr>
+                    <tr><td><strong>Status:</strong></td><td>
+                        <span class="status-badge status-${payment.payment_status}">
+                            ${(payment.payment_status || 'pending').toUpperCase()}
+                        </span>
+                    </td></tr>
                     <tr><td><strong>Method:</strong></td><td>${formatPaymentMethod(payment.payment_method)}</td></tr>
                     <tr><td><strong>Reference:</strong></td><td>${payment.reference_number || 'N/A'}</td></tr>
-                    <tr><td><strong>Period:</strong></td><td>${payment.payment_period || 'N/A'}</td></tr>
-                    ${payment.period_start_date ? `
-                    <tr><td><strong>Period Start:</strong></td><td>${formatDate(payment.period_start_date)}</td></tr>
-                    <tr><td><strong>Period End:</strong></td><td>${formatDate(payment.period_end_date)}</td></tr>
-                    ` : ''}
                 </table>
             </div>
             
@@ -573,14 +524,12 @@ function renderPaymentDetails(payment) {
                     <tr><td><strong>Name:</strong></td><td>${payment.tenant_name || 'N/A'}</td></tr>
                     <tr><td><strong>Email:</strong></td><td>${payment.tenant_email || 'N/A'}</td></tr>
                     <tr><td><strong>Phone:</strong></td><td>${payment.tenant_phone || 'N/A'}</td></tr>
-                    <tr><td><strong>Tenant Code:</strong></td><td>${payment.tenant_code || 'N/A'}</td></tr>
                 </table>
                 
                 <h4 style="margin-top: 20px;">Property Information</h4>
                 <table class="data-table" style="width: 100%;">
                     <tr><td><strong>Property:</strong></td><td>${payment.property_name || 'N/A'}</td></tr>
                     <tr><td><strong>Apartment:</strong></td><td>${payment.apartment_number || 'N/A'}</td></tr>
-                    <tr><td><strong>Property Code:</strong></td><td>${payment.property_code || 'N/A'}</td></tr>
                 </table>
             </div>
         </div>
@@ -591,128 +540,11 @@ function renderPaymentDetails(payment) {
             <p>${payment.description}</p>
         </div>
         ` : ''}
-        
-        ${payment.notes ? `
-        <div style="margin-bottom: 20px;">
-            <h4>Notes</h4>
-            <p style="color: #666; font-style: italic;">${payment.notes}</p>
-        </div>
-        ` : ''}
     `;
 
     container.innerHTML = detailsHTML;
 }
 
-// Status Update Modal Functions
-function openStatusUpdateModal() {
-    const modalHtml = `
-        <div id="statusUpdateModal" class="modal" style="display: flex;">
-            <div class="modal-content" style="max-width: 450px;">
-                <div class="modal-header">
-                    <h3>Update Payment Status</h3>
-                    <button class="modal-close action-btn" onclick="closeStatusUpdateModal()">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label>Current Status</label>
-                        <input type="text" class = "form-control" value="${window.currentViewingPaymentStatus.toUpperCase()}" readonly style="background: #f5f5f5;">
-                    </div>
-                    <div class="form-group">
-                        <label>New Status *</label>
-                        <select id="newPaymentStatus" class="form-control" required>
-                            <option value="">Select Status</option>
-                            <option value="pending">Pending</option>
-                            <option value="completed">Completed</option>
-                            <option value="failed">Failed</option>
-                            <option value="refunded">Refunded</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Notes (Optional)</label>
-                        <textarea id="statusUpdateNotes" rows="3" class="form-control" 
-                                  placeholder="Enter reason for status change..."></textarea>
-                    </div>
-                    ${window.currentViewingPaymentType === 'rent' ? `
-                    <div class="alert-info" style="background: #e8f0fe; padding: 10px; border-radius: 6px; margin-top: 10px;">
-                        <i class="fas fa-info-circle"></i> 
-                        <small>Changing status to "Completed" will update the tenant's lease end date.</small>
-                    </div>
-                    ` : ''}
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" onclick="closeStatusUpdateModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="confirmStatusUpdate()">Update Status</button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Remove existing modal if any
-    const existingModal = document.getElementById('statusUpdateModal');
-    if (existingModal) existingModal.remove();
-    
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-}
-
-function closeStatusUpdateModal() {
-    const modal = document.getElementById('statusUpdateModal');
-    if (modal) modal.remove();
-}
-
-async function confirmStatusUpdate() {
-    const newStatus = document.getElementById('newPaymentStatus')?.value;
-    const notes = document.getElementById('statusUpdateNotes')?.value;
-    
-    if (!newStatus) {
-        alert('Please select a new status');
-        return;
-    }
-    
-    if (newStatus === window.currentViewingPaymentStatus) {
-        alert('New status is the same as current status');
-        return;
-    }
-    
-    // Confirm with user
-    const confirmMessage = `Are you sure you want to change the payment status from ${window.currentViewingPaymentStatus.toUpperCase()} to ${newStatus.toUpperCase()}?`;
-    if (!confirm(confirmMessage)) return;
-    
-    // Show loading state
-    const confirmBtn = document.querySelector('#statusUpdateModal .btn-primary');
-    const originalText = confirmBtn.innerHTML;
-    confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
-    confirmBtn.disabled = true;
-    
-    try {
-        const response = await fetch('../backend/payment/payment_manager.php?action=update_status', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                payment_id: window.currentViewingPaymentId,
-                status: newStatus,
-                notes: notes
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            alert(data.message);
-            closeStatusUpdateModal();
-            // Refresh the payment details and the table
-            await viewPayment(window.currentViewingPaymentId);
-            await loadPayments();
-        } else {
-            alert(data.message || 'Failed to update payment status');
-        }
-    } catch (error) {
-        console.error('Error updating payment status:', error);
-        alert('An error occurred while updating the payment status');
-    } finally {
-        confirmBtn.innerHTML = originalText;
-        confirmBtn.disabled = false;
-    }
-}
 // Delete payment
 async function deletePayment(paymentId) {
     if (!confirm("Are you sure you want to delete this payment? This action cannot be undone.")) {

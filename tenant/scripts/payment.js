@@ -35,6 +35,7 @@ async function initializePayments() {
   }
 }
 
+// Update fetchDashboardData to store the full dashboard data
 async function fetchDashboardData() {
   try {
     const response = await fetch("../backend/tenant/fetch_dashboard_data.php");
@@ -42,6 +43,7 @@ async function fetchDashboardData() {
 
     if (data.success && data.data) {
       const dashboard = data.data;
+      window.dashboardData = dashboard; // Store globally
       paymentSummary = dashboard.summary;
 
       // Get next payment information from dashboard data
@@ -73,6 +75,7 @@ async function fetchDashboardData() {
       window.showToast("Failed to load payment information", "error");
   }
 }
+
 
 async function fetchPaymentHistory() {
   try {
@@ -534,6 +537,113 @@ const formatDateShort = (date) => {
 function populatePaymentSummary() {
     if (!currentUserData) return;
 
+    // Use the current period from dashboard data if available
+    // We need to fetch the current period from the dashboard
+    // Since we already have dashboard data, let's use it
+    
+    // First, check if we have current period data from the dashboard
+    if (window.dashboardData && window.dashboardData.current_period && window.dashboardData.current_period.is_paid === false) {
+        // There's an unpaid current period - use that for payment
+        const currentPeriod = window.dashboardData.current_period;
+        
+        const periodDisplay = `${formatDateShort(new Date(currentPeriod.start_date))} - ${formatDateShort(new Date(currentPeriod.end_date))}`;
+        
+        // Calculate due date (7 days after period end for monthly, etc.)
+        let dueDate = new Date(currentPeriod.end_date);
+        const gracePeriods = {
+            "Monthly": 7,
+            "Quarterly": 14,
+            "Semi-Annually": 30,
+            "Annually": 90
+        };
+        const daysToAdd = gracePeriods[currentUserData.payment_frequency] || 7;
+        dueDate.setDate(dueDate.getDate() + daysToAdd);
+        
+        const summaryPeriod = document.getElementById("summaryPeriod");
+        const summaryAmount = document.getElementById("summaryAmount");
+        const summaryDueDate = document.getElementById("summaryDueDate");
+        const summaryProperty = document.getElementById("summaryProperty");
+        const summaryApartment = document.getElementById("summaryApartment");
+        const warningContainer = document.getElementById("paymentWarningContainer");
+
+        if (summaryPeriod) summaryPeriod.textContent = periodDisplay;
+        if (summaryAmount) summaryAmount.textContent = `₦${formatNumber(currentUserData.rent_amount)}`;
+        if (summaryDueDate) summaryDueDate.textContent = dueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+        if (summaryProperty) summaryProperty.textContent = currentUserData.property_name || "N/A";
+        if (summaryApartment) summaryApartment.textContent = currentUserData.apartment_number || "N/A";
+        
+        if (warningContainer) {
+            warningContainer.innerHTML = "";
+            warningContainer.style.display = "none";
+        }
+
+        currentPaymentData = {
+            period: periodDisplay,
+            period_start: currentPeriod.start_date,
+            period_end: currentPeriod.end_date,
+            raw_period: currentPeriod.period,
+            amount: currentUserData.rent_amount,
+            due_date: dueDate.toISOString().split('T')[0],
+            formatted_due_date: dueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+            property_name: currentUserData.property_name,
+            apartment_number: currentUserData.apartment_number,
+            payment_frequency: currentUserData.payment_frequency,
+            is_advance_payment: false
+        };
+        return;
+    }
+    
+    // If there's an upcoming period from dashboard, use that
+    if (window.dashboardData && window.dashboardData.upcoming_period) {
+        const upcomingPeriod = window.dashboardData.upcoming_period;
+        const periodDisplay = `${formatDateShort(new Date(upcomingPeriod.start_date))} - ${formatDateShort(new Date(upcomingPeriod.end_date))}`;
+        
+        // Calculate due date
+        let dueDate = new Date(upcomingPeriod.end_date);
+        const gracePeriods = {
+            "Monthly": 7,
+            "Quarterly": 14,
+            "Semi-Annually": 30,
+            "Annually": 90
+        };
+        const daysToAdd = gracePeriods[currentUserData.payment_frequency] || 7;
+        dueDate.setDate(dueDate.getDate() + daysToAdd);
+        
+        const summaryPeriod = document.getElementById("summaryPeriod");
+        const summaryAmount = document.getElementById("summaryAmount");
+        const summaryDueDate = document.getElementById("summaryDueDate");
+        const summaryProperty = document.getElementById("summaryProperty");
+        const summaryApartment = document.getElementById("summaryApartment");
+        const warningContainer = document.getElementById("paymentWarningContainer");
+
+        if (summaryPeriod) summaryPeriod.textContent = periodDisplay;
+        if (summaryAmount) summaryAmount.textContent = `₦${formatNumber(upcomingPeriod.amount || currentUserData.rent_amount)}`;
+        if (summaryDueDate) summaryDueDate.textContent = dueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+        if (summaryProperty) summaryProperty.textContent = currentUserData.property_name || "N/A";
+        if (summaryApartment) summaryApartment.textContent = currentUserData.apartment_number || "N/A";
+        
+        if (warningContainer) {
+            warningContainer.innerHTML = "";
+            warningContainer.style.display = "none";
+        }
+
+        currentPaymentData = {
+            period: periodDisplay,
+            period_start: upcomingPeriod.start_date,
+            period_end: upcomingPeriod.end_date,
+            raw_period: upcomingPeriod.period,
+            amount: upcomingPeriod.amount || currentUserData.rent_amount,
+            due_date: dueDate.toISOString().split('T')[0],
+            formatted_due_date: dueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+            property_name: currentUserData.property_name,
+            apartment_number: currentUserData.apartment_number,
+            payment_frequency: currentUserData.payment_frequency,
+            is_advance_payment: false
+        };
+        return;
+    }
+    
+    // Fallback to the existing calculation logic
     const nextPayment = calculateNextPaymentPeriod();
 
     if (!nextPayment) {
@@ -557,10 +667,6 @@ function populatePaymentSummary() {
     } else if (currentUserData.payment_frequency === "Quarterly") {
         periodDisplay = `${new Date(nextPayment.period_start).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${new Date(nextPayment.period_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
     } else if (currentUserData.payment_frequency === "Annually") {
-        // const startYear = new Date(nextPayment.period_start).getFullYear();
-        // const endYear = new Date(nextPayment.period_end).getFullYear();
-        // periodDisplay = `${startYear} - ${endYear}`;
-
         const startDate = formatDateShort(new Date(nextPayment.period_start));
         const endDate = formatDateShort(new Date(nextPayment.period_end));
         periodDisplay = `${startDate} - ${endDate}`;
@@ -585,7 +691,6 @@ function populatePaymentSummary() {
     if (summaryApartment)
         summaryApartment.textContent = currentUserData.apartment_number || "N/A";
     
-    // Add warning message if advance payment
     if (warningContainer) {
         if (nextPayment.is_advance_payment) {
             warningContainer.innerHTML = warningMessage;

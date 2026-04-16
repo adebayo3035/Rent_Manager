@@ -86,7 +86,9 @@ $sql = "
     SELECT 
     apartment_code,
     apartment_number,
-    apartment_type_unit
+    apartment_type_unit,
+    rent_amount,
+    security_deposit
 FROM apartments
 WHERE 
     property_code = ?
