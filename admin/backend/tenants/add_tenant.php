@@ -549,97 +549,172 @@ try {
 
     logActivity("Rent payment record inserted successfully. Rent Payment ID: {$rent_payment_id}");
 
-    // ==================== CREATE PAYMENT TRACKER RECORDS ====================
-    logActivity("Step 3.8b: Creating payment tracker records");
 
-    $tracker_start_date = new DateTime($rent_period_start);
-    $tracker_end_date = clone $tracker_start_date;
-    $lease_end = new DateTime($inputs['lease_end_date']);
+// ==================== CREATE PAYMENT TRACKER RECORDS ====================
+logActivity("Step 3.8b: Creating ALL payment tracker records for the entire lease period");
+
+// FIX: Use the FULL YEAR lease end date, not the input lease_end_date
+$tracker_start_date = new DateTime($rent_period_start);  // 2026-05-02
+$lease_full_end = new DateTime($rent_period_end);        // 2027-05-01 (calculated from +1 year)
+$payment_frequency = $inputs['payment_frequency'];
+
+logActivity("Tracker generation - Period from: {$tracker_start_date->format('Y-m-d')} to: {$lease_full_end->format('Y-m-d')}");
+
+// Calculate tracker intervals based on payment frequency
+$interval_months = 0;
+switch ($payment_frequency) {
+    case 'Monthly': $interval_months = 1; break;
+    case 'Quarterly': $interval_months = 3; break;
+    case 'Semi-Annually': $interval_months = 6; break;
+    case 'Annually': $interval_months = 12; break;
+    default: $interval_months = 1;
+}
+
+$tracker_count = 0;
+$period_number = 1;
+$remaining_balance = $annual_rent;
+
+// Prepare the insert statement for ALL periods (initially all 'available')
+$insert_tracker = $conn->prepare("
+    INSERT INTO rent_payment_tracker (
+        rent_payment_id,
+        tenant_code,
+        apartment_code,
+        period_number,
+        start_date,
+        end_date,
+        remaining_balance,
+        amount_paid,
+        payment_date,
+        status,
+        payment_id,
+        created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, 'available', ?, NOW())
+");
+
+if (!$insert_tracker) {
+    throw new Exception('Prepare failed for tracker insert: ' . $conn->error);
+}
+
+// Generate ALL periods from lease start to FULL YEAR lease end
+$current_start = clone $tracker_start_date;
+
+while ($current_start <= $lease_full_end) {
+    // Calculate period end date
+    $current_end = clone $current_start;
+    $current_end->modify("+{$interval_months} months");
+    $current_end->modify('-1 day');
     
-    $remaining_balance = round($annual_rent - $payment_amount_per_period, 2);
-
-    // Calculate tracker intervals based on payment frequency
-    $interval_months = 0;
-    switch ($inputs['payment_frequency']) {
-        case 'Monthly':
-            $interval_months = 1;
-            break;
-        case 'Quarterly':
-            $interval_months = 3;
-            break;
-        case 'Semi-Annually':
-            $interval_months = 6;
-            break;
-        case 'Annually':
-            $interval_months = 12;
-            break;
-        default:
-            $interval_months = 1;
+    // Adjust if end date exceeds full lease end
+    if ($current_end > $lease_full_end) {
+        $current_end = clone $lease_full_end;
     }
-
-    $tracker_count = 0;
-    $insert_tracker = $conn->prepare("
-        INSERT INTO rent_payment_tracker (
-            rent_payment_id,
-            tenant_code,
-            apartment_code,
-            period_number,
-            start_date,
-            end_date,
-            remaining_balance,
-            amount_paid,
-            payment_date,
-            status,
-            payment_id,
-            created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'paid', ?, NOW())
-    ");
-
-    // IMPORTANT: Use <= for the condition to include the last period
-    while ($tracker_start_date <= $lease_end) {
-        $tracker_end_date = clone $tracker_start_date;
-        $tracker_end_date->modify("+{$interval_months} months");
-        $tracker_end_date->modify('-1 day'); // End date is the last day of the period
-
-        // Adjust if end date exceeds lease end
-        if ($tracker_end_date > $lease_end) {
-            $tracker_end_date = clone $lease_end;
-        }
-
+    
+    $period_start_formatted = $current_start->format('Y-m-d');
+    $period_end_formatted = $current_end->format('Y-m-d');
+    
+    // Generate UNIQUE payment_id for this tracker record
+    $tracker_payment_id = 'TRAK_' . strtoupper(uniqid()) . '_' . $period_number;
+    
+    logActivity("Creating tracker record #{$period_number}: {$period_start_formatted} to {$period_end_formatted} with status 'available'");
+    logActivity("Generated payment_id: {$tracker_payment_id}");
+    
+    $insert_tracker->bind_param(
+        "sssissds",
+        $rent_payment_id,
+        $tenant_code,
+        $inputs['apartment_code'],
+        $period_number,
+        $period_start_formatted,
+        $period_end_formatted,
+        $remaining_balance,
+        $tracker_payment_id
+    );
+    
+    if (!$insert_tracker->execute()) {
+        logActivity("Warning: Failed to insert tracker record for period {$period_number}: " . $insert_tracker->error);
+    } else {
+        logActivity("Tracker record #{$period_number} created successfully with payment_id: {$tracker_payment_id}");
         $tracker_count++;
-        $period_number_label = $tracker_count;
-        $tracker_start_date_formatted = $tracker_start_date->format('Y-m-d');
-        $tracker_end_date_formatted = $tracker_end_date->format('Y-m-d');
-        $tracker_id = 'RTK_' . strtoupper(uniqid());
-
-        logActivity("Creating tracker record #{$period_number_label}: {$tracker_start_date_formatted} to {$tracker_end_date_formatted}");
-
-        $insert_tracker->bind_param(
-            "sssissdds",
-            $rent_payment_id,
-            $tenant_code,
-            $inputs['apartment_code'],
-            $period_number_label,
-            $tracker_start_date_formatted,
-            $tracker_end_date_formatted,
-            $remaining_balance,
-            $payment_amount_per_period,
-            $tracker_id
-        );
-
-        if (!$insert_tracker->execute()) {
-            logActivity("Warning: Failed to insert tracker record for period {$period_number_label}: " . $insert_tracker->error);
-        } else {
-            logActivity("Tracker record #{$period_number_label} inserted successfully");
-        }
-
-        // Move to next period (add 1 day to start the next period after the current end date)
-        $tracker_start_date = clone $tracker_end_date;
-        $tracker_start_date->modify('+1 day');
     }
+    
+    // Update remaining balance for next period
+    $remaining_balance -= $payment_amount_per_period;
+    
+    // Move to next period
+    $current_start = clone $current_end;
+    $current_start->modify('+1 day');
+    $period_number++;
+    
+    // Safety break to prevent infinite loop
+    if ($period_number > 100) break;
+}
 
-    $insert_tracker->close();
-    logActivity("Created {$tracker_count} payment tracker records");
+$insert_tracker->close();
+logActivity("Created {$tracker_count} payment tracker records for the entire lease period");
+// ==================== UPDATE FIRST PERIOD TO 'PAID' ====================
+logActivity("Step 3.8c: Updating first period to 'paid' status (onboarding payment)");
+
+// First, get the payment_id of the first period
+$get_first_payment_id = $conn->prepare("
+    SELECT payment_id FROM rent_payment_tracker 
+    WHERE rent_payment_id = ? AND period_number = 1
+");
+$get_first_payment_id->bind_param("s", $rent_payment_id);
+$get_first_payment_id->execute();
+$first_result = $get_first_payment_id->get_result();
+$first_tracker = $first_result->fetch_assoc();
+$get_first_payment_id->close();
+
+if ($first_tracker) {
+    $first_payment_id = $first_tracker['payment_id'];
+    
+    $update_first_tracker = $conn->prepare("
+        UPDATE rent_payment_tracker 
+        SET status = 'paid', 
+            payment_date = NOW(),
+            amount_paid = ?,
+            payment_method = 'cash',
+            payment_reference = ?
+        WHERE rent_payment_id = ? 
+        AND period_number = 1
+        LIMIT 1
+    ");
+    
+    if (!$update_first_tracker) {
+        throw new Exception('Prepare failed for first period update: ' . $conn->error);
+    }
+    
+    $update_first_tracker->bind_param("dss", $payment_amount_per_period, $reference_number, $rent_payment_id);
+    $update_first_tracker->execute();
+    
+    if ($update_first_tracker->affected_rows > 0) {
+        logActivity("First payment period (#1) marked as 'paid' with payment_id: {$first_payment_id}");
+        logActivity("Amount paid: ₦{$payment_amount_per_period}, Reference: {$reference_number}");
+    } else {
+        logActivity("WARNING: Could not update first period - it may not exist or already paid");
+    }
+    $update_first_tracker->close();
+} else {
+    logActivity("ERROR: Could not find first period tracker record");
+}
+
+// ==================== VERIFY TRACKER RECORDS ====================
+$verify_tracker = $conn->prepare("
+    SELECT period_number, start_date, end_date, status, amount_paid, payment_id, payment_date
+    FROM rent_payment_tracker 
+    WHERE rent_payment_id = ? 
+    ORDER BY period_number
+");
+$verify_tracker->bind_param("s", $rent_payment_id);
+$verify_tracker->execute();
+$verify_result = $verify_tracker->get_result();
+
+logActivity("=== TRACKER RECORDS VERIFICATION ===");
+while ($row = $verify_result->fetch_assoc()) {
+    logActivity("Period #{$row['period_number']}: {$row['start_date']} to {$row['end_date']} | Status: {$row['status']} | Payment ID: {$row['payment_id']} | Amount Paid: {$row['amount_paid']} | Payment Date: {$row['payment_date']}");
+}
+$verify_tracker->close();
 
     // ==================== RECORD SECURITY DEPOSIT IN PAYMENTS TABLE ====================
     if ($security_deposit > 0) {

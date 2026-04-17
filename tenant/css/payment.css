@@ -99,12 +99,14 @@
 }
 
 /* Payment Table */
+/* Payment History Table Enhancements */
 .payments-table {
     background: white;
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     border: 1px solid #f0f0f0;
+    margin-top: 30px;
 }
 
 .payments-table h3 {
@@ -126,7 +128,9 @@
     font-weight: 600;
     color: #1a1f36;
     border-bottom: 1px solid #e5e7eb;
-    font-size: 14px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .payments-table td {
@@ -134,17 +138,19 @@
     border-bottom: 1px solid #f0f0f0;
     font-size: 14px;
     color: #1a1f36;
+    vertical-align: middle;
 }
 
 .payments-table tr:last-child td {
     border-bottom: none;
 }
 
-.payments-table tr:hover {
+.payments-table tbody tr:hover {
     background: #f9fafb;
+    transition: background 0.2s ease;
 }
 
-/* Status Styles */
+/* Status Styles - Using your existing classes */
 .status-completed {
     color: #10b981;
     font-weight: 500;
@@ -183,15 +189,20 @@
     font-weight: bold;
 }
 
-.status-refunded {
-    color: #8b5cf6;
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
+/* Period Number Cell */
+.payments-table td:nth-child(2) {
+    font-weight: 600;
+    color: #4a5568;
+    font-family: monospace;
 }
 
-/* Download Button */
+/* Amount Cell */
+.payments-table td:nth-child(3) {
+    font-weight: 600;
+    color: #1a1f36;
+}
+
+/* Download Button - Enhanced */
 .btn-download {
     background: none;
     border: none;
@@ -212,6 +223,23 @@
     color: #764ba2;
     background: rgba(102, 126, 234, 0.1);
     transform: scale(1.1);
+}
+
+/* Responsive Table for Mobile */
+@media (max-width: 768px) {
+    .payments-table {
+        overflow-x: auto;
+    }
+    
+    .payments-table table {
+        min-width: 600px;
+    }
+    
+    .payments-table th,
+    .payments-table td {
+        padding: 12px;
+        font-size: 13px;
+    }
 }
 
 /* Pagination */
@@ -842,6 +870,122 @@
     background-color: #f5f5f5;
     cursor: not-allowed;
     border-color: #e0e0e0;
+}
+
+/* Payment Card Styles */
+.payment-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.payment-card .payment-info {
+  flex: 1;
+}
+
+.payment-card .payment-info h3 {
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.payment-card .period-badge {
+  display: inline-block;
+  background: #e9ecef;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 10px;
+}
+
+.payment-card .period-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.payment-card .period-range {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 12px;
+}
+
+.payment-card .amount {
+  font-size: 28px;
+  font-weight: bold;
+  color: #1a73e8;
+  margin: 10px 0;
+}
+
+.payment-card .date {
+  font-size: 14px;
+  color: #666;
+}
+
+.payment-card .btn-primary {
+  background: #1a73e8;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  transition: background 0.3s;
+}
+
+.payment-card .btn-primary:hover {
+  background: #1557b0;
+}
+
+.payment-card.pending-card {
+  background: #fff3cd;
+  border-left: 4px solid #f59e0b;
+}
+
+.payment-card.success-card {
+  background: #d4edda;
+  border-left: 4px solid #28a745;
+}
+
+.payment-card.info-card {
+  background: #d1ecf1;
+  border-left: 4px solid #17a2b8;
+}
+
+.failed-badge {
+  display: inline-block;
+  background: #dc3545;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.status-pending {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.status-paid {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.status-failed {
+  color: #dc3545;
+  font-weight: 600;
 }
 
 /* Responsive */

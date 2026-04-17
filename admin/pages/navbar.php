@@ -62,6 +62,9 @@
                             </a>
                             
                             <a href="payment.php" class="dropdown-item">
+                                <i class="fas fa-money-check-alt"></i> Payment Manager
+                            </a>
+                            <a href="rent_payment.php" class="dropdown-item">
                                 <i class="fas fa-money-check-alt"></i> Rent Payments
                             </a>
                              <a href="fee_management.php" class="dropdown-item">
@@ -208,7 +211,10 @@
                                     <span class="mobile-badge">New</span>
                                 </a> -->
                                 <a href="payment.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-money-check-alt"></i> Rent Payments
+                                    <i class="fas fa-money-check-alt"></i> Payment Manager
+                                </a>
+                                <a href="rent_payment.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-money-check-alt"></i> Rent Payment
                                 </a>
                                 <a href="fee_management.php" class="mobile-nav-link sub">
                                     <i class="fas fa-money-check-alt"></i> Manage Fees

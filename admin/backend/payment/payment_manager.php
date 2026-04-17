@@ -720,8 +720,6 @@ function getPaymentStatistics($conn) {
     ]);
 }
 
-// ==================== NEW FUNCTION: UPDATE PAYMENT STATUS ====================
-
 function updatePaymentStatus($conn, $adminId) {
     logActivity("Starting updatePaymentStatus() - Admin ID: $adminId");
     
@@ -730,16 +728,18 @@ function updatePaymentStatus($conn, $adminId) {
         $input = $_POST;
     }
     
+    $trackerId = isset($input['tracker_id']) ? (int)$input['tracker_id'] : 0;
     $paymentId = isset($input['payment_id']) ? (int)$input['payment_id'] : 0;
     $newStatus = isset($input['status']) ? trim($input['status']) : '';
     $notes = isset($input['notes']) ? trim($input['notes']) : '';
     
-    if (!$paymentId) {
-        echo json_encode(["success" => false, "message" => "Payment ID is required."]);
+    // If tracker_id is provided, use it; otherwise fall back to payment_id
+    if (!$trackerId && !$paymentId) {
+        echo json_encode(["success" => false, "message" => "Tracker ID or Payment ID is required."]);
         return;
     }
     
-    $allowedStatuses = ['pending', 'completed', 'failed', 'refunded'];
+    $allowedStatuses = ['paid', 'failed'];
     if (!in_array($newStatus, $allowedStatuses)) {
         echo json_encode(["success" => false, "message" => "Invalid status. Allowed: " . implode(', ', $allowedStatuses)]);
         return;
@@ -749,103 +749,222 @@ function updatePaymentStatus($conn, $adminId) {
     logActivity("Transaction started for status update");
     
     try {
-        // 1. Get payment details from payments table
-        $paymentQuery = "
-            SELECT p.*, rp.payment_id as rent_payment_id, rp.payment_type, rp.period_end_date,
-                   t.tenant_code, t.lease_end_date, t.temp_lease_end_date
-            FROM payments p
-            LEFT JOIN rent_payments rp ON p.reference_number = rp.reference_number
-            LEFT JOIN tenants t ON p.tenant_code = t.tenant_code
-            WHERE p.id = ? AND p.is_deleted = 0
-            LIMIT 1
-        ";
-        
-        $paymentStmt = $conn->prepare($paymentQuery);
-        $paymentStmt->bind_param("i", $paymentId);
-        $paymentStmt->execute();
-        $paymentResult = $paymentStmt->get_result();
-        
-        if ($paymentResult->num_rows === 0) {
-            throw new Exception("Payment not found");
+        // 1. Get tracker record details
+        if ($trackerId) {
+            $trackerQuery = "
+                SELECT 
+                    t.*,
+                    r.rent_payment_id,
+                    r.amount as total_annual_rent,
+                    r.balance as rent_payment_balance,
+                    t.amount_paid as period_amount,
+                    p.tenant_code,
+                    p.apartment_code,
+                    p.lease_end_date,
+                    p.temp_lease_end_date
+                FROM rent_payment_tracker t
+                JOIN rent_payments r ON t.rent_payment_id = r.rent_payment_id
+                JOIN tenants p ON t.tenant_code = p.tenant_code
+                WHERE t.tracker_id = ?
+                LIMIT 1
+            ";
+            $trackerStmt = $conn->prepare($trackerQuery);
+            $trackerStmt->bind_param("i", $trackerId);
+            $trackerStmt->execute();
+            $trackerResult = $trackerStmt->get_result();
+            
+            if ($trackerResult->num_rows === 0) {
+                throw new Exception("Tracker record not found");
+            }
+            
+            $tracker = $trackerResult->fetch_assoc();
+            $trackerStmt->close();
+            
+            logActivity("Found tracker record - Period #{$tracker['period_number']}, Current Status: {$tracker['status']}");
+            
+            // Verify the tracker is in pending_verification status
+            if ($tracker['status'] !== 'pending_verification') {
+                throw new Exception("Payment is not in pending verification status. Current status: {$tracker['status']}");
+            }
+            
+        } else {
+            // Fallback: Get via payment_id from payments table
+            $fallbackQuery = "
+                SELECT 
+                    t.tracker_id,
+                    t.*,
+                    r.rent_payment_id,
+                    p.tenant_code
+                FROM payments pay
+                JOIN rent_payment_tracker t ON pay.id = t.payment_id
+                JOIN rent_payments r ON t.rent_payment_id = r.rent_payment_id
+                JOIN tenants p ON t.tenant_code = p.tenant_code
+                WHERE pay.id = ?
+                LIMIT 1
+            ";
+            $fallbackStmt = $conn->prepare($fallbackQuery);
+            $fallbackStmt->bind_param("i", $paymentId);
+            $fallbackStmt->execute();
+            $fallbackResult = $fallbackStmt->get_result();
+            
+            if ($fallbackResult->num_rows === 0) {
+                throw new Exception("Payment record not found");
+            }
+            
+            $tracker = $fallbackResult->fetch_assoc();
+            $fallbackStmt->close();
+            $trackerId = $tracker['tracker_id'];
         }
         
-        $payment = $paymentResult->fetch_assoc();
-        $paymentStmt->close();
+        $oldStatus = $tracker['status'];
+        $periodAmount = (float)$tracker['period_amount'];
+        $periodEndDate = $tracker['end_date'];
         
-        $oldStatus = $payment['payment_status'];
-        logActivity("Updating payment ID: $paymentId from status: $oldStatus to: $newStatus");
+        logActivity("Processing payment - Period #{$tracker['period_number']}, Amount: {$periodAmount}, New Status: {$newStatus}");
         
-        // 2. Update payments table
-        $updatePaymentQuery = "
-            UPDATE payments 
-            SET payment_status = ?, 
-                updated_at = NOW(),
-                notes = CONCAT(IFNULL(notes, ''), '\n[Admin Update] Status changed from {$oldStatus} to {$newStatus} on ', NOW(), ' by Admin ID: {$adminId}\nNotes: {$notes}')
-            WHERE id = ?
-        ";
-        $updateStmt = $conn->prepare($updatePaymentQuery);
-        $updateStmt->bind_param("si", $newStatus, $paymentId);
-        $updateStmt->execute();
-        $updateStmt->close();
-        
-        // 3. Update rent_payments table if it exists (for rent payments)
-        if ($payment['rent_payment_id']) {
+        // 2. Update tracker record
+        if ($newStatus === 'paid') {
+            // APPROVE payment
+            $updateTrackerQuery = "
+                UPDATE rent_payment_tracker 
+                SET status = 'paid',
+                    verified_by = ?,
+                    verified_at = NOW(),
+                    admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[VERIFIED] Status changed from {$oldStatus} to {$newStatus} on ', NOW(), ' by Admin ID: {$adminId}\nNotes: {$notes}'),
+                    payment_date = IFNULL(payment_date, NOW())
+                WHERE tracker_id = ?
+            ";
+            $updateStmt = $conn->prepare($updateTrackerQuery);
+            $updateStmt->bind_param("ii", $adminId, $trackerId);
+            $updateStmt->execute();
+            $updateStmt->close();
+            
+            // Update rent_payments balance
+            $newRentBalance = $tracker['rent_payment_balance'] - $periodAmount;
             $updateRentQuery = "
                 UPDATE rent_payments 
-                SET status = ?, 
-                    updated_at = NOW(),
-                    admin_notes = CONCAT(IFNULL(notes, ''), '\n[Admin Update] Status changed from {$oldStatus} to {$newStatus} on ', NOW())
-                WHERE payment_id = ?
+                SET amount_paid = amount_paid + ?,
+                    balance = ?,
+                    updated_at = NOW()
+                WHERE rent_payment_id = ?
             ";
             $updateRentStmt = $conn->prepare($updateRentQuery);
-            $updateRentStmt->bind_param("si", $newStatus, $payment['rent_payment_id']);
+            $updateRentStmt->bind_param("dds", $periodAmount, $newRentBalance, $tracker['rent_payment_id']);
             $updateRentStmt->execute();
             $updateRentStmt->close();
+            
+            // Update tenant's rent_balance
+            $updateTenantQuery = "
+                UPDATE tenants 
+                SET rent_balance = rent_balance - ?,
+                    last_updated_at = NOW()
+                WHERE tenant_code = ?
+            ";
+            $updateTenantStmt = $conn->prepare($updateTenantQuery);
+            $updateTenantStmt->bind_param("ds", $periodAmount, $tracker['tenant_code']);
+            $updateTenantStmt->execute();
+            $updateTenantStmt->close();
+            
+            // Update temp_lease_end_date to this period's end date
+            $updateLeaseQuery = "
+                UPDATE tenants 
+                SET temp_lease_end_date = ?
+                WHERE tenant_code = ?
+            ";
+            $updateLeaseStmt = $conn->prepare($updateLeaseQuery);
+            $updateLeaseStmt->bind_param("ss", $periodEndDate, $tracker['tenant_code']);
+            $updateLeaseStmt->execute();
+            $updateLeaseStmt->close();
+            logActivity("Temp lease end date updated to: {$periodEndDate} for tenant: {$tracker['tenant_code']}");
+            
+            logActivity("Payment approved - Period #{$tracker['period_number']}, New rent balance: {$newRentBalance}");
+            
+        } elseif ($newStatus === 'failed') {
+            // REJECT payment
+            $updateTrackerQuery = "
+                UPDATE rent_payment_tracker 
+                SET status = 'failed',
+                    verified_by = ?,
+                    verified_at = NOW(),
+                    admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[REJECTED] Status changed from {$oldStatus} to {$newStatus} on ', NOW(), ' by Admin ID: {$adminId}\nReason: {$notes}')
+                WHERE tracker_id = ?
+            ";
+            $updateStmt = $conn->prepare($updateTrackerQuery);
+            $updateStmt->bind_param("ii", $adminId, $trackerId);
+            $updateStmt->execute();
+            $updateStmt->close();
+            
+            logActivity("Payment rejected - Period #{$tracker['period_number']}, Reason: {$notes}");
         }
         
-        // 4. Handle lease end date update when status changes to completed or failed
-        if ($payment['payment_type'] === 'rent') {
-            if ($newStatus === 'completed') {
-                // Update lease end date to temp_lease_end_date
-                if ($payment['temp_lease_end_date']) {
-                    $updateLeaseQuery = "
-                        UPDATE tenants 
-                        SET lease_end_date = temp_lease_end_date,
-                            temp_lease_end_date = NULL,
-                            last_updated_by = ?,
-                            last_updated_at = NOW()
-                        WHERE tenant_code = ?
-                    ";
-                    $updateLeaseStmt = $conn->prepare($updateLeaseQuery);
-                    $updateLeaseStmt->bind_param("is", $adminId, $payment['tenant_code']);
-                    $updateLeaseStmt->execute();
-                    $updateLeaseStmt->close();
-                    logActivity("Lease end date updated to temp_lease_end_date: {$payment['temp_lease_end_date']} for tenant: {$payment['tenant_code']}");
-                }
-            } elseif ($newStatus === 'failed') {
-                // Revert temp_lease_end_date to original lease_end_date
-                $updateLeaseQuery = "
-                    UPDATE tenants 
-                    SET temp_lease_end_date = NULL,
-                        last_updated_by = ?,
-                        last_updated_at = NOW()
-                    WHERE tenant_code = ?
-                ";
-                $updateLeaseStmt = $conn->prepare($updateLeaseQuery);
-                $updateLeaseStmt->bind_param("is", $adminId, $payment['tenant_code']);
-                $updateLeaseStmt->execute();
-                $updateLeaseStmt->close();
-                logActivity("Temp lease end date cleared for tenant: {$payment['tenant_code']} due to failed payment");
-            }
+        // 3. Update payments table
+        if ($tracker['payment_id']) {
+            $paymentStatus = ($newStatus === 'paid') ? 'completed' : 'failed';
+            $updatePaymentQuery = "
+                UPDATE payments 
+                SET payment_status = ?,
+                    updated_at = NOW(),
+                    notes = CONCAT(IFNULL(notes, ''), '\n[Admin Update] Status changed to {$paymentStatus} on ', NOW(), ' by Admin ID: {$adminId}\nNotes: {$notes}')
+                WHERE id = ?
+            ";
+            $updatePaymentStmt = $conn->prepare($updatePaymentQuery);
+            $updatePaymentStmt->bind_param("si", $paymentStatus, $tracker['payment_id']);
+            $updatePaymentStmt->execute();
+            $updatePaymentStmt->close();
+        }
+        
+        // 4. Check if all periods are now paid
+        $remainingQuery = "
+            SELECT COUNT(*) as remaining_count 
+            FROM rent_payment_tracker 
+            WHERE rent_payment_id = ? 
+            AND status != 'paid'
+        ";
+        $remainingStmt = $conn->prepare($remainingQuery);
+        $remainingStmt->bind_param("s", $tracker['rent_payment_id']);
+        $remainingStmt->execute();
+        $remainingResult = $remainingStmt->get_result();
+        $remainingData = $remainingResult->fetch_assoc();
+        $remainingStmt->close();
+        
+        if ($remainingData['remaining_count'] == 0 && $newStatus === 'paid') {
+            // All periods are paid - update rent_payments status to completed
+            $completeRentQuery = "
+                UPDATE rent_payments 
+                SET status = 'completed',
+                    updated_at = NOW()
+                WHERE rent_payment_id = ?
+            ";
+            $completeStmt = $conn->prepare($completeRentQuery);
+            $completeStmt->bind_param("s", $tracker['rent_payment_id']);
+            $completeStmt->execute();
+            $completeStmt->close();
+            
+            // Update tenant payment status
+            $completeTenantQuery = "
+                UPDATE tenants 
+                SET payment_status = 'completed',
+                    last_updated_at = NOW()
+                WHERE tenant_code = ?
+            ";
+            $completeTenantStmt = $conn->prepare($completeTenantQuery);
+            $completeTenantStmt->bind_param("s", $tracker['tenant_code']);
+            $completeTenantStmt->execute();
+            $completeTenantStmt->close();
+            
+            logActivity("All periods completed! Lease marked as fully paid for tenant: {$tracker['tenant_code']}");
         }
         
         $conn->commit();
-        logActivity("Payment status updated successfully - ID: $paymentId, New Status: $newStatus");
+        logActivity("Payment verification completed successfully - Tracker ID: $trackerId, New Status: $newStatus");
         
         echo json_encode([
             "success" => true,
-            "message" => "Payment status updated successfully from " . ucfirst($oldStatus) . " to " . ucfirst($newStatus),
-            "payment_id" => $paymentId,
+            "message" => $newStatus === 'paid' 
+                ? "Payment approved successfully! Period #{$tracker['period_number']} marked as paid."
+                : "Payment rejected. Period #{$tracker['period_number']} marked as failed.",
+            "tracker_id" => $trackerId,
+            "period_number" => $tracker['period_number'],
             "old_status" => $oldStatus,
             "new_status" => $newStatus
         ]);
@@ -856,4 +975,5 @@ function updatePaymentStatus($conn, $adminId) {
         echo json_encode(["success" => false, "message" => "Failed to update payment status: " . $e->getMessage()]);
     }
 }
+
 ?>

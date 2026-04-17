@@ -1,88 +1,72 @@
-// payments.js
+// payments.js - Complete Refactored for tracker-based payment system
 let paymentHistory = [];
 let currentPage = 1;
 let totalPages = 1;
-let nextPaymentAmount = 0;
-let nextPaymentDate = "";
 let currentUserData = null;
 let currentPaymentData = null;
-let lastPaymentDate = null;
-let lastPaymentPeriod = null;
 let paymentSummary = null;
 
 document.addEventListener("DOMContentLoaded", function () {
   initializePayments();
-  initializePaymentModal();
   setupCardFormatting();
 });
 
 async function initializePayments() {
-  if (window.currentUser) {
-    await Promise.all([fetchDashboardData(), fetchPaymentHistory()]);
-  } else {
-    window.addEventListener("userDataLoaded", async function () {
-      await Promise.all([fetchDashboardData(), fetchPaymentHistory()]);
-    });
-
-    setTimeout(async () => {
-      if (
-        !window.currentUser &&
-        !document.querySelector(".payments-container")
-      ) {
-        await Promise.all([fetchDashboardData(), fetchPaymentHistory()]);
-      }
-    }, 1000);
+  try {
+    await fetchUserData();
+    await fetchDashboardData();
+    await fetchPaymentHistory();
+  } catch (error) {
+    console.error("Error initializing payments:", error);
+    if (window.showToast) {
+      window.showToast("Failed to load payment data", "error");
+    }
+    showEmptyState();
   }
 }
 
-// Update fetchDashboardData to store the full dashboard data
+async function fetchUserData() {
+  try {
+    const response = await fetch("../backend/tenant/fetch_user_data.php");
+    const data = await response.json();
+    
+    if (data.success && data.data) {
+      currentUserData = data.data;
+      window.currentUser = currentUserData;
+      console.log("User data loaded:", currentUserData);
+    } else {
+      throw new Error(data.message || "Failed to fetch user data");
+    }
+  } catch (error) {
+    console.error("Error fetching user data:", error);
+    throw error;
+  }
+}
+
 async function fetchDashboardData() {
   try {
     const response = await fetch("../backend/tenant/fetch_dashboard_data.php");
     const data = await response.json();
 
     if (data.success && data.data) {
-      const dashboard = data.data;
-      window.dashboardData = dashboard; // Store globally
-      paymentSummary = dashboard.summary;
-
-      // Get next payment information from dashboard data
-      nextPaymentAmount =
-        dashboard.next_payment_amount || dashboard.rent_amount || 0;
-      nextPaymentDate =
-        dashboard.next_payment_due_date ||
-        dashboard.lease_end_date ||
-        new Date().toISOString().split("T")[0];
-
-      // Also store lease info
-      if (dashboard.lease_end_date) {
-        currentUserData = {
-          ...currentUserData,
-          lease_end_date: dashboard.lease_end_date,
-          lease_start_date: dashboard.lease_start_date,
-          payment_frequency: dashboard.payment_frequency,
-          rent_amount: dashboard.rent_amount,
-          property_name: dashboard.property_name,
-          apartment_number: dashboard.apartment_number,
-        };
-      }
-
-      console.log("Dashboard data loaded:", dashboard);
+      window.dashboardData = data.data;
+      paymentSummary = data.data.summary;
+      console.log("Dashboard data loaded:", data.data);
+    } else {
+      throw new Error(data.message || "Failed to fetch dashboard data");
     }
   } catch (error) {
     console.error("Error fetching dashboard data:", error);
-    if (window.showToast)
+    if (window.showToast) {
       window.showToast("Failed to load payment information", "error");
+    }
+    throw error;
   }
 }
 
-
 async function fetchPaymentHistory() {
   try {
-    const url = new URL(
-      "../backend/payment/fetch_payment_history.php",
-      window.location.href,
-    );
+    const url = new URL("../backend/payment/fetch_payment_history.php", window.location.href);
     url.searchParams.append("page", currentPage);
     url.searchParams.append("limit", 10);
 
@@ -93,30 +77,20 @@ async function fetchPaymentHistory() {
       paymentHistory = data.data.payments || [];
       const pagination = data.data.pagination || {};
       totalPages = pagination.total_pages || 1;
-
-      // Update summary from API response
+      
       if (data.data.summary) {
         paymentSummary = data.data.summary;
       }
-
-      // Get the last completed rent payment
-      const lastRentPayment = paymentHistory.find(
-        (p) => p.status === "completed" && p.payment_type === "rent",
-      );
-      if (lastRentPayment) {
-        lastPaymentDate = lastRentPayment.payment_date;
-        lastPaymentPeriod = lastRentPayment.payment_period;
-        console.log("Last payment:", lastRentPayment);
-      }
-
+      
       renderPaymentPage();
     } else {
       throw new Error(data.message || "Failed to fetch payment history");
     }
   } catch (error) {
     console.error("Error fetching payment history:", error);
-    if (window.showToast)
+    if (window.showToast) {
       window.showToast("Failed to load payment history", "error");
+    }
     showEmptyState();
   }
 }
@@ -125,148 +99,189 @@ function renderPaymentPage() {
   const contentArea = document.getElementById("contentArea");
   if (!contentArea) return;
 
-  const totalPaid =
-    paymentSummary?.total_paid ||
-    paymentHistory.reduce(
-      (sum, p) => (p.status === "completed" ? sum + parseFloat(p.amount) : sum),
-      0,
-    );
-  const successfulPayments =
-    paymentSummary?.successful_payments ||
-    paymentHistory.filter((p) => p.status === "completed").length;
+  // Get summary data from dashboard
+  const totalPaid = paymentSummary?.total_paid || 0;
+  const successfulPayments = paymentSummary?.successful_payments || 0;
+  const paymentPerPeriod = paymentSummary?.payment_per_period || currentUserData?.payment_amount_per_period || 0;
+  const remainingBalance = paymentSummary?.remaining_balance || 0;
+  
+  // Get pending periods from dashboard - these are periods with status 'available' or 'failed'
+  const pendingPeriods = window.dashboardData?.pending_periods || [];
+  const hasPendingVerification = window.dashboardData?.has_pending_payment || false;
+  const isLeaseFullyPaid = window.dashboardData?.is_lease_fully_paid || false;
+  
+  // Find the next available period (status = 'available') - this is what the tenant can pay
+  const nextAvailablePeriod = pendingPeriods.find(p => p.status === 'available');
+  const hasAvailablePeriod = !!nextAvailablePeriod;
+  
+  // Also check for failed period
+  const failedPeriod = pendingPeriods.find(p => p.status === 'failed');
+  const hasFailedPeriod = !!failedPeriod;
+  
+  // Determine which period to show (priority: available > failed)
+  const periodToShow = nextAvailablePeriod || failedPeriod;
+  const hasPeriodToShow = !!periodToShow;
+  
+  const nextPaymentAmount = periodToShow ? periodToShow.amount_due : paymentPerPeriod;
+  const nextPaymentDueDate = periodToShow ? calculateDueDate(periodToShow.end_date, currentUserData?.payment_frequency) : null;
+
+  console.log("=== Payment Page Debug ===");
+  console.log("pendingPeriods:", pendingPeriods);
+  console.log("hasPendingVerification:", hasPendingVerification);
+  console.log("isLeaseFullyPaid:", isLeaseFullyPaid);
+  console.log("nextAvailablePeriod:", nextAvailablePeriod);
+  console.log("failedPeriod:", failedPeriod);
+  console.log("periodToShow:", periodToShow);
 
   const html = `
-        <div class="payments-container">
-            <div class="page-header">
-                <h1>Payments</h1>
-                <p>Manage your rent payments and view payment history</p>
-            </div>
-            
-            <div class="summary-cards">
-                <div class="summary-card">
-                    <h4>Next Payment Due</h4>
-                    <div class="amount">₦${formatNumber(nextPaymentAmount)}</div>
-                    <div class="label">Due by ${formatDate(nextPaymentDate)}</div>
-                </div>
-                <div class="summary-card">
-                    <h4>Total Paid (All Time)</h4>
-                    <div class="amount">₦${formatNumber(totalPaid)}</div>
-                    <div class="label">${successfulPayments} successful payments</div>
-                </div>
-                ${
-                  paymentSummary?.total_pending > 0
-                    ? `
-                <div class="summary-card" style="border-left: 3px solid #f59e0b;">
-                    <h4>Pending Payments</h4>
-                    <div class="amount">₦${formatNumber(paymentSummary.total_pending)}</div>
-                    <div class="label">${paymentSummary.pending_payments || 0} pending</div>
-                </div>
-                `
-                    : ""
-                }
-                ${
-                  paymentSummary?.total_overdue > 0
-                    ? `
-                <div class="summary-card" style="border-left: 3px solid #ef4444;">
-                    <h4>Overdue Payments</h4>
-                    <div class="amount">₦${formatNumber(paymentSummary.total_overdue)}</div>
-                    <div class="label">${paymentSummary.overdue_payments || 0} overdue</div>
-                </div>
-                `
-                    : ""
-                }
-            </div>
-            
-            <div class="payment-card">
-                <div class="payment-info">
-                    <h3>Upcoming Rent Payment</h3>
-                    <div class="amount">₦${formatNumber(nextPaymentAmount)}</div>
-                    <div class="date">Due Date: ${formatDate(nextPaymentDate)}</div>
-                </div>
-                <button class="btn-primary" onclick="openRentPaymentModal()">
-                    <i class="fas fa-credit-card"></i> Make Payment
-                </button>
-            </div>
-            
-            <div class="payments-table">
-                <h3 style="padding: 20px 20px 0 20px;">Payment History</h3>
-                <div style="overflow-x: auto;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Amount</th>
-                                <th>Method</th>
-                                <th>Period</th>
-                                <th>Period Range</th>
-                                <th>Status</th>
-                                <th>Receipt</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${
-                              paymentHistory.length === 0
-                                ? `
-                                <tr>
-                                    <td colspan="7" style="text-align: center; padding: 40px;">
-                                        <i class="fas fa-receipt" style="font-size: 48px; color: #ccc; margin-bottom: 10px; display: block;"></i>
-                                        No payment records found
-                                    </td>
-                                </tr>
-                            `
-                                : paymentHistory
-                                    .map((payment) => {
-                                      let periodDisplay =
-                                        payment.payment_period;
-                                      let periodRange = "";
-
-                                      if (
-                                        payment.payment_type ===
-                                        "security_deposit"
-                                      ) {
-                                        periodDisplay = "Security Deposit";
-                                        periodRange = "One-time payment";
-                                      } else if (
-                                        payment.period_start_date &&
-                                        payment.period_end_date
-                                      ) {
-                                        periodRange = `${formatDate(payment.period_start_date)} - ${formatDate(payment.period_end_date)}`;
-                                      } else if (payment.payment_period) {
-                                        periodRange = payment.payment_period;
-                                      }
-
-                                      return `
-                                    <tr>
-                                        <td>${formatDate(payment.payment_date)}</td>
-                                        <td>₦${formatNumber(payment.amount)}</td>
-                                        <td>${formatPaymentMethod(payment.payment_method)}</td>
-                                        <td>${periodDisplay}</td>
-                                        <td>${periodRange}</td>
-                                        <td class="status-${payment.status}">${payment.status_display || payment.status}</td>
-                                        <td>
-                                            ${
-                                              payment.receipt_number
-                                                ? `
-                                                <button class="btn-download" data-receipt="${payment.receipt_number}" title="Download Receipt">
-                                                    <i class="fas fa-download"></i>
-                                                </button>
-                                            `
-                                                : "-"
-                                            }
-                                        </td>
-                                    </tr>
-                                `;
-                                    })
-                                    .join("")
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            ${renderPagination()}
+    <div class="payments-container">
+      <div class="page-header">
+        <h1>Payments</h1>
+        <p>Manage your rent payments and view payment history</p>
+      </div>
+      
+      <div class="summary-cards">
+        <div class="summary-card">
+          <h4>Payment per Period</h4>
+          <div class="amount">₦${formatNumber(paymentPerPeriod)}</div>
+          <div class="label">${currentUserData?.agreed_payment_frequency || currentUserData?.payment_frequency || 'Monthly'}</div>
         </div>
-    `;
+        <div class="summary-card">
+          <h4>Total Paid</h4>
+          <div class="amount">₦${formatNumber(totalPaid)}</div>
+          <div class="label">${successfulPayments} payments</div>
+        </div>
+        <div class="summary-card">
+          <h4>Remaining Balance</h4>
+          <div class="amount">₦${formatNumber(remainingBalance)}</div>
+          <div class="label">${pendingPeriods.length} periods left</div>
+        </div>
+      </div>
+      
+      ${hasPendingVerification ? `
+      <div class="payment-card pending-card">
+        <div class="payment-info">
+          <i class="fas fa-clock" style="font-size: 48px; color: #f59e0b; margin-bottom: 15px;"></i>
+          <h3>Payment Pending Verification</h3>
+          <p style=" color: #000;">You have a pending payment waiting for admin verification.</p>
+          <div class="pending-warning" style=" color: #000;">Please wait for admin verification before making another payment.</div>
+        </div>
+      </div>
+      ` : isLeaseFullyPaid ? `
+      <div class="payment-card success-card">
+        <div class="payment-info">
+          <i class="fas fa-check-circle" style="font-size: 48px; color: #10b981; margin-bottom: 15px;"></i>
+          <h3>Lease Fully Paid!</h3>
+          <p>Congratulations! You have completed all your rent payments.</p>
+        </div>
+      </div>
+      ` : hasPeriodToShow ? `
+      <div class="payment-card">
+        <div class="payment-info">
+          <h3>${hasFailedPeriod ? 'Retry Payment' : 'Next Payment Due'}</h3>
+          <div class="period-badge">Period #${periodToShow.period_number}</div>
+          <div class="period-label">${escapeHtml(periodToShow.period || formatPeriodForDisplay(periodToShow.start_date, periodToShow.end_date, currentUserData?.payment_frequency))}</div>
+          <div class="period-range">${formatDateRange(periodToShow.start_date, periodToShow.end_date)}</div>
+          <div class="amount">₦${formatNumber(periodToShow.amount_due || paymentPerPeriod)}</div>
+          <div class="date">Due Date: ${formatDate(nextPaymentDueDate)}</div>
+          ${hasFailedPeriod ? '<div class="failed-badge">Previous payment failed - Please retry</div>' : ''}
+        </div>
+        <button class="btn-primary" onclick="openRentPaymentModal()">
+          <i class="fas fa-credit-card"></i> ${hasFailedPeriod ? 'Retry Payment' : 'Make Payment'}
+        </button>
+      </div>
+      ` : `
+      <div class="payment-card info-card">
+        <div class="payment-info">
+          <i class="fas fa-info-circle" style="font-size: 48px; color: #17a2b8; margin-bottom: 15px;"></i>
+          <h3>No Pending Payments</h3>
+          <p>You have no pending payments at this time.</p>
+        </div>
+      </div>
+      `}
+      
+     <div class="payments-table">
+  <h3>Payment History</h3>
+  <div style="overflow-x: auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Period #</th>
+          <th>Amount</th>
+          <th>Period</th>
+          <th>Period Range</th>
+          <th>Status</th>
+          <th>Receipt</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paymentHistory.length === 0 ? `
+        <tr>
+          <td colspan="7" style="text-align: center; padding: 40px;">
+            <i class="fas fa-receipt" style="font-size: 48px; color: #ccc; margin-bottom: 10px; display: block;"></i>
+            No payment records found
+          </td
+        </tr>
+        ` : paymentHistory.map((payment) => {
+          let periodDisplay = payment.payment_period || 'N/A';
+          let periodRange = '';
+          let periodNumber = '';
+
+          if (payment.payment_type === "security_deposit") {
+            periodDisplay = "Security Deposit";
+            periodRange = "One-time payment";
+          } else if (payment.period_number) {
+            periodNumber = `#${payment.period_number}`;
+          }
+          
+          if (payment.period_start_date && payment.period_end_date) {
+            periodRange = `${formatDate(payment.period_start_date)} - ${formatDate(payment.period_end_date)}`;
+          } else if (payment.payment_period) {
+            periodRange = payment.payment_period;
+          }
+
+          let statusClass = '';
+          let statusText = payment.status_display || payment.status;
+          
+          if (payment.status === 'pending_verification' || payment.status === 'pending') {
+            statusClass = 'status-pending';
+            statusText = 'Pending';
+          } else if (payment.status === 'paid') {
+            statusClass = 'status-completed';
+            statusText = 'Paid';
+          } else if (payment.status === 'failed') {
+            statusClass = 'status-failed';
+            statusText = 'Failed';
+          } else if (payment.status === 'completed') {
+            statusClass = 'status-completed';
+            statusText = 'Completed';
+          }
+
+          return `
+          <tr>
+            <td>${payment.payment_date ? formatDate(payment.payment_date) : '—'}</td>
+            <td>${periodNumber || '—'}</td>
+            <td>₦${formatNumber(payment.amount)}</td>
+            <td>${escapeHtml(periodDisplay)}</td>
+            <td>${periodRange || '—'}</td>
+            <td class="${statusClass}">${statusText}</td>
+            <td>
+              ${payment.receipt_number && (payment.status === 'paid' || payment.status === 'completed') ? `
+              <button class="btn-download" data-receipt="${payment.receipt_number}" title="Download Receipt">
+                <i class="fas fa-download"></i>
+              </button>
+              ` : '—'}
+            </td>
+          </tr>
+        `;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+  ${renderPagination()}
+</div>
+  `;
 
   contentArea.innerHTML = html;
 
@@ -284,43 +299,21 @@ function showEmptyState() {
   if (!contentArea) return;
 
   contentArea.innerHTML = `
-        <div class="payments-container">
-            <div class="page-header">
-                <h1>Payments</h1>
-                <p>Manage your rent payments and view payment history</p>
-            </div>
-            <div class="summary-cards">
-                <div class="summary-card">
-                    <h4>Next Payment Due</h4>
-                    <div class="amount">₦${formatNumber(nextPaymentAmount)}</div>
-                    <div class="label">Due by ${formatDate(nextPaymentDate)}</div>
-                </div>
-                <div class="summary-card">
-                    <h4>Total Paid (All Time)</h4>
-                    <div class="amount">₦0.00</div>
-                    <div class="label">0 successful payments</div>
-                </div>
-            </div>
-            <div class="payment-card">
-                <div class="payment-info">
-                    <h3>Upcoming Rent Payment</h3>
-                    <div class="amount">₦${formatNumber(nextPaymentAmount)}</div>
-                    <div class="date">Due Date: ${formatDate(nextPaymentDate)}</div>
-                </div>
-                <button class="btn-primary" onclick="openRentPaymentModal()">
-                    <i class="fas fa-credit-card"></i> Make Payment
-                </button>
-            </div>
-            <div class="empty-state">
-                <i class="fas fa-receipt"></i>
-                <h3>No Payment History</h3>
-                <p>You haven't made any payments yet.</p>
-                <button class="btn-primary" onclick="openRentPaymentModal()" style="margin-top: 15px;">
-                    Make Your First Payment
-                </button>
-            </div>
-        </div>
-    `;
+    <div class="payments-container">
+      <div class="page-header">
+        <h1>Payments</h1>
+        <p>Manage your rent payments and view payment history</p>
+      </div>
+      <div class="empty-state">
+        <i class="fas fa-receipt"></i>
+        <h3>No Payment Data</h3>
+        <p>Unable to load payment information. Please try again later.</p>
+        <button class="btn-primary" onclick="location.reload()" style="margin-top: 15px;">
+          Refresh Page
+        </button>
+      </div>
+    </div>
+  `;
 }
 
 function renderPagination() {
@@ -338,136 +331,157 @@ function goToPage(page) {
   fetchPaymentHistory();
 }
 
-// Calculate next payment period based on last payment
-// Calculate next payment period based on last payment's end date
-// Calculate next payment period based on last payment's end date
-function calculateNextPaymentPeriod() {
-    if (!currentUserData) return null;
+function populatePaymentSummary() {
+  if (!currentUserData || !window.dashboardData) {
+    console.error("Missing required data for payment summary");
+    return;
+  }
 
-    const paymentFrequency = currentUserData.payment_frequency;
-    const rentAmount = currentUserData.rent_amount;
-    const leaseStart = new Date(currentUserData.lease_start_date);
-    const leaseEnd = new Date(currentUserData.lease_end_date);
-    const today = new Date();
+  const pendingPeriods = window.dashboardData.pending_periods || [];
+  
+  // Check for pending verification first
+  if (window.dashboardData.has_pending_payment) {
+    const summaryPeriod = document.getElementById("summaryPeriod");
+    const summaryAmount = document.getElementById("summaryAmount");
+    const summaryDueDate = document.getElementById("summaryDueDate");
+    const warningContainer = document.getElementById("paymentWarningContainer");
     
-    let periodStart = null;
-    let periodEnd = null;
-    let periodLabel = "";
-    let dueDate = null;
-
-    // Get the last payment's end date from the payment history
-    let referenceEndDate = null;
+    if (summaryPeriod) summaryPeriod.textContent = "Payment Pending";
+    if (summaryAmount) summaryAmount.textContent = "Awaiting Verification";
+    if (summaryDueDate) summaryDueDate.textContent = "N/A";
+    if (warningContainer) {
+      warningContainer.innerHTML = `
+        <div class="warning-message" style="background: #fff3cd; border-left: 3px solid #f59e0b; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+          <i class="fas fa-clock"></i> 
+          <strong>Pending Verification:</strong> You have a pending payment waiting for admin verification.
+        </div>
+      `;
+      warningContainer.style.display = "block";
+    }
+    return;
+  }
+  
+  // Check if lease is fully paid
+  if (window.dashboardData.is_lease_fully_paid) {
+    const summaryPeriod = document.getElementById("summaryPeriod");
+    const summaryAmount = document.getElementById("summaryAmount");
+    const summaryDueDate = document.getElementById("summaryDueDate");
+    const warningContainer = document.getElementById("paymentWarningContainer");
     
-    if (lastPaymentEndDate) {
-        // Use last payment's end date if available
-        referenceEndDate = new Date(lastPaymentEndDate);
-        console.log('Using last payment end date:', referenceEndDate);
+    if (summaryPeriod) summaryPeriod.textContent = "Lease Fully Paid";
+    if (summaryAmount) summaryAmount.textContent = "₦0.00";
+    if (summaryDueDate) summaryDueDate.textContent = "N/A";
+    if (warningContainer) {
+      warningContainer.innerHTML = `
+        <div class="success-message" style="background: #d4edda; border-left: 3px solid #28a745; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+          <i class="fas fa-check-circle"></i> 
+          <strong>Congratulations!</strong> Your lease has been fully paid.
+        </div>
+      `;
+      warningContainer.style.display = "block";
+    }
+    
+    const paymentButton = document.querySelector('#paymentModal .btn-primary');
+    if (paymentButton) paymentButton.disabled = true;
+    return;
+  }
+  
+  // Find the period to pay (available or failed)
+  const periodToPay = pendingPeriods.find(p => p.status === 'available') || pendingPeriods.find(p => p.status === 'failed');
+  
+  if (!periodToPay) {
+    const warningContainer = document.getElementById("paymentWarningContainer");
+    if (warningContainer) {
+      warningContainer.innerHTML = `
+        <div class="info-message" style="background: #d1ecf1; border-left: 3px solid #17a2b8; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+          <i class="fas fa-info-circle"></i> 
+          <strong>No Pending Payments:</strong> You have no pending payments at this time.
+        </div>
+      `;
+      warningContainer.style.display = "block";
+    }
+    return;
+  }
+  
+  const paymentFrequency = currentUserData.agreed_payment_frequency || currentUserData.payment_frequency || 'Monthly';
+  const dueDate = calculateDueDate(periodToPay.end_date, paymentFrequency);
+  const isOverdue = new Date(dueDate) < new Date();
+  const periodDisplay = formatPeriodForDisplay(periodToPay.start_date, periodToPay.end_date, paymentFrequency);
+  
+  const summaryPeriod = document.getElementById("summaryPeriod");
+  const summaryAmount = document.getElementById("summaryAmount");
+  const summaryDueDate = document.getElementById("summaryDueDate");
+  const summaryProperty = document.getElementById("summaryProperty");
+  const summaryApartment = document.getElementById("summaryApartment");
+  const warningContainer = document.getElementById("paymentWarningContainer");
+  
+  if (summaryPeriod) summaryPeriod.textContent = periodDisplay;
+  if (summaryAmount) summaryAmount.textContent = `₦${formatNumber(periodToPay.amount_due)}`;
+  if (summaryDueDate) summaryDueDate.textContent = formatDate(dueDate);
+  if (summaryProperty) summaryProperty.textContent = currentUserData.property_name || "N/A";
+  if (summaryApartment) summaryApartment.textContent = currentUserData.apartment_number || "N/A";
+  
+  if (warningContainer) {
+    if (periodToPay.status === 'failed') {
+      warningContainer.innerHTML = `
+        <div class="warning-message" style="background: #f8d7da; border-left: 3px solid #dc3545; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+          <i class="fas fa-exclamation-triangle"></i> 
+          <strong>Failed Payment!</strong> Your previous payment for this period failed. Please retry.
+        </div>
+      `;
+      warningContainer.style.display = "block";
+    } else if (isOverdue) {
+      warningContainer.innerHTML = `
+        <div class="warning-message" style="background: #f8d7da; border-left: 3px solid #dc3545; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+          <i class="fas fa-exclamation-triangle"></i> 
+          <strong>Overdue Payment!</strong> This payment was due on ${formatDate(dueDate)}. Please make payment as soon as possible.
+        </div>
+      `;
+      warningContainer.style.display = "block";
     } else {
-        // First payment - use lease start date minus 1 day as reference
-        referenceEndDate = new Date(leaseStart);
-        referenceEndDate.setDate(referenceEndDate.getDate() - 1);
-        console.log('Using lease start as reference (first payment):', referenceEndDate);
+      warningContainer.innerHTML = "";
+      warningContainer.style.display = "none";
     }
-
-    // Calculate next period start (last payment end date + 1 day)
-    periodStart = new Date(referenceEndDate);
-    periodStart.setDate(periodStart.getDate() + 1);
-    
-    // Calculate period end based on payment frequency
-    periodEnd = new Date(periodStart);
-    
-    // Define grace periods for due date calculation
-    const gracePeriods = {
-        "Monthly": 7,
-        "Quarterly": 14,
-        "Semi-Annually": 30,
-        "Annually": 90
-    };
-    
-    const graceDays = gracePeriods[paymentFrequency] || 7;
-    
-    switch (paymentFrequency) {
-        case "Monthly":
-            periodEnd.setMonth(periodEnd.getMonth() + 1);
-            periodEnd.setDate(periodEnd.getDate() - 1);
-            periodLabel = formatPeriodRange(periodStart, periodEnd, "Monthly");
-            dueDate = new Date(periodEnd);
-            dueDate.setDate(dueDate.getDate() + graceDays);
-            break;
-
-        case "Quarterly":
-            periodEnd.setMonth(periodEnd.getMonth() + 3);
-            periodEnd.setDate(periodEnd.getDate() - 1);
-            periodLabel = formatPeriodRange(periodStart, periodEnd, "Quarterly");
-            dueDate = new Date(periodEnd);
-            dueDate.setDate(dueDate.getDate() + graceDays);
-            break;
-
-        case "Semi-Annually":
-            periodEnd.setMonth(periodEnd.getMonth() + 6);
-            periodEnd.setDate(periodEnd.getDate() - 1);
-            periodLabel = formatPeriodRange(periodStart, periodEnd, "Semi-Annually");
-            dueDate = new Date(periodEnd);
-            dueDate.setDate(dueDate.getDate() + graceDays);
-            break;
-
-        case "Annually":
-            periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-            periodEnd.setDate(periodEnd.getDate() - 1);
-            periodLabel = formatPeriodRange(periodStart, periodEnd, "Annually");
-            dueDate = new Date(periodEnd);
-            dueDate.setDate(dueDate.getDate() + graceDays);
-            break;
-
-        default:
-            periodEnd.setMonth(periodEnd.getMonth() + 1);
-            periodEnd.setDate(periodEnd.getDate() - 1);
-            periodLabel = formatPeriodRange(periodStart, periodEnd, "Monthly");
-            dueDate = new Date(periodEnd);
-            dueDate.setDate(dueDate.getDate() + graceDays);
-    }
-
-    // Check if the calculated period start is beyond lease end
-    const isBeyondLease = periodStart > leaseEnd;
-    
-    // Calculate upcoming period (even if beyond lease, for advance payments)
-    const formattedDueDate = dueDate.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-    });
-
-    console.log('Calculated next payment:', {
-        period_start: periodStart,
-        period_end: periodEnd,
-        period_label: periodLabel,
-        amount: rentAmount,
-        due_date: dueDate,
-        formatted_due_date: formattedDueDate,
-        is_beyond_lease: isBeyondLease
-    });
-
-    return {
-        has_upcoming: true, // Always allow upfront payment
-        is_advance_payment: isBeyondLease,
-        period_start: periodStart.toISOString().split("T")[0],
-        period_end: periodEnd.toISOString().split("T")[0],
-        period_label: periodLabel,
-        amount: rentAmount,
-        due_date: dueDate.toISOString().split("T")[0],
-        formatted_due_date: formattedDueDate,
-        payment_frequency: paymentFrequency,
-        message: isBeyondLease ? "This will be an advance payment extending your lease" : null
-    };
+  }
+  
+  currentPaymentData = {
+    period_number: periodToPay.period_number,
+    period: periodToPay.period,
+    period_start: periodToPay.start_date,
+    period_end: periodToPay.end_date,
+    amount: periodToPay.amount_due,
+    due_date: dueDate,
+    formatted_due_date: formatDate(dueDate),
+    property_name: currentUserData.property_name,
+    apartment_number: currentUserData.apartment_number,
+    payment_frequency: paymentFrequency,
+    is_overdue: isOverdue,
+    is_failed: periodToPay.status === 'failed'
+  };
+  
+  console.log("Current payment data set:", currentPaymentData);
 }
-// Helper function to format period range based on frequency
-function formatPeriodRange(startDate, endDate, frequency) {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
 
-  switch (frequency) {
+function calculateDueDate(periodEndDate, paymentFrequency) {
+  const gracePeriods = {
+    "Monthly": 7,
+    "Quarterly": 14,
+    "Semi-Annually": 30,
+    "Annually": 90
+  };
+  
+  const daysToAdd = gracePeriods[paymentFrequency] || 7;
+  const dueDate = new Date(periodEndDate);
+  dueDate.setDate(dueDate.getDate() + daysToAdd);
+  return dueDate.toISOString().split('T')[0];
+}
+
+function formatPeriodForDisplay(startDate, endDate, frequency) {
+  const start = new Date(startDate);
+  
+  switch(frequency) {
     case "Monthly":
-      return `${start.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
+      return start.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     case "Quarterly":
       const quarter = Math.ceil((start.getMonth() + 1) / 3);
       return `Q${quarter} ${start.getFullYear()}`;
@@ -481,263 +495,38 @@ function formatPeriodRange(startDate, endDate, frequency) {
   }
 }
 
-// Update initializePaymentModal to get the last payment's end date
-async function initializePaymentModal() {
-  try {
-    const userResponse = await fetch("../backend/tenant/fetch_user_data.php");
-    const userData = await userResponse.json();
-
-    if (userData.success) {
-      currentUserData = userData.data;
-      console.log("Current User Data:", {
-        payment_frequency: currentUserData.payment_frequency,
-        rent_amount: currentUserData.rent_amount,
-        lease_start_date: currentUserData.lease_start_date,
-        lease_end_date: currentUserData.lease_end_date,
-      });
-    }
-
-    // Fetch payment history to get the last payment's end date
-    const paymentResponse = await fetch(
-      "../backend/payment/fetch_payment_history.php?limit=1",
-    );
-    const paymentData = await paymentResponse.json();
-
-    if (paymentData.success && paymentData.data?.payments) {
-      const lastRentPayment = paymentData.data.payments.find(
-        (p) => p.status === "completed" && p.payment_type === "rent",
-      );
-      if (lastRentPayment) {
-        lastPaymentDate = lastRentPayment.payment_date;
-        lastPaymentPeriod = lastRentPayment.payment_period;
-        // Get the period end date from the payment record
-        lastPaymentEndDate = lastRentPayment.period_end_date;
-        console.log("Last payment end date:", lastPaymentEndDate);
-      }
-    }
-  } catch (error) {
-    console.error("Error loading payment data:", error);
-  }
+function formatDateRange(startDate, endDate) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
-// Add global variable for last payment end date
-let lastPaymentEndDate = null;
-
-// Update populatePaymentSummary to use the new calculation
-// Populate payment summary in modal
-
-const formatDateShort = (date) => {
-  return date.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric'
-  });
-};
-
-function populatePaymentSummary() {
-    if (!currentUserData) return;
-
-    // Use the current period from dashboard data if available
-    // We need to fetch the current period from the dashboard
-    // Since we already have dashboard data, let's use it
-    
-    // First, check if we have current period data from the dashboard
-    if (window.dashboardData && window.dashboardData.current_period && window.dashboardData.current_period.is_paid === false) {
-        // There's an unpaid current period - use that for payment
-        const currentPeriod = window.dashboardData.current_period;
-        
-        const periodDisplay = `${formatDateShort(new Date(currentPeriod.start_date))} - ${formatDateShort(new Date(currentPeriod.end_date))}`;
-        
-        // Calculate due date (7 days after period end for monthly, etc.)
-        let dueDate = new Date(currentPeriod.end_date);
-        const gracePeriods = {
-            "Monthly": 7,
-            "Quarterly": 14,
-            "Semi-Annually": 30,
-            "Annually": 90
-        };
-        const daysToAdd = gracePeriods[currentUserData.payment_frequency] || 7;
-        dueDate.setDate(dueDate.getDate() + daysToAdd);
-        
-        const summaryPeriod = document.getElementById("summaryPeriod");
-        const summaryAmount = document.getElementById("summaryAmount");
-        const summaryDueDate = document.getElementById("summaryDueDate");
-        const summaryProperty = document.getElementById("summaryProperty");
-        const summaryApartment = document.getElementById("summaryApartment");
-        const warningContainer = document.getElementById("paymentWarningContainer");
-
-        if (summaryPeriod) summaryPeriod.textContent = periodDisplay;
-        if (summaryAmount) summaryAmount.textContent = `₦${formatNumber(currentUserData.rent_amount)}`;
-        if (summaryDueDate) summaryDueDate.textContent = dueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-        if (summaryProperty) summaryProperty.textContent = currentUserData.property_name || "N/A";
-        if (summaryApartment) summaryApartment.textContent = currentUserData.apartment_number || "N/A";
-        
-        if (warningContainer) {
-            warningContainer.innerHTML = "";
-            warningContainer.style.display = "none";
-        }
-
-        currentPaymentData = {
-            period: periodDisplay,
-            period_start: currentPeriod.start_date,
-            period_end: currentPeriod.end_date,
-            raw_period: currentPeriod.period,
-            amount: currentUserData.rent_amount,
-            due_date: dueDate.toISOString().split('T')[0],
-            formatted_due_date: dueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
-            property_name: currentUserData.property_name,
-            apartment_number: currentUserData.apartment_number,
-            payment_frequency: currentUserData.payment_frequency,
-            is_advance_payment: false
-        };
-        return;
-    }
-    
-    // If there's an upcoming period from dashboard, use that
-    if (window.dashboardData && window.dashboardData.upcoming_period) {
-        const upcomingPeriod = window.dashboardData.upcoming_period;
-        const periodDisplay = `${formatDateShort(new Date(upcomingPeriod.start_date))} - ${formatDateShort(new Date(upcomingPeriod.end_date))}`;
-        
-        // Calculate due date
-        let dueDate = new Date(upcomingPeriod.end_date);
-        const gracePeriods = {
-            "Monthly": 7,
-            "Quarterly": 14,
-            "Semi-Annually": 30,
-            "Annually": 90
-        };
-        const daysToAdd = gracePeriods[currentUserData.payment_frequency] || 7;
-        dueDate.setDate(dueDate.getDate() + daysToAdd);
-        
-        const summaryPeriod = document.getElementById("summaryPeriod");
-        const summaryAmount = document.getElementById("summaryAmount");
-        const summaryDueDate = document.getElementById("summaryDueDate");
-        const summaryProperty = document.getElementById("summaryProperty");
-        const summaryApartment = document.getElementById("summaryApartment");
-        const warningContainer = document.getElementById("paymentWarningContainer");
-
-        if (summaryPeriod) summaryPeriod.textContent = periodDisplay;
-        if (summaryAmount) summaryAmount.textContent = `₦${formatNumber(upcomingPeriod.amount || currentUserData.rent_amount)}`;
-        if (summaryDueDate) summaryDueDate.textContent = dueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-        if (summaryProperty) summaryProperty.textContent = currentUserData.property_name || "N/A";
-        if (summaryApartment) summaryApartment.textContent = currentUserData.apartment_number || "N/A";
-        
-        if (warningContainer) {
-            warningContainer.innerHTML = "";
-            warningContainer.style.display = "none";
-        }
-
-        currentPaymentData = {
-            period: periodDisplay,
-            period_start: upcomingPeriod.start_date,
-            period_end: upcomingPeriod.end_date,
-            raw_period: upcomingPeriod.period,
-            amount: upcomingPeriod.amount || currentUserData.rent_amount,
-            due_date: dueDate.toISOString().split('T')[0],
-            formatted_due_date: dueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
-            property_name: currentUserData.property_name,
-            apartment_number: currentUserData.apartment_number,
-            payment_frequency: currentUserData.payment_frequency,
-            is_advance_payment: false
-        };
-        return;
-    }
-    
-    // Fallback to the existing calculation logic
-    const nextPayment = calculateNextPaymentPeriod();
-
-    if (!nextPayment) {
-        console.error("Could not calculate next payment period");
-        return;
-    }
-
-    // Format period display for the modal
-    let periodDisplay = "";
-    let warningMessage = "";
-    
-    if (nextPayment.is_advance_payment) {
-        warningMessage = `<div class="warning-message" style="background: #fff3cd; border-left: 3px solid #ffc107; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
-                            <i class="fas fa-info-circle"></i> 
-                            <strong>Advance Payment:</strong> ${nextPayment.message || "This payment will extend your lease period."}
-                          </div>`;
-    }
-    
-    if (currentUserData.payment_frequency === "Monthly") {
-        periodDisplay = `${new Date(nextPayment.period_start).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} - ${new Date(nextPayment.period_end).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
-    } else if (currentUserData.payment_frequency === "Quarterly") {
-        periodDisplay = `${new Date(nextPayment.period_start).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${new Date(nextPayment.period_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
-    } else if (currentUserData.payment_frequency === "Annually") {
-        const startDate = formatDateShort(new Date(nextPayment.period_start));
-        const endDate = formatDateShort(new Date(nextPayment.period_end));
-        periodDisplay = `${startDate} - ${endDate}`;
-    } else {
-        periodDisplay = nextPayment.period_label;
-    }
-
-    const summaryPeriod = document.getElementById("summaryPeriod");
-    const summaryAmount = document.getElementById("summaryAmount");
-    const summaryDueDate = document.getElementById("summaryDueDate");
-    const summaryProperty = document.getElementById("summaryProperty");
-    const summaryApartment = document.getElementById("summaryApartment");
-    const warningContainer = document.getElementById("paymentWarningContainer");
-
-    if (summaryPeriod) summaryPeriod.textContent = periodDisplay;
-    if (summaryAmount)
-        summaryAmount.textContent = `₦${formatNumber(nextPayment.amount)}`;
-    if (summaryDueDate)
-        summaryDueDate.textContent = nextPayment.formatted_due_date;
-    if (summaryProperty)
-        summaryProperty.textContent = currentUserData.property_name || "N/A";
-    if (summaryApartment)
-        summaryApartment.textContent = currentUserData.apartment_number || "N/A";
-    
-    if (warningContainer) {
-        if (nextPayment.is_advance_payment) {
-            warningContainer.innerHTML = warningMessage;
-            warningContainer.style.display = "block";
-        } else {
-            warningContainer.innerHTML = "";
-            warningContainer.style.display = "none";
-        }
-    }
-
-    currentPaymentData = {
-        period: periodDisplay,
-        period_start: nextPayment.period_start,
-        period_end: nextPayment.period_end,
-        raw_period: nextPayment.period_label,
-        amount: nextPayment.amount,
-        due_date: nextPayment.due_date,
-        formatted_due_date: nextPayment.formatted_due_date,
-        property_name: currentUserData.property_name,
-        apartment_number: currentUserData.apartment_number,
-        payment_frequency: currentUserData.payment_frequency,
-        is_advance_payment: nextPayment.is_advance_payment
-    };
-}
-// Open payment modal
 async function openRentPaymentModal() {
-  if (!currentUserData) await initializePaymentModal();
+  if (window.dashboardData?.has_pending_payment) {
+    if (window.showToast) {
+      window.showToast("You have a pending payment waiting for verification", "warning");
+    }
+    return;
+  }
+  
+  if (!currentUserData || !window.dashboardData) {
+    await fetchUserData();
+    await fetchDashboardData();
+  }
+  
   populatePaymentSummary();
 
-  document
-    .querySelectorAll('input[name="paymentMethodRadio"]')
-    .forEach((radio) => (radio.checked = false));
+  document.querySelectorAll('input[name="paymentMethodRadio"]').forEach((radio) => {
+    radio.checked = false;
+  });
   document.getElementById("paymentMethod").value = "";
-  document
-    .querySelectorAll(".payment-details-section")
-    .forEach((section) => (section.style.display = "none"));
+  document.querySelectorAll(".payment-details-section").forEach((section) => {
+    section.style.display = "none";
+  });
 
   const fields = [
-    "bankReference",
-    "cardNumber",
-    "cardExpiry",
-    "cardCvv",
-    "cardHolderName",
-    "chequeNumber",
-    "chequeBank",
-    "chequeDate",
-    "paymentNotes",
+    "bankReference", "cardNumber", "cardExpiry", "cardCvv", 
+    "cardHolderName", "chequeNumber", "chequeBank", "chequeDate", "paymentNotes"
   ];
   fields.forEach((field) => {
     const el = document.getElementById(field);
@@ -748,12 +537,10 @@ async function openRentPaymentModal() {
 }
 
 function setupPaymentMethodListeners() {
-  document
-    .querySelectorAll('input[name="paymentMethodRadio"]')
-    .forEach((radio) => {
-      radio.removeEventListener("change", handlePaymentMethodChange);
-      radio.addEventListener("change", handlePaymentMethodChange);
-    });
+  document.querySelectorAll('input[name="paymentMethodRadio"]').forEach((radio) => {
+    radio.removeEventListener("change", handlePaymentMethodChange);
+    radio.addEventListener("change", handlePaymentMethodChange);
+  });
 }
 
 function generateBankReferenceNumber() {
@@ -763,7 +550,6 @@ function generateBankReferenceNumber() {
   const day = String(date.getDate()).padStart(2, "0");
   const random = Math.random().toString(36).substring(2, 10).toUpperCase();
   const timestamp = Date.now().toString().slice(-6);
-
   return `BNK-${year}${month}${day}-${random}-${timestamp}`;
 }
 
@@ -803,8 +589,12 @@ async function processPayment() {
   const paymentNotes = document.getElementById("paymentNotes").value;
 
   if (!paymentMethod) {
-    if (window.showToast)
-      window.showToast("Please select a payment method", "error");
+    if (window.showToast) window.showToast("Please select a payment method", "error");
+    return;
+  }
+
+  if (!currentPaymentData) {
+    if (window.showToast) window.showToast("Payment data not available", "error");
     return;
   }
 
@@ -813,39 +603,29 @@ async function processPayment() {
   if (paymentMethod === "bank_transfer") {
     referenceNumber = document.getElementById("bankReference").value;
     if (!referenceNumber) {
-      if (window.showToast)
-        window.showToast(
-          "Please enter the bank transaction reference",
-          "error",
-        );
+      if (window.showToast) window.showToast("Please enter the bank transaction reference", "error");
       return;
     }
   } else if (paymentMethod === "card") {
-    const cardNumber = document
-      .getElementById("cardNumber")
-      .value.replace(/\s/g, "");
+    const cardNumber = document.getElementById("cardNumber").value.replace(/\s/g, "");
     const cardExpiry = document.getElementById("cardExpiry").value;
     const cardCvv = document.getElementById("cardCvv").value;
     const cardHolderName = document.getElementById("cardHolderName").value;
 
     if (!cardNumber || cardNumber.length < 16) {
-      if (window.showToast)
-        window.showToast("Please enter a valid card number", "error");
+      if (window.showToast) window.showToast("Please enter a valid card number", "error");
       return;
     }
     if (!cardExpiry || !cardExpiry.match(/^\d{2}\/\d{2}$/)) {
-      if (window.showToast)
-        window.showToast("Please enter a valid expiry date (MM/YY)", "error");
+      if (window.showToast) window.showToast("Please enter a valid expiry date (MM/YY)", "error");
       return;
     }
     if (!cardCvv || cardCvv.length < 3) {
-      if (window.showToast)
-        window.showToast("Please enter a valid CVV", "error");
+      if (window.showToast) window.showToast("Please enter a valid CVV", "error");
       return;
     }
     if (!cardHolderName) {
-      if (window.showToast)
-        window.showToast("Please enter card holder name", "error");
+      if (window.showToast) window.showToast("Please enter card holder name", "error");
       return;
     }
     referenceNumber = `CARD-${Date.now()}-${cardNumber.slice(-4)}`;
@@ -855,8 +635,7 @@ async function processPayment() {
     const chequeDate = document.getElementById("chequeDate").value;
 
     if (!chequeNumber) {
-      if (window.showToast)
-        window.showToast("Please enter cheque number", "error");
+      if (window.showToast) window.showToast("Please enter cheque number", "error");
       return;
     }
     if (!chequeBank) {
@@ -864,116 +643,120 @@ async function processPayment() {
       return;
     }
     if (!chequeDate) {
-      if (window.showToast)
-        window.showToast("Please select cheque date", "error");
+      if (window.showToast) window.showToast("Please select cheque date", "error");
       return;
     }
     referenceNumber = `CHQ-${chequeNumber}`;
-  }
-
-  // For advance payment, confirm with user
-  if (currentPaymentData.is_advance_payment) {
-    const confirmed = await showConfirmationDialog(
-      "Advance Payment",
-      "You are about to make an advance payment that will extend your lease period. Do you want to continue?",
-      "Yes, Continue",
-      "Cancel"
-    );
-    if (!confirmed) {
-      closeModal("processingModal");
-      return;
-    }
+  } else if (paymentMethod === "cash") {
+    referenceNumber = `CASH-${Date.now()}`;
   }
 
   closeModal("paymentModal");
   openModal("processingModal");
 
   const processingMsg = document.getElementById("processingMessage");
-  if (processingMsg)
-    processingMsg.innerHTML =
-      "Processing your payment...<br>Please do not close this window.";
+  if (processingMsg) {
+    processingMsg.innerHTML = "Processing your payment...<br>Please do not close this window.";
+  }
 
   try {
     if (paymentMethod === "card") {
       await simulateCardPayment();
     }
 
-    // Prepare payment data with all necessary fields
     const paymentData = {
       payment_method: paymentMethod,
-      payment_period: currentPaymentData.period || currentPaymentData.raw_period,
-      period_start_date: currentPaymentData.period_start,
-      period_end_date: currentPaymentData.period_end,
-      amount: currentPaymentData.amount,
       reference_number: referenceNumber,
-      notes: `${paymentNotes}\nPayment period: ${currentPaymentData.period}\nPeriod start: ${currentPaymentData.period_start}\nPeriod end: ${currentPaymentData.period_end}\n${currentPaymentData.is_advance_payment ? 'Advance payment' : ''}`,
-      is_advance: currentPaymentData.is_advance_payment || false
+      notes: `${paymentNotes}\nPayment period: ${currentPaymentData.period}\nPeriod #${currentPaymentData.period_number}\nPeriod start: ${currentPaymentData.period_start}\nPeriod end: ${currentPaymentData.period_end}`
     };
 
     console.log("Sending payment data:", paymentData);
 
-    const response = await fetch(
-      "../backend/payment/initiate_rent_payment.php",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(paymentData),
-      }
-    );
+    const response = await fetch("../backend/payment/initiate_rent_payment.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(paymentData),
+    });
 
     const data = await response.json();
 
-    if (!data.success)
+    if (!data.success) {
       throw new Error(data.message || "Failed to process payment");
+    }
 
     const paymentResult = data.data;
 
-    if (processingMsg)
-      processingMsg.innerHTML = "Payment successful!<br>Generating receipt...";
+    if (processingMsg) {
+      processingMsg.innerHTML = "Payment initiated!<br>Waiting for verification...";
+    }
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
 
     closeModal("processingModal");
     
-    // Prepare success data with all details
-    const successData = {
-      payment_id: paymentResult.payment_id,
-      rent_payment_id: paymentResult.rent_payment_id,
-      receipt_number: paymentResult.receipt_number,
-      reference_number: paymentResult.reference_number,
-      transaction_id: paymentResult.transaction_id,
-      amount: paymentResult.amount,
-      payment_period: currentPaymentData.period,
-      period_start_date: currentPaymentData.period_start,
-      period_end_date: currentPaymentData.period_end,
-      due_date: currentPaymentData.due_date,
-      formatted_due_date: currentPaymentData.formatted_due_date,
-      payment_date: paymentResult.payment_date || new Date().toISOString().split('T')[0],
-      payment_method: paymentMethod,
-      new_lease_end_date: paymentResult.new_lease_end_date,
-      property_name: currentPaymentData.property_name,
-      apartment_number: currentPaymentData.apartment_number,
-      is_advance_payment: currentPaymentData.is_advance_payment || false,
-      status: paymentResult.status || "completed",
-      message: paymentResult.message || "Payment processed successfully"
-    };
-
-    showPaymentSuccessModal(successData);
-
-    // Update last payment tracking
-    lastPaymentEndDate = currentPaymentData.period_end;
-    lastPaymentDate = new Date().toISOString().split("T")[0];
+    showPaymentPendingModal(paymentResult);
 
     await Promise.all([fetchDashboardData(), fetchPaymentHistory()]);
+    
   } catch (error) {
     console.error("Payment error:", error);
     closeModal("processingModal");
-    if (window.showToast) window.showToast(error.message, "error");
+    if (window.showToast) {
+      window.showToast(error.message, "error");
+    }
   }
 }
 
+function showPaymentPendingModal(paymentData) {
+  const modalHtml = `
+    <div class="modal active" id="paymentSuccessModal">
+      <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+          <h3>Payment Initiated!</h3>
+          <button class="modal-close" onclick="closeModal('paymentSuccessModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <i class="fas fa-hourglass-half" style="font-size: 64px; color: #f59e0b;"></i>
+            <p style="margin-top: 10px;">Your payment has been submitted for verification.</p>
+          </div>
+          
+          <div class="payment-details">
+            <div class="detail-row">
+              <span class="detail-label">Period #:</span>
+              <span class="detail-value">${paymentData.period_number}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Amount:</span>
+              <span class="detail-value">₦${formatNumber(paymentData.amount)}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Reference:</span>
+              <span class="detail-value">${escapeHtml(paymentData.reference_number)}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Status:</span>
+              <span class="detail-value">Pending Verification</span>
+            </div>
+          </div>
+          <div class="info-message" style="margin-top: 15px; padding: 10px; background: #d1ecf1; border-radius: 6px;">
+            <i class="fas fa-info-circle"></i> 
+            You will receive a notification once your payment is verified by an admin.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-primary" onclick="closeModal('paymentSuccessModal')">Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const existingModal = document.getElementById("paymentSuccessModal");
+  if (existingModal) existingModal.remove();
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
+}
+
 function showPaymentSuccessModal(paymentData) {
-  // Format dates for display
   const formatDisplayDate = (dateString) => {
     if (!dateString) return "N/A";
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -983,31 +766,14 @@ function showPaymentSuccessModal(paymentData) {
     });
   };
 
-  // Determine payment type display
-  let paymentTypeDisplay = "Rent Payment";
-  let additionalInfo = "";
-  
-  if (paymentData.is_advance_payment) {
-    paymentTypeDisplay = "Advance Rent Payment";
-    additionalInfo = `
-      <div class="detail-row" style="background: #fff3cd; padding: 10px; border-radius: 6px; margin-top: 10px;">
-        <span class="detail-label" style="color: #856404;">Note:</span>
-        <span class="detail-value" style="color: #856404;">This is an advance payment that extends your lease period.</span>
-      </div>
-    `;
-  }
-
-  // Calculate period display
-  let periodDisplay = paymentData.payment_period;
-  if (paymentData.period_start_date && paymentData.period_end_date) {
-    periodDisplay = `${formatDisplayDate(paymentData.period_start_date)} - ${formatDisplayDate(paymentData.period_end_date)}`;
-  }
+  const periodDisplay = paymentData.payment_period || 
+    formatPeriodForDisplay(paymentData.period_start_date, paymentData.period_end_date, currentUserData?.payment_frequency);
 
   const modalHtml = `
     <div class="modal active" id="paymentSuccessModal">
       <div class="modal-content" style="max-width: 500px;">
         <div class="modal-header">
-          <h3>${paymentTypeDisplay} - Successful!</h3>
+          <h3>Payment Successful!</h3>
           <button class="modal-close" onclick="closeModal('paymentSuccessModal')">&times;</button>
         </div>
         <div class="modal-body">
@@ -1020,6 +786,10 @@ function showPaymentSuccessModal(paymentData) {
             <div class="detail-row">
               <span class="detail-label">Payment Period:</span>
               <span class="detail-value">${escapeHtml(periodDisplay)}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Period Range:</span>
+              <span class="detail-value">${formatDateRange(paymentData.period_start_date, paymentData.period_end_date)}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">Amount Paid:</span>
@@ -1045,13 +815,18 @@ function showPaymentSuccessModal(paymentData) {
               <span class="detail-label">Payment Method:</span>
               <span class="detail-value">${formatPaymentMethod(paymentData.payment_method)}</span>
             </div>
-            ${paymentData.new_lease_end_date ? `
-            <div class="detail-row" style="background: #e8f0fe; padding: 10px; border-radius: 6px; margin-top: 5px;">
-              <span class="detail-label" style="color: #1a73e8;">New Lease End Date:</span>
-              <span class="detail-value" style="color: #1a73e8; font-weight: bold;">${formatDisplayDate(paymentData.new_lease_end_date)}</span>
+            ${paymentData.remaining_balance !== undefined ? `
+            <div class="detail-row">
+              <span class="detail-label">Remaining Balance:</span>
+              <span class="detail-value">₦${formatNumber(paymentData.remaining_balance)}</span>
             </div>
             ` : ''}
-            ${additionalInfo}
+            ${paymentData.is_fully_paid ? `
+            <div class="detail-row" style="background: #d4edda; padding: 10px; border-radius: 6px; margin-top: 5px;">
+              <span class="detail-label" style="color: #155724;">🎉 Congratulations!</span>
+              <span class="detail-value" style="color: #155724;">Your lease is now fully paid!</span>
+            </div>
+            ` : ''}
           </div>
         </div>
         <div class="modal-footer">
@@ -1066,66 +841,7 @@ function showPaymentSuccessModal(paymentData) {
 
   const existingModal = document.getElementById("paymentSuccessModal");
   if (existingModal) existingModal.remove();
-
   document.body.insertAdjacentHTML("beforeend", modalHtml);
-}
-
-// Helper function for confirmation dialog
-function showConfirmationDialog(title, message, confirmText, cancelText) {
-  return new Promise((resolve) => {
-    // Remove any existing confirmation modal
-    const existingModal = document.getElementById("confirmationModal");
-    if (existingModal) existingModal.remove();
-
-    const modalHtml = `
-      <div class="modal active" id="confirmationModal">
-        <div class="modal-content" style="max-width: 400px;">
-          <div class="modal-header">
-            <h3>${escapeHtml(title)}</h3>
-            <button class="modal-close" id="confirmationModalClose">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p>${escapeHtml(message)}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-secondary" id="confirmCancelBtn">${escapeHtml(cancelText)}</button>
-            <button class="btn-primary" id="confirmOkBtn">${escapeHtml(confirmText)}</button>
-          </div>
-        </div>
-      </div>
-    `;
-    
-    document.body.insertAdjacentHTML("beforeend", modalHtml);
-    
-    const modal = document.getElementById("confirmationModal");
-    
-    const cleanup = () => {
-      if (modal) modal.remove();
-    };
-    
-    document.getElementById("confirmOkBtn").onclick = () => {
-      cleanup();
-      resolve(true);
-    };
-    
-    document.getElementById("confirmCancelBtn").onclick = () => {
-      cleanup();
-      resolve(false);
-    };
-    
-    document.getElementById("confirmationModalClose").onclick = () => {
-      cleanup();
-      resolve(false);
-    };
-    
-    // Click outside to close
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) {
-        cleanup();
-        resolve(false);
-      }
-    });
-  });
 }
 
 async function simulateCardPayment() {
@@ -1134,8 +850,9 @@ async function simulateCardPayment() {
     const interval = setInterval(() => {
       progress += 20;
       const processingMsg = document.getElementById("processingMessage");
-      if (processingMsg)
+      if (processingMsg) {
         processingMsg.innerHTML = `Processing card payment... ${progress}%`;
+      }
       if (progress >= 100) {
         clearInterval(interval);
         resolve();
@@ -1181,8 +898,9 @@ function downloadReceipt(receiptNumber) {
     );
   } catch (error) {
     console.error("Error downloading receipt:", error);
-    if (window.showToast)
+    if (window.showToast) {
       window.showToast("Failed to download receipt", "error");
+    }
   }
 }
 

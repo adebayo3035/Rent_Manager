@@ -1,29 +1,46 @@
 // dashboard.js
 let dashboardData = null;
+// let currentUser = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     initializeDashboard();
 });
 
 async function initializeDashboard() {
-    // Wait for user data to be loaded from navbar
-    if (window.currentUser) {
-        await fetchDashboardData();
-        renderDashboard();
-    } else {
-        // Listen for user data loaded event
-        window.addEventListener('userDataLoaded', async function(e) {
-            await fetchDashboardData();
-            renderDashboard();
-        });
+    try {
+        // Fetch user data first
+        await fetchUserData();
         
-        // Also try to fetch if not available after a short delay
-        setTimeout(async () => {
-            if (!window.currentUser && !dashboardData) {
-                await fetchDashboardData();
-                renderDashboard();
-            }
-        }, 1000);
+        // Then fetch dashboard data
+        await fetchDashboardData();
+        
+        // Render the dashboard
+        renderDashboard();
+    } catch (error) {
+        console.error('Error initializing dashboard:', error);
+        renderErrorState();
+    }
+}
+
+async function fetchUserData() {
+    try {
+        const response = await fetch('../backend/tenant/fetch_user_data.php');
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+            currentUser = data.data;
+            window.currentUser = currentUser;
+            
+            // Dispatch event for other components
+            window.dispatchEvent(new CustomEvent('userDataLoaded', { detail: currentUser }));
+            console.log('User data loaded:', currentUser);
+            return data;
+        } else {
+            throw new Error(data.message || 'Failed to fetch user data');
+        }
+    } catch (error) {
+        console.error('Error fetching user data:', error);
+        throw error;
     }
 }
 
@@ -32,7 +49,7 @@ async function fetchDashboardData() {
         const response = await fetch('../backend/tenant/fetch_dashboard_data.php');
         const data = await response.json();
         
-        console.log('Dashboard data response:', data); // Debug log
+        console.log('Dashboard data response:', data);
         
         if (data.success && data.data) {
             dashboardData = data.data;
@@ -81,21 +98,28 @@ async function createMaintenanceRequest(requestData) {
     }
 }
 
+function renderErrorState() {
+    const contentArea = document.getElementById('contentArea');
+    if (!contentArea) return;
+    
+    contentArea.innerHTML = `
+        <div class="dashboard-container">
+            <div class="empty-state">
+                <i class="fas fa-chart-line"></i>
+                <h3>Unable to Load Dashboard</h3>
+                <p>Please refresh the page or contact support if the issue persists.</p>
+                <button class="btn-primary" onclick="location.reload()">Refresh Page</button>
+            </div>
+        </div>
+    `;
+}
+
 function renderDashboard() {
     const contentArea = document.getElementById('contentArea');
     if (!contentArea) return;
     
-    if (!dashboardData) {
-        contentArea.innerHTML = `
-            <div class="dashboard-container">
-                <div class="empty-state">
-                    <i class="fas fa-chart-line"></i>
-                    <h3>Unable to Load Dashboard</h3>
-                    <p>Please refresh the page or contact support if the issue persists.</p>
-                    <button class="btn-primary" onclick="location.reload()">Refresh Page</button>
-                </div>
-            </div>
-        `;
+    if (!dashboardData || !currentUser) {
+        renderErrorState();
         return;
     }
 
@@ -103,7 +127,7 @@ function renderDashboard() {
         <div class="dashboard-container">
             <!-- Welcome Section -->
             <div class="welcome-section">
-                <h1>Welcome back, ${window.currentUser?.firstname || 'Tenant'}!</h1>
+                <h1>Welcome back, ${escapeHtml(currentUser.firstname || 'Tenant')} ${escapeHtml(currentUser.lastname || '')}!</h1>
                 <p>Here's what's happening with your apartment today.</p>
             </div>
 
@@ -124,7 +148,7 @@ function renderDashboard() {
                         <i class="fas fa-door-open"></i>
                     </div>
                     <div class="stat-info">
-                        <h3>${dashboardData.apartment_number || 'Not Assigned'}</h3>
+                        <h3>${escapeHtml(dashboardData.apartment_number || 'Not Assigned')}</h3>
                         <p>Apartment Number</p>
                     </div>
                 </div>
@@ -150,60 +174,197 @@ function renderDashboard() {
                 </div>
             </div>
 
-            <!-- Payment Section -->
+            <!-- Current Rent Information -->
             <div class="payment-section">
                 <div class="section-header">
-                    <h2> Current Rent Information</h2>
+                    <h2>Current Rent Information</h2>
                     <span class="btn-link" onclick="navigateToPage('apartment')">View More →</span>
                 </div>
                 <div class="payment-card">
                     <div class="payment-details">
                         <div class="payment-amount">
-                            <label>Rent Amount </label>
-                            <span class="amount">₦${formatNumber(dashboardData.last_payment.amount || 0)}</span>
+                            <label>Annual Rent</label>
+                            <span class="amount">₦${formatNumber(dashboardData.annual_rent || 0)}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Payment per Period</label>
+                            <span class="amount">₦${formatNumber(dashboardData.payment_amount_per_period || 0)}</span>
                         </div>
                         <div class="payment-date">
                             <label>Payment Frequency</label>
-                            <span class="date">${currentUser.payment_frequency}</span>
+                            <span class="date">${escapeHtml(dashboardData.payment_frequency || 'Monthly')}</span>
                         </div>
-                         
                     </div>
 
                     <div class="payment-details">
-                        
-                         <div class="payment-date">
-                            <label>Start Date</label>
-                            <span class="date">${dashboardData.current_period.start_formatted}</span>
+                        <div class="payment-amount">
+                            <label>Total Paid</label>
+                            <span class="amount success">₦${formatNumber(dashboardData.total_paid || 0)}</span>
                         </div>
-                         <div class="payment-date">
-                            <label>End Date</label>
-                            <span class="date">${dashboardData.current_period.end_formatted}</span>
+                        <div class="payment-amount">
+                            <label>Remaining Balance</label>
+                            <span class="amount ${dashboardData.rent_balance > 0 ? 'warning' : 'success'}">₦${formatNumber(dashboardData.rent_balance || 0)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Lease Status</label>
+                            <span class="badge ${dashboardData.is_lease_fully_paid ? 'badge-success' : 'badge-info'}">
+                                ${dashboardData.is_lease_fully_paid ? 'Fully Paid' : 'Active'}
+                            </span>
                         </div>
                     </div>
 
-                   
+                    ${dashboardData.current_period ? `
+                    <div class="payment-details">
+                        <div class="payment-date">
+                            <label>Current Period</label>
+                            <span class="date">${escapeHtml(dashboardData.current_period.period || 'N/A')}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Period Start</label>
+                            <span class="date">${formatDate(dashboardData.current_period.start_date)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Period End</label>
+                            <span class="date">${formatDate(dashboardData.current_period.end_date)}</span>
+                        </div>
+                        ${dashboardData.current_period.is_paid ? `
+                        <div class="payment-status status-paid">
+                            <i class="fas fa-check-circle"></i> Paid
+                        </div>
+                        ` : `
+                        <div class="payment-status status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </div>
+                        `}
+                    </div>
+                    ` : ''}
                 </div>
             </div>
 
-            <!-- Payment Section -->
+            <!-- Upcoming Payment Section -->
             <div class="payment-section">
                 <div class="section-header">
-                    <h2>Upcoming Payment</h2>
-                    <span class="btn-link" onclick="navigateToPage('payments')">View All →</span>
+                    <h2>Next Payment</h2>
+                    <span class="btn-link" onclick="navigateToPage('payments')">View All Payments →</span>
                 </div>
+                ${dashboardData.next_payment ? `
                 <div class="payment-card">
                     <div class="payment-details">
                         <div class="payment-amount">
                             <label>Amount Due</label>
-                            <span class="amount">₦${formatNumber(dashboardData.rent_amount || 0)}</span>
+                            <span class="amount">₦${formatNumber(dashboardData.next_payment.amount || 0)}</span>
                         </div>
-                        
                         <div class="payment-date">
-                            <label> Current Rent Payment Due Date</label>
-                            <span class="date">${formatDate(dashboardData.last_payment.due_date)}</span>
+                            <label>Payment Period</label>
+                            <span class="date">${escapeHtml(dashboardData.next_payment.period || 'N/A')}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Due Date</label>
+                            <span class="date ${dashboardData.next_payment.is_overdue ? 'overdue' : ''}">${formatDate(dashboardData.next_payment.due_date)}</span>
+                        </div>
+                        ${dashboardData.next_payment.is_overdue ? `
+                        <div class="payment-status status-overdue">
+                            <i class="fas fa-exclamation-triangle"></i> Overdue
+                        </div>
+                        ` : ''}
+                    </div>
+                    <button class="btn-primary" onclick="makePayment()" ${dashboardData.is_lease_fully_paid ? 'disabled' : ''}>
+                        ${dashboardData.is_lease_fully_paid ? 'Lease Fully Paid' : 'Make Payment'}
+                    </button>
+                </div>
+                ` : dashboardData.is_lease_fully_paid ? `
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <i class="fas fa-check-circle" style="color: #10b981; font-size: 48px;"></i>
+                            <h3>Congratulations!</h3>
+                            <p>Your lease has been fully paid.</p>
                         </div>
                     </div>
-                    <button class="btn-primary" onclick="makePayment()">Make Payment</button>
+                </div>
+                ` : `
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <p>No upcoming payments scheduled.</p>
+                        </div>
+                    </div>
+                </div>
+                `}
+            </div>
+
+            <!-- Security Deposit Section -->
+            ${dashboardData.security_deposit > 0 ? `
+            <div class="payment-section">
+                <div class="section-header">
+                    <h2>Security Deposit</h2>
+                </div>
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Deposit Amount</label>
+                            <span class="amount">₦${formatNumber(dashboardData.security_deposit)}</span>
+                        </div>
+                        ${dashboardData.security_deposit_paid > 0 ? `
+                        <div class="payment-amount">
+                            <label>Paid Amount</label>
+                            <span class="amount success">₦${formatNumber(dashboardData.security_deposit_paid)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Payment Date</label>
+                            <span class="date">${formatDate(dashboardData.security_deposit_payment_date)}</span>
+                        </div>
+                        <div class="payment-status status-paid">
+                            <i class="fas fa-check-circle"></i> Paid
+                        </div>
+                        ` : `
+                        <div class="payment-status status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </div>
+                        `}
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
+            <!-- Payment Summary Section -->
+            <div class="payment-section">
+                <div class="section-header">
+                    <h2>Payment Summary</h2>
+                </div>
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Total Periods</label>
+                            <span class="amount">${dashboardData.total_periods || 0}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Paid Periods</label>
+                            <span class="amount success">${dashboardData.paid_periods_count || 0}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Pending Periods</label>
+                            <span class="amount warning">${dashboardData.pending_periods_count || 0}</span>
+                        </div>
+                    </div>
+                    
+                    ${dashboardData.paid_periods && dashboardData.paid_periods.length > 0 ? `
+                    <div class="payment-periods-list">
+                        <label>Paid Periods:</label>
+                        <div class="periods-grid">
+                            ${dashboardData.paid_periods.slice(-3).map(period => `
+                                <div class="period-badge">
+                                    ${escapeHtml(period.period)}
+                                </div>
+                            `).join('')}
+                            ${dashboardData.paid_periods_count > 3 ? `
+                            <div class="period-badge more" onclick="navigateToPage('payments')">
+                                +${dashboardData.paid_periods_count - 3} more
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>
             </div>
 
@@ -345,13 +506,20 @@ async function submitMaintenanceRequest() {
         issue_type: issueType,
         priority: priority,
         description: description,
-        tenant_code: window.currentUser?.tenant_code
+        tenant_code: currentUser?.tenant_code
     };
 
     await createMaintenanceRequest(requestData);
 }
 
 function makePayment() {
+    if (dashboardData?.is_lease_fully_paid) {
+        if (window.showToast) {
+            window.showToast('Your lease is already fully paid!', 'info');
+        }
+        return;
+    }
+    
     if (window.showToast) {
         window.showToast('Redirecting to payment gateway...', 'info');
     }
@@ -379,8 +547,7 @@ function navigateToPage(page) {
         'payments': 'payments.php',
         'documents': 'documents.php',
         'profile': 'profile.php',
-        'settings': 'settings.php',
-        'profile' : 'profile.php'
+        'settings': 'settings.php'
     };
     
     const url = pageUrls[page];
@@ -394,13 +561,45 @@ function navigateToPage(page) {
 }
 
 // ==================== AUTO REFRESH ====================
-setInterval(async () => {
-    if (document.querySelector('.dashboard-container')) {
-        try {
-            await fetchDashboardData();
-            renderDashboard();
-        } catch (error) {
-            console.error('Auto-refresh error:', error);
-        }
+let refreshInterval = null;
+
+function startAutoRefresh() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
     }
-}, 30000); // Refresh every 30 seconds
+    
+    refreshInterval = setInterval(async () => {
+        if (document.querySelector('.dashboard-container')) {
+            try {
+                await fetchDashboardData();
+                renderDashboard();
+            } catch (error) {
+                console.error('Auto-refresh error:', error);
+            }
+        }
+    }, 30000); // Refresh every 30 seconds
+}
+
+function stopAutoRefresh() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
+
+// Start auto-refresh when page is visible
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+        stopAutoRefresh();
+    } else {
+        startAutoRefresh();
+    }
+});
+
+// Initialize auto-refresh
+startAutoRefresh();
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    stopAutoRefresh();
+});

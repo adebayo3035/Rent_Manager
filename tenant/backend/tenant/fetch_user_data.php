@@ -40,6 +40,8 @@ try {
             t.lease_end_date,
             t.payment_frequency,
             t.status,
+            t.agreed_rent_amount,
+            t.payment_amount_per_period,
             t.has_secret_set,
             a.apartment_number,
             a.rent_amount,
