@@ -105,7 +105,7 @@
                 </div>
                 <div class="form-input">
                     <label for="apartment_type_unit">No. Of Units:</label>
-                    <input id="apartment_type_unit" type ="number" name="apartment_type_unit" class="validate" data-type="number" value ="1" readonly required>
+                    <input id="apartment_type_unit" type ="number" name="apartment_type_unit" class="validate" data-type="number" required>
                 </div>
 
                 <div class="form-input">

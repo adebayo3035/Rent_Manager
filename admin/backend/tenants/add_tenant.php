@@ -424,6 +424,18 @@ try {
     $update_apt->close();
     logActivity("Apartment occupancy status updated to OCCUPIED");
 
+    // When an apartment becomes OCCUPIED update the status on properties table
+$updatePropertyStmt = $conn->prepare("
+    UPDATE properties 
+    SET occupied_apartments = occupied_apartments + 1
+    WHERE property_code = ?
+");
+$updatePropertyStmt->bind_param("s", $inputs['property_code']);
+$updatePropertyStmt->execute();
+$updatePropertyStmt->close();
+
+
+
     // ==================== PAYMENT RECORDING ====================
     logActivity("Step 3.8: Recording payments");
 

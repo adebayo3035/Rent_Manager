@@ -1,16 +1,17 @@
 <?php
-// add_apartment.php — Production-grade implementation with capacity validation
+// add_apartment.php — Multi-apartment creation with automatic property tracking
 
 header('Content-Type: application/json; charset=utf-8');
 
 // Define constants
 define('CSRF_FORM_NAME', 'add_apartment_form');
-define('MAX_APARTMENT_UNIT', 1000); // Maximum apartment unit number
-define('MIN_APARTMENT_UNIT', 1);    // Minimum apartment unit number
-define('MIN_RENT_AMOUNT', 0);       // Minimum rent amount
-define('MAX_RENT_AMOUNT', 999999999.99); // Maximum rent amount
-define('MIN_SECURITY_DEPOSIT', 0);   // Minimum security deposit
-define('MAX_SECURITY_DEPOSIT', 999999999.99); // Maximum security deposit
+define('MAX_APARTMENT_UNIT', 1000);
+define('MIN_APARTMENT_UNIT', 1);
+define('MIN_RENT_AMOUNT', 0);
+define('MAX_RENT_AMOUNT', 999999999.99);
+define('MIN_SECURITY_DEPOSIT', 0);
+define('MAX_SECURITY_DEPOSIT', 999999999.99);
+define('MAX_BULK_CREATE', 100);
 
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
@@ -32,7 +33,7 @@ $auth = requireAuth([
 $userId = $auth['user_id'];
 $userRole = $auth['role'];
 
-logActivity("==== Apartment Onboarding Started ====");
+logActivity("==== Multi-Apartment Onboarding Started ====");
 logActivity("User: {$userId} | Role: {$userRole}");
 
 try {
@@ -45,9 +46,7 @@ try {
         'security_deposit' => $_POST['apartment_security_deposit'] ?? '',
     ];
 
-    // Log non-sensitive inputs
-    $logInputs = $rawInputs;
-    logActivity("Raw inputs received: " . json_encode($logInputs));
+    logActivity("Raw inputs received: " . json_encode($rawInputs));
 
     // Sanitize inputs
     $inputs = sanitize_inputs($rawInputs);
@@ -55,26 +54,24 @@ try {
     // Extract variables
     $propertyCode = trim($inputs['property_code']);
     $typeId = (int) $inputs['apartment_type_id'];
-    $typeUnit = (int) $inputs['apartment_type_unit'];
+    $unitsToCreate = (int) $inputs['apartment_type_unit'];
     
-    // ------------------------- SANITIZE NUMBER FIELDS WITH COMMAS -------------------------
-    // Method 1: Using the sanitizeNumberWithCommas function (strict)
+    // ------------------------- SANITIZE NUMBER FIELDS -------------------------
     try {
         $rentAmount = sanitizeNumberWithCommas(
             $inputs['rent_amount'], 
-            false, // required
+            false,
             MIN_RENT_AMOUNT, 
             MAX_RENT_AMOUNT
         );
         
         $securityDeposit = sanitizeNumberWithCommas(
             $inputs['security_deposit'], 
-            true, // allow null/empty
+            true,
             MIN_SECURITY_DEPOSIT, 
             MAX_SECURITY_DEPOSIT
         );
         
-        // If security deposit is empty or null, set to 0
         if ($securityDeposit === null) {
             $securityDeposit = 0.00;
         }
@@ -83,7 +80,6 @@ try {
         logActivity("Number validation error: " . $e->getMessage());
         json_error($e->getMessage(), 400);
     }
-    
 
     logActivity("Sanitized amounts - Rent: {$rentAmount}, Deposit: {$securityDeposit}");
 
@@ -94,7 +90,7 @@ try {
     $required = [
         'property_code' => 'Property Code',
         'apartment_type_id' => 'Apartment Type',
-        'apartment_type_unit' => 'Apartment Unit'
+        'apartment_type_unit' => 'Number of Apartments'
     ];
 
     foreach ($required as $field => $label) {
@@ -103,14 +99,18 @@ try {
         }
     }
 
+    // Validate units to create
+    if ($unitsToCreate < MIN_APARTMENT_UNIT) {
+        $errors[] = "Number of apartments must be at least " . MIN_APARTMENT_UNIT . ".";
+    }
+    
+    if ($unitsToCreate > MAX_BULK_CREATE) {
+        $errors[] = "Cannot create more than " . MAX_BULK_CREATE . " apartments at once.";
+    }
+
     // Property code format validation
     if (!empty($propertyCode) && !preg_match('/^[A-Za-z0-9_\-]{4,50}$/', $propertyCode)) {
         $errors[] = "Invalid property code format.";
-    }
-
-    // Apartment type unit validation
-    if ($typeUnit < MIN_APARTMENT_UNIT || $typeUnit > MAX_APARTMENT_UNIT) {
-        $errors[] = "Apartment unit must be between " . MIN_APARTMENT_UNIT . " and " . MAX_APARTMENT_UNIT . ".";
     }
 
     // Apartment type validation
@@ -118,17 +118,16 @@ try {
         $errors[] = "Invalid apartment type selected.";
     }
 
-    // Rent amount validation (already done in sanitizeNumberWithCommas, but double-check)
+    // Rent amount validation
     if ($rentAmount < MIN_RENT_AMOUNT) {
         $errors[] = "Rent amount cannot be negative.";
     }
 
-    // Security deposit validation (already done in sanitizeNumberWithCommas)
+    // Security deposit validation
     if ($securityDeposit < MIN_SECURITY_DEPOSIT) {
         $errors[] = "Security deposit cannot be negative.";
     }
 
-    // If any validation errors, return them
     if (!empty($errors)) {
         logActivity("Validation errors: " . implode(" | ", $errors));
         json_error(implode(" ", $errors), 400);
@@ -141,12 +140,17 @@ try {
     logActivity("Database transaction started.");
 
     try {
-        // ------------------------- FOREIGN KEY VALIDATION -------------------------
-        // 1. Validate property exists and is active
+        // ------------------------- PROPERTY VALIDATION WITH TRACKING -------------------------
         $propertyStmt = $conn->prepare("
-            SELECT p.property_code, p.property_type_unit, pt.type_name 
+            SELECT 
+                p.property_code,
+                p.name,
+                p.property_type_unit as max_capacity,
+                p.apartments_created,
+                p.occupied_apartments,
+                p.remaining_apartments,
+                (p.property_type_unit - p.apartments_created) as available_slots
             FROM properties p
-            LEFT JOIN property_type pt ON p.property_type_id = pt.type_id
             WHERE p.property_code = ? AND p.status = 1
             LIMIT 1
         ");
@@ -160,13 +164,41 @@ try {
         }
 
         $propertyData = $propertyResult->fetch_assoc();
-        $maxApartments = (int) $propertyData['property_type_unit'];
-        $propertyTypeName = $propertyData['type_name'] ?? 'Unknown';
         $propertyStmt->close();
 
-        logActivity("Property validation passed: {$propertyCode} | Max apartments: {$maxApartments}");
+        $maxCapacity = (int) $propertyData['max_capacity'];
+        $apartmentsCreated = (int) $propertyData['apartments_created'];
+        $occupiedApartments = (int) $propertyData['occupied_apartments'];
+        $availableSlots = (int) $propertyData['available_slots'];
+        $remainingApartments = (int) $propertyData['remaining_apartments'];
 
-        // 2. Validate apartment type exists and is active
+        logActivity("Property: {$propertyData['name']} ({$propertyCode})");
+        logActivity("Current Property Stats:");
+        logActivity("  - Max Capacity: {$maxCapacity}");
+        logActivity("  - Apartments Created: {$apartmentsCreated}");
+        logActivity("  - Occupied Apartments: {$occupiedApartments}");
+        logActivity("  - Remaining Apartments (can create): {$remainingApartments}");
+        logActivity("  - Available Slots: {$availableSlots}");
+
+        // Check if property has capacity for new apartments
+        if ($apartmentsCreated >= $maxCapacity) {
+            throw new Exception(
+                "Property '{$propertyData['name']}' has reached its maximum capacity of {$maxCapacity} apartments. " .
+                "No more apartments can be added.",
+                400
+            );
+        }
+
+        // Check if requested units fit
+        if ($unitsToCreate > $availableSlots) {
+            throw new Exception(
+                "Cannot create {$unitsToCreate} apartments. Property '{$propertyData['name']}' only has {$availableSlots} available slots. " .
+                "Current: {$apartmentsCreated}/{$maxCapacity} apartments.",
+                400
+            );
+        }
+
+        // 2. Validate apartment type exists
         $typeStmt = $conn->prepare("SELECT type_name FROM apartment_type WHERE type_id = ? AND status = 1 LIMIT 1");
         $typeStmt->bind_param("i", $typeId);
         $typeStmt->execute();
@@ -177,66 +209,9 @@ try {
             throw new Exception("Apartment type not found or inactive.", 400);
         }
         $typeStmt->close();
-        logActivity("Apartment type validation passed: ID {$typeId}");
+        logActivity("Apartment type validation passed: {$apartmentTypeName} (ID: {$typeId})");
 
-        // ------------------------- APARTMENT CAPACITY VALIDATION -------------------------
-        // Count existing apartments under this property
-        $countStmt = $conn->prepare("
-            SELECT COUNT(*) as total_apartments 
-            FROM apartments 
-            WHERE property_code = ? AND status = 1
-        ");
-        $countStmt->bind_param("s", $propertyCode);
-        $countStmt->execute();
-        $countResult = $countStmt->get_result();
-        $countData = $countResult->fetch_assoc();
-        $existingApartments = (int) $countData['total_apartments'];
-        $countStmt->close();
-
-        logActivity("Capacity check - Existing: {$existingApartments} | Allowed: {$maxApartments}");
-
-        // Check if property has capacity for new apartment
-        if ($existingApartments >= $maxApartments) {
-            throw new Exception(
-                "Property '{$propertyCode}' has reached its maximum capacity of {$maxApartments} apartments. " .
-                "No more apartments can be added to this property.",
-                400
-            );
-        }
-
-        // Calculate remaining capacity
-        $remainingCapacity = $maxApartments - $existingApartments;
-        logActivity("Property has {$remainingCapacity} apartment(s) remaining capacity");
-
-        $apartmentNumber = $existingApartments + 1; // Auto-assign apartment number
-
-        // ------------------------- DUPLICATE APARTMENT CHECK -------------------------
-        // Check for duplicate apartment number within the same property
-        if (!empty($apartmentNumber)) {
-            $dupNumberStmt = $conn->prepare("
-                SELECT apartment_code 
-                FROM apartments 
-                WHERE property_code = ? AND apartment_number = ? AND status = 1
-                LIMIT 1
-            ");
-            $dupNumberStmt->bind_param("ss", $propertyCode, $apartmentNumber);
-            $dupNumberStmt->execute();
-            $dupNumberStmt->store_result();
-
-            if ($dupNumberStmt->num_rows > 0) {
-                $dupNumberStmt->close();
-                throw new Exception("Apartment number '{$apartmentNumber}' already exists in this property.", 409);
-            }
-            $dupNumberStmt->close();
-        }
-        
-        // ------------------------- GENERATE APARTMENT CODE -------------------------
-        // Enhanced apartment code generation
-        $apartmentCode = generateApartmentCode($propertyCode, $typeUnit, $apartmentNumber);
-        logActivity("Generated apartment code: {$apartmentCode}");
-        $occupancy_status = 'NOT OCCUPIED';
-
-        // ------------------------- DATABASE INSERT -------------------------
+        // ------------------------- BULK INSERT APARTMENTS -------------------------
         $insertSql = "
             INSERT INTO apartments (
                 apartment_code,
@@ -257,67 +232,117 @@ try {
             throw new Exception("Database prepare failed: " . $conn->error, 500);
         }
 
-        // Bind parameters
-        $stmt->bind_param(
-            "ssiiiddss",
-            $apartmentCode,
-            $propertyCode,
-            $typeId,
-            $typeUnit,
-            $apartmentNumber,
-            $rentAmount,
-            $securityDeposit,
-            $occupancy_status,
-            $userId
-        );
+        $createdApartments = [];
+        $startNumber = $apartmentsCreated + 1;
+        $endNumber = $apartmentsCreated + $unitsToCreate;
+        
+        logActivity("Creating apartments #{$startNumber} through #{$endNumber}");
 
-        if (!$stmt->execute()) {
-            // Check for specific MySQL errors
-            if (strpos($stmt->error, 'foreign key constraint') !== false) {
-                throw new Exception("Referenced entity (property, agent, or type) not found.", 400);
+        for ($i = 0; $i < $unitsToCreate; $i++) {
+            $apartmentNumber = $apartmentsCreated + $i + 1;
+            
+            // Generate unique apartment code
+            $apartmentCode = generateApartmentCode($propertyCode, $unitsToCreate, $apartmentNumber);
+            
+            // Ensure code is unique
+            $originalCode = $apartmentCode;
+            $counter = 1;
+            while (isApartmentCodeExists($conn, $apartmentCode)) {
+                $apartmentCode = $originalCode . '-' . str_pad($counter, 2, '0', STR_PAD_LEFT);
+                $counter++;
+                logActivity("Apartment code conflict, regenerated: {$apartmentCode}");
             }
-            throw new Exception("Database insert failed: " . $stmt->error, 500);
+            
+            $occupancy_status = 'NOT OCCUPIED';
+            
+            $stmt->bind_param(
+                "ssiiiddss",
+                $apartmentCode,
+                $propertyCode,
+                $typeId,
+                $unitsToCreate,
+                $apartmentNumber,
+                $rentAmount,
+                $securityDeposit,
+                $occupancy_status,
+                $userId
+            );
+            
+            if (!$stmt->execute()) {
+                throw new Exception("Failed to create apartment #{$apartmentNumber}: " . $stmt->error, 500);
+            }
+            
+            $newApartmentId = $stmt->insert_id;
+            
+            $createdApartments[] = [
+                'id' => $newApartmentId,
+                'code' => $apartmentCode,
+                'number' => $apartmentNumber
+            ];
+            
+            logActivity("Apartment #{$apartmentNumber} created - ID: {$newApartmentId}, Code: {$apartmentCode}");
         }
-
-        $newApartmentId = $stmt->insert_id;
+        
         $stmt->close();
 
-        logActivity("Apartment inserted successfully. ID: {$newApartmentId}, Code: {$apartmentCode}");
+        // ------------------------- UPDATE PROPERTY APARTMENT COUNTS -------------------------
+        $newApartmentsCreated = $apartmentsCreated + $unitsToCreate;
+        
+        $updatePropertyStmt = $conn->prepare("
+            UPDATE properties 
+            SET apartments_created = ?,
+                updated_at = NOW(),
+                last_updated_by = ?
+            WHERE property_code = ?
+        ");
+        $updatePropertyStmt->bind_param("iss", $newApartmentsCreated, $userId, $propertyCode);
+        $updatePropertyStmt->execute();
+        $updatePropertyStmt->close();
+
+        logActivity("Property apartments_created updated: {$apartmentsCreated} → {$newApartmentsCreated}");
+        logActivity("Remaining apartments (can create): {$maxCapacity} - {$newApartmentsCreated} = " . ($maxCapacity - $newApartmentsCreated));
 
         // ------------------------- COMMIT TRANSACTION -------------------------
         $conn->commit();
-        logActivity("Transaction committed successfully.");
+        logActivity("Transaction committed successfully. Created " . count($createdApartments) . " apartments.");
 
-        // Consume CSRF token after successful operation
+        // Consume CSRF token
         consumeCsrfToken(CSRF_FORM_NAME);
 
         // ------------------------- SUCCESS RESPONSE -------------------------
         $response = [
             'success' => true,
-            'message' => 'Apartment added successfully!',
-            'apartment_code' => $apartmentCode,
-            'apartment_id' => $newApartmentId,
+            'message' => $unitsToCreate . ' apartment(s) added successfully!',
+            'apartments_created' => count($createdApartments),
+            'apartment_type' => $apartmentTypeName,
             'property_code' => $propertyCode,
-            'rent_amount' => number_format($rentAmount, 2), // Format for response
+            'property_name' => $propertyData['name'],
+            'rent_amount' => number_format($rentAmount, 2),
             'security_deposit' => number_format($securityDeposit, 2),
-            'remaining_capacity' => $remainingCapacity - 1,
-            'total_capacity' => $maxApartments,
+            'apartments' => $createdApartments,
+            'property_stats' => [
+                'total_capacity' => $maxCapacity,
+                'apartments_created_before' => $apartmentsCreated,
+                'apartments_created_now' => $newApartmentsCreated,
+                'remaining_apartments' => $maxCapacity - $newApartmentsCreated,
+                'occupied_apartments' => $occupiedApartments,
+                'vacant_apartments' => $newApartmentsCreated - $occupiedApartments,
+                'occupancy_rate' => $maxCapacity > 0 ? round(($occupiedApartments / $maxCapacity) * 100, 2) : 0
+            ],
             'timestamp' => date('Y-m-d H:i:s')
         ];
 
         echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
-        logActivity("==== Apartment Onboarding Completed Successfully ====");
+        logActivity("==== Multi-Apartment Onboarding Completed Successfully ====");
 
     } catch (Throwable $e) {
-        // Rollback transaction
         $conn->rollback();
         logActivity("Transaction rolled back: " . $e->getMessage());
-        throw $e; // Re-throw for outer catch block
+        throw $e;
     }
 
 } catch (Throwable $e) {
-    // ------------------------- ERROR HANDLING -------------------------
     $errorCode = $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 500;
 
     logActivity("FATAL ERROR: " . $e->getMessage() .
@@ -325,7 +350,6 @@ try {
         " | Line: " . $e->getLine() .
         " | Code: " . $errorCode);
 
-    // Don't expose internal errors in production
     $errorMessage = ($errorCode === 500 && strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') === false)
         ? "An internal error occurred while processing your request."
         : $e->getMessage();
@@ -335,19 +359,31 @@ try {
 
 /**
  * Generate unique apartment code
- * Format: PROPERTYCODE-APT-UNIT[X]-F[Floor]-N[Number]
  */
-function generateApartmentCode($propertyCode, $unit, $apartmentNumber = '')
+function generateApartmentCode($propertyCode, $unit, $apartmentNumber)
 {
     $code = $propertyCode . "-APT" . sprintf('%03d', $unit);
-
+    
     if (!empty($apartmentNumber)) {
         $code .= "-" . strtoupper(preg_replace('/[^A-Z0-9]/', '', $apartmentNumber));
     }
-
-    // Add timestamp component to ensure uniqueness
+    
     $timestamp = date('His');
     $code .= '-' . $timestamp;
-
+    
     return $code;
+}
+
+/**
+ * Check if apartment code already exists
+ */
+function isApartmentCodeExists($conn, $apartmentCode)
+{
+    $checkStmt = $conn->prepare("SELECT apartment_code FROM apartments WHERE apartment_code = ? LIMIT 1");
+    $checkStmt->bind_param("s", $apartmentCode);
+    $checkStmt->execute();
+    $checkStmt->store_result();
+    $exists = $checkStmt->num_rows > 0;
+    $checkStmt->close();
+    return $exists;
 }
