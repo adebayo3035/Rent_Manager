@@ -316,11 +316,12 @@ function verifyPayment($conn, $adminId) {
             SET status = ?,
                 verified_by = ?,
                 verified_at = NOW(),
-                admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[" . strtoupper($action) . "] ', NOW(), ' by Admin ID: {$adminId}\nNotes: {$notes}')
+                admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[" . strtoupper($action) . "] ', NOW(), ' by Admin ID: {$adminId}\nNotes: {$notes}'),
+                notes = ?
             WHERE tracker_id = ?
         ";
         $updateStmt = $conn->prepare($updateTrackerQuery);
-        $updateStmt->bind_param("sii", $newStatus, $adminId, $trackerId);
+        $updateStmt->bind_param("sisi", $newStatus, $adminId, $notes, $trackerId);
         $updateStmt->execute();
         $updateStmt->close();
         
@@ -382,19 +383,19 @@ function verifyPayment($conn, $adminId) {
             }
         }
         
-        // Update payments table if linked
-        if ($tracker['payment_id']) {
-            $paymentStatus = ($action === 'approve') ? 'completed' : 'failed';
-            $updatePaymentQuery = "
-                UPDATE payments 
-                SET payment_status = ?, updated_at = NOW()
-                WHERE id = ?
-            ";
-            $updatePaymentStmt = $conn->prepare($updatePaymentQuery);
-            $updatePaymentStmt->bind_param("si", $paymentStatus, $tracker['payment_id']);
-            $updatePaymentStmt->execute();
-            $updatePaymentStmt->close();
-        }
+        // // Update payments table if linked
+        // if ($tracker['payment_id']) {
+        //     $paymentStatus = ($action === 'approve') ? 'completed' : 'failed';
+        //     $updatePaymentQuery = "
+        //         UPDATE payments 
+        //         SET payment_status = ?, updated_at = NOW()
+        //         WHERE id = ?
+        //     ";
+        //     $updatePaymentStmt = $conn->prepare($updatePaymentQuery);
+        //     $updatePaymentStmt->bind_param("si", $paymentStatus, $tracker['payment_id']);
+        //     $updatePaymentStmt->execute();
+        //     $updatePaymentStmt->close();
+        // }
         
         $conn->commit();
         

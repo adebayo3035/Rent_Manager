@@ -105,9 +105,12 @@ try {
     $tracker_params = [$tenant_code, $apartment_code];
     $tracker_types = "ss";
 
-    if ($status && in_array($status, ['paid', 'pending', 'overdue'])) {
+    // Update status filter to include new statuses
+    if ($status && in_array($status, ['paid', 'pending_verification', 'failed', 'available', 'pending'])) {
+        // Map 'pending' to 'pending_verification' for backward compatibility
+        $mapped_status = ($status === 'pending') ? 'pending_verification' : $status;
         $tracker_where_clauses[] = "status = ?";
-        $tracker_params[] = $status;
+        $tracker_params[] = $mapped_status;
         $tracker_types .= "s";
     }
 
@@ -141,7 +144,7 @@ try {
     $total = $count_result->fetch_assoc()['total'];
     $count_stmt->close();
 
-    // Get payment tracker records (these represent individual period payments)
+    // Get payment tracker records
     $tracker_query = "
         SELECT 
             tracker_id,
@@ -154,6 +157,11 @@ try {
             payment_date,
             status,
             payment_id,
+            payment_method,
+            payment_reference,
+            verified_by,
+            verified_at,
+            admin_notes,
             created_at
         FROM rent_payment_tracker
         $tracker_where_sql
@@ -187,25 +195,41 @@ try {
         $due_date = clone $end_date_obj;
         $due_date->modify("+{$daysToAdd} days");
         
-        // Determine if payment is overdue
-        $is_overdue = false;
+        // Determine status display
         $current_date = new DateTime();
-        if ($row['status'] === 'pending' && $due_date < $current_date) {
+        $is_overdue = false;
+        $status_display = '';
+        $status_color = '';
+        
+        switch ($row['status']) {
+            case 'paid':
+                $status_display = 'Paid';
+                $status_color = 'success';
+                break;
+            case 'pending_verification':
+                $status_display = 'Pending Verification';
+                $status_color = 'warning';
+                break;
+            case 'failed':
+                $status_display = 'Failed';
+                $status_color = 'danger';
+                break;
+            case 'available':
+                $status_display = 'Available';
+                $status_color = 'info';
+                break;
+            default:
+                $status_display = ucfirst($row['status']);
+                $status_color = 'secondary';
+        }
+        
+        // Check if pending verification is overdue
+        if ($row['status'] === 'pending_verification' && $due_date < $current_date) {
             $is_overdue = true;
         }
         
         // Format period display
         $period_display = formatPeriodDisplay($start_date_obj, $end_date_obj, $payment_frequency);
-        
-        // Determine status color
-        $status_color = 'info';
-        if ($row['status'] === 'paid') {
-            $status_color = 'success';
-        } elseif ($row['status'] === 'pending') {
-            $status_color = 'warning';
-        } elseif ($is_overdue) {
-            $status_color = 'danger';
-        }
         
         $payments[] = [
             'payment_id' => (int)$row['tracker_id'],
@@ -215,8 +239,8 @@ try {
             'amount_formatted' => '₦' . number_format($row['amount_paid'], 2),
             'payment_date' => $row['payment_date'],
             'payment_date_formatted' => $row['payment_date'] ? date('F j, Y', strtotime($row['payment_date'])) : null,
-            'payment_method' => 'bank_transfer', // Default, can be updated when payment is made
-            'payment_method_display' => 'Bank Transfer',
+            'payment_method' => $row['payment_method'] ?? 'N/A',
+            'payment_method_display' => formatPaymentMethod($row['payment_method']),
             'payment_period' => $period_display['period_name'],
             'period_start_date' => $row['start_date'],
             'period_start_formatted' => date('F j, Y', strtotime($row['start_date'])),
@@ -226,16 +250,18 @@ try {
             'due_date' => $due_date->format('Y-m-d'),
             'due_date_formatted' => $due_date->format('F j, Y'),
             'is_overdue' => $is_overdue,
-            'reference_number' => generateReferenceFromTracker($tenant_code, $row['period_number']),
+            'reference_number' => $row['payment_reference'] ?? generateReferenceFromTracker($tenant_code, $row['period_number']),
             'status' => $row['status'],
             'status_color' => $status_color,
-            'status_display' => ucfirst($row['status']),
+            'status_display' => $status_display,
             'receipt_number' => $row['payment_id'] ? 'RCP-' . $row['payment_id'] : null,
             'payment_type' => 'rent',
             'payment_type_display' => 'Rent',
             'remaining_balance' => (float)$row['remaining_balance'],
             'remaining_balance_formatted' => '₦' . number_format($row['remaining_balance'], 2),
-            'notes' => $row['status'] === 'paid' ? "Payment for period #{$row['period_number']} completed" : "Pending payment for period #{$row['period_number']}",
+            'verified_at' => $row['verified_at'],
+            'verified_at_formatted' => $row['verified_at'] ? date('F j, Y g:i A', strtotime($row['verified_at'])) : null,
+            'admin_notes' => $row['admin_notes'],
             'created_at' => $row['created_at'],
             'created_at_formatted' => date('F j, Y g:i A', strtotime($row['created_at']))
         ];
@@ -292,7 +318,7 @@ try {
     }
     $deposit_stmt->close();
 
-    // Combine rent payments and security deposits for the payments list
+    // Combine rent payments and security deposits
     $all_payments = array_merge($payments, $security_deposits);
     
     // Sort by date (most recent first)
@@ -303,24 +329,29 @@ try {
     });
 
     // ==================== CALCULATE SUMMARY STATISTICS ====================
-    $total_paid = array_sum(array_column($payments, 'amount'));
+    $total_paid = 0;
     $total_pending = 0;
+    $total_pending_verification = 0;
     $total_overdue = 0;
-    $pending_count = 0;
-    $overdue_count = 0;
     $paid_count = 0;
+    $pending_count = 0;
+    $pending_verification_count = 0;
+    $failed_count = 0;
+    $overdue_count = 0;
     
     foreach ($payments as $payment) {
         if ($payment['status'] === 'paid') {
+            $total_paid += $payment['amount'];
             $paid_count++;
-        } elseif ($payment['status'] === 'pending') {
-            $pending_count++;
+        } elseif ($payment['status'] === 'pending_verification') {
+            $total_pending_verification += $payment['amount'];
+            $pending_verification_count++;
             if ($payment['is_overdue']) {
                 $total_overdue += $payment['amount'];
                 $overdue_count++;
-            } else {
-                $total_pending += $payment['amount'];
             }
+        } elseif ($payment['status'] === 'failed') {
+            $failed_count++;
         }
     }
     
@@ -334,13 +365,10 @@ try {
         }
     }
 
-    // ==================== GET UPCOMING PAYMENTS ====================
+    // ==================== GET UPCOMING PAYMENTS (pending_verification) ====================
     $upcoming_payments = [];
-    $current_date = new DateTime();
-    
     foreach ($payments as $payment) {
-        if ($payment['status'] === 'pending') {
-            $due_date = new DateTime($payment['due_date']);
+        if ($payment['status'] === 'pending_verification') {
             $upcoming_payments[] = [
                 'period_number' => $payment['period_number'],
                 'amount' => $payment['amount'],
@@ -366,7 +394,6 @@ try {
     $payment_trends = [];
     $trend_data = [];
     
-    // Group payments by month for the last 12 months
     foreach ($payments as $payment) {
         if ($payment['status'] === 'paid' && $payment['payment_date']) {
             $month_key = date('Y-m', strtotime($payment['payment_date']));
@@ -385,11 +412,10 @@ try {
         }
     }
     
-    // Sort by month descending and get last 12 months
     krsort($trend_data);
     $payment_trends = array_values(array_slice($trend_data, 0, 12));
 
-    // ==================== GET SECURITY DEPOSIT SUMMARY ====================
+    // Security deposit summary
     $total_deposit_paid = array_sum(array_column($security_deposits, 'amount'));
     $deposit_status = !empty($security_deposits) ? 'completed' : 'pending';
 
@@ -398,16 +424,16 @@ try {
     // Prepare response
     $response_data = [
         'payments' => $all_payments,
-        'rent_payments' => $payments, // Keep for backward compatibility
+        'rent_payments' => $payments,
         'security_deposits' => $security_deposits,
         'summary' => [
             'total_payments' => count($payments),
             'total_paid' => $total_paid,
-            'total_pending' => $total_pending,
+            'total_pending_verification' => $total_pending_verification,
             'total_overdue' => $total_overdue,
             'successful_payments' => $paid_count,
-            'pending_payments' => $pending_count,
-            'failed_payments' => 0,
+            'pending_verification_count' => $pending_verification_count,
+            'failed_payments' => $failed_count,
             'overdue_payments' => $overdue_count,
             'last_payment_date' => $last_payment,
             'last_payment_formatted' => $last_payment ? date('F j, Y', strtotime($last_payment)) : null,
@@ -488,6 +514,19 @@ function formatPeriodDisplay($start_date, $end_date, $frequency) {
         'period_name' => $period_name,
         'full_display' => "{$start_formatted} - {$end_formatted}"
     ];
+}
+
+/**
+ * Format payment method for display
+ */
+function formatPaymentMethod($method) {
+    $methods = [
+        'bank_transfer' => 'Bank Transfer',
+        'card' => 'Card',
+        'cash' => 'Cash',
+        'cheque' => 'Cheque'
+    ];
+    return $methods[$method] ?? $method ?? 'N/A';
 }
 
 /**

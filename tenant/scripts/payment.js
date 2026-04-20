@@ -13,7 +13,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 async function initializePayments() {
   try {
-    await fetchUserData();
+    await fetchPaymentUserData();
     await fetchDashboardData();
     await fetchPaymentHistory();
   } catch (error) {
@@ -25,14 +25,22 @@ async function initializePayments() {
   }
 }
 
-async function fetchUserData() {
+async function fetchPaymentUserData() {
   try {
+    if (window.currentUser && window.currentUser.tenant_code) {
+      currentUserData = window.currentUser;
+      console.log("Using cached user data:", currentUserData);
+      return;
+    }
+
     const response = await fetch("../backend/tenant/fetch_user_data.php");
     const data = await response.json();
     
     if (data.success && data.data) {
       currentUserData = data.data;
-      window.currentUser = currentUserData;
+      if (!window.currentUser) {
+        window.currentUser = currentUserData;
+      }
       console.log("User data loaded:", currentUserData);
     } else {
       throw new Error(data.message || "Failed to fetch user data");
@@ -267,11 +275,11 @@ function renderPaymentPage() {
             <td>${periodRange || '—'}</td>
             <td class="${statusClass}">${statusText}</td>
             <td>
-              ${payment.receipt_number && (payment.status === 'paid' || payment.status === 'completed') ? `
-              <button class="btn-download" data-receipt="${payment.receipt_number}" title="Download Receipt">
-                <i class="fas fa-download"></i>
-              </button>
-              ` : '—'}
+            ${payment.receipt_number && (payment.status === 'paid' || payment.status === 'completed') ? `
+<button class="btn-download" onclick="downloadReceipt(${payment.payment_id || 0}, '${payment.receipt_number}', '${payment.payment_type}')" title="Download Receipt">
+    <i class="fas fa-download"></i>
+</button>
+` : '—'}
             </td>
           </tr>
         `;
@@ -285,13 +293,13 @@ function renderPaymentPage() {
 
   contentArea.innerHTML = html;
 
-  document.querySelectorAll(".btn-download").forEach((btn) => {
-    btn.addEventListener("click", function (e) {
-      e.stopPropagation();
-      const receiptNumber = this.getAttribute("data-receipt");
-      if (receiptNumber) downloadReceipt(receiptNumber);
-    });
-  });
+  // document.querySelectorAll(".btn-download").forEach((btn) => {
+  //   btn.addEventListener("click", function (e) {
+  //     e.stopPropagation();
+  //     const receiptNumber = this.getAttribute("data-receipt");
+  //     if (receiptNumber) downloadReceipt(receiptNumber);
+  //   });
+  // });
 }
 
 function showEmptyState() {
@@ -510,7 +518,7 @@ async function openRentPaymentModal() {
   }
   
   if (!currentUserData || !window.dashboardData) {
-    await fetchUserData();
+    await fetchPaymentUserData();
     await fetchDashboardData();
   }
   
@@ -884,24 +892,48 @@ function setupCardFormatting() {
   }
 }
 
-function downloadReceipt(receiptNumber) {
-  if (!receiptNumber) {
-    if (window.showToast) window.showToast("Receipt number not found", "error");
-    return;
-  }
+// function downloadReceipt(receiptNumber) {
+//   if (!receiptNumber) {
+//     if (window.showToast) window.showToast("Receipt number not found", "error");
+//     return;
+//   }
 
-  try {
-    const encodedRef = encodeURIComponent(receiptNumber);
-    window.open(
-      `../backend/payment/download_receipt.php?receipt_number=${encodedRef}`,
-      "_blank",
-    );
-  } catch (error) {
-    console.error("Error downloading receipt:", error);
-    if (window.showToast) {
-      window.showToast("Failed to download receipt", "error");
+//   try {
+//     const encodedRef = encodeURIComponent(receiptNumber);
+//     window.open(
+//       `../backend/payment/download_receipt.php?receipt_number=${encodedRef}`,
+//       "_blank",
+//     );
+//   } catch (error) {
+//     console.error("Error downloading receipt:", error);
+//     if (window.showToast) {
+//       window.showToast("Failed to download receipt", "error");
+//     }
+//   }
+// }
+
+function downloadReceipt(paymentId, receiptNumber, paymentType) {
+    console.log("Download receipt called - paymentId:", paymentId, "receiptNumber:", receiptNumber, "paymentType:", paymentType);
+    
+    let url = '../backend/payment/download_receipt.php?';
+    
+    // For rent period payments (payment_type is 'rent' and paymentId is the tracker_id)
+    if (paymentType === 'rent' && paymentId && parseInt(paymentId) > 0) {
+        url += `tracker_id=${paymentId}`;
+        console.log("Using tracker_id URL:", url);
+    } 
+    // For security deposit, use receipt_number
+    else if (receiptNumber && receiptNumber !== 'null' && receiptNumber !== 'undefined') {
+        url += `receipt_number=${encodeURIComponent(receiptNumber)}`;
+        console.log("Using receipt_number URL:", url);
+    } 
+    else {
+        console.error("No valid identifier for receipt download");
+        if (window.showToast) window.showToast("Receipt information not found", "error");
+        return;
     }
-  }
+    
+    window.open(url, '_blank');
 }
 
 function closeModal(modalId) {

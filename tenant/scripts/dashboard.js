@@ -1,6 +1,6 @@
 // dashboard.js
 let dashboardData = null;
-// let currentUser = null;
+let currentUser = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     initializeDashboard();

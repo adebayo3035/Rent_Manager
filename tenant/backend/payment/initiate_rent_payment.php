@@ -229,16 +229,15 @@ try {
         $payment_date = date('Y-m-d H:i:s');
         $due_date = calculateDueDate($next_period['end_date'], $payment_frequency);
         
-        // 6. Generate a unique payment_id for this transaction
-        $new_payment_id = 'PAY_' . time() . '_' . uniqid() . '_' . $next_period['period_number'];
-        logActivity("Generated payment_id: {$new_payment_id}");
+        // 6. IMPORTANT: USE THE EXISTING payment_id from onboarding, don't create a new one
+        $existing_payment_id = $next_period['existing_payment_id'];
+        logActivity("Using existing payment_id from onboarding: {$existing_payment_id}");
         
-        // 7. Update the tracker record to 'pending_verification' (NOT directly to 'paid')
+        // 7. Update the tracker record to 'pending_verification'
         $update_tracker_query = "
             UPDATE rent_payment_tracker 
             SET status = 'pending_verification',
                 payment_date = ?,
-                payment_id = ?,
                 payment_reference = ?,
                 payment_method = ?,
                 amount_paid = ?
@@ -247,64 +246,20 @@ try {
         ";
         
         $update_stmt = $conn->prepare($update_tracker_query);
-        $update_stmt->bind_param("sssssi", $payment_date, $new_payment_id, $reference_number, $payment_method, $payment_per_period, $next_period['tracker_id']);
+        $update_stmt->bind_param("ssssi", $payment_date, $reference_number, $payment_method, $payment_per_period, $next_period['tracker_id']);
         
         if (!$update_stmt->execute() || $update_stmt->affected_rows == 0) {
             throw new Exception("Failed to initiate payment. Period may have been already paid.", 500);
         }
         $update_stmt->close();
-        logActivity("Tracker record updated to 'pending_verification' with payment_id: {$new_payment_id}");
-        
-        // 8. Insert into payments table (for admin reference) with 'pending' status
-        $period_display = formatPeriodDisplay($next_period['start_date'], $next_period['end_date'], $payment_frequency);
-        $payment_description = "Rent payment for Period #{$next_period['period_number']}: {$period_display}\n"
-            . "Property: {$tenant['property_name']}\n"
-            . "Apartment: {$tenant['apartment_number']}\n"
-            . "Period: " . formatDateRange($next_period['start_date'], $next_period['end_date']);
-        
-        $payment_query = "
-            INSERT INTO payments (
-                tenant_code, apartment_code, amount, balance, payment_date, due_date,
-                payment_method, payment_status, receipt_number, reference_number,
-                description, payment_category, recorded_by, created_at
-            ) VALUES (?, ?, ?, 0, NOW(), ?, ?, 'pending', ?, ?, ?, 'rent', ?, NOW())
-        ";
-        
-        $payment_stmt = $conn->prepare($payment_query);
-        $payment_stmt->bind_param(
-            "ssdssssss",
-            $tenant_code,
-            $tenant['apartment_code'],
-            $payment_per_period,
-            $due_date,
-            $payment_method,
-            $receipt_number,
-            $reference_number,
-            $payment_description,
-            $tenant_code
-        );
-        $payment_stmt->execute();
-        $payment_id = $payment_stmt->insert_id;
-        $payment_stmt->close();
-        logActivity("Payment record created - ID: {$payment_id} with status 'pending'");
-        
-        // 9. Update tracker with the payment_id from payments table
-        $update_payment_link = "
-            UPDATE rent_payment_tracker 
-            SET payment_id = ?
-            WHERE tracker_id = ?
-        ";
-        $link_stmt = $conn->prepare($update_payment_link);
-        $link_stmt->bind_param("si", $payment_id, $next_period['tracker_id']);
-        $link_stmt->execute();
-        $link_stmt->close();
+        logActivity("Tracker record updated to 'pending_verification' - payment_id remains: {$existing_payment_id}");
         
         $conn->commit();
         logActivity("Transaction committed successfully");
         
-        // Prepare response (status is 'pending_verification', not 'completed')
+        // Prepare response
         $response_data = [
-            'payment_id' => $payment_id,
+            'payment_id' => $existing_payment_id,  // Use existing payment_id
             'tracker_id' => $next_period['tracker_id'],
             'period_number' => $next_period['period_number'],
             'receipt_number' => $receipt_number,
