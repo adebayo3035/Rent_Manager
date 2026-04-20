@@ -403,7 +403,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // Clear the auto-logout timer
         clearWarningTimer();
 
-        if (confirmed) {
+        if (!confirmed) {
           // User wants to stay logged in
           console.log("User chose to stay logged in");
           isWarningShowing = false;

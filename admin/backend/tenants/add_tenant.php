@@ -668,11 +668,16 @@ $get_first_payment_id->close();
 
 if ($first_tracker) {
     $first_payment_id = $first_tracker['payment_id'];
+    $action = "APPROVED FIRST RENT PAYMENT";
+    $notes = "New Tenant First Rent Payment at Onboarding";
     
     $update_first_tracker = $conn->prepare("
         UPDATE rent_payment_tracker 
         SET status = 'paid', 
             payment_date = NOW(),
+            verified_by = ?,
+            verified_at = NOW(),
+            admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[" . strtoupper($action) . "] ', NOW(), ' by Admin ID: {$userId}\nNotes: {$notes}'),
             amount_paid = ?,
             payment_method = 'cash',
             payment_reference = ?
@@ -685,7 +690,7 @@ if ($first_tracker) {
         throw new Exception('Prepare failed for first period update: ' . $conn->error);
     }
     
-    $update_first_tracker->bind_param("dss", $payment_amount_per_period, $reference_number, $rent_payment_id);
+    $update_first_tracker->bind_param("sdss", $userId, $payment_amount_per_period, $reference_number, $rent_payment_id);
     $update_first_tracker->execute();
     
     if ($update_first_tracker->affected_rows > 0) {
