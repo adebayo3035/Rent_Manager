@@ -485,24 +485,22 @@ function getTenantPeriods($conn) {
 }
 
 function getRentStatistics($conn) {
-    // Fix collation mismatch by adding COLLATE to the JOIN condition
+    // Simplified query without COLLATE issues
     $query = "
         SELECT 
             COUNT(DISTINCT rp.rent_payment_id) as active_leases,
             COALESCE(SUM(rp.balance), 0) as total_outstanding,
             COALESCE(SUM(rp.amount_paid), 0) as total_collected,
-            COUNT(CASE WHEN t.status = 'pending_verification' THEN 1 END) as pending_verifications,
-            COUNT(CASE WHEN t.status = 'failed' THEN 1 END) as failed_payments
+            (SELECT COUNT(*) FROM rent_payment_tracker WHERE status = 'pending_verification') as pending_verifications,
+            (SELECT COUNT(*) FROM rent_payment_tracker WHERE status = 'failed') as failed_payments
         FROM rent_payments rp
-        LEFT JOIN rent_payment_tracker t ON rp.rent_payment_id COLLATE utf8mb4_unicode_ci = t.rent_payment_id COLLATE utf8mb4_unicode_ci
-        WHERE rp.status != 'completed'
+        WHERE rp.payment_type = 'rent'
     ";
     
     $result = $conn->query($query);
     
     if (!$result) {
         logActivity("Statistics query error: " . $conn->error);
-        // Return default values instead of failing
         echo json_encode([
             "success" => true,
             "statistics" => [
@@ -521,7 +519,7 @@ function getRentStatistics($conn) {
     
     $stats = $result->fetch_assoc();
     
-    // Monthly collection trend - use direct query without JOIN to avoid collation issues
+    // Monthly collection trend
     $trendQuery = "
         SELECT 
             DATE_FORMAT(payment_date, '%Y-%m') as month,
@@ -557,7 +555,6 @@ function getRentStatistics($conn) {
         ]
     ]);
 }
-
 // Helper functions
 function formatPeriodDisplay($start_date, $end_date) {
     $start = new DateTime($start_date);

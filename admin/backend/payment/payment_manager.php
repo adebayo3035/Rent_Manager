@@ -321,6 +321,7 @@ function fetchSinglePayment($conn) {
                 a.security_deposit,
                 pr.name as property_name,
                 pr.address as property_address,
+                pr.property_code as property_code,
                 CONCAT(u.firstname, ' ', u.lastname) as recorded_by_name
               FROM payments p
               LEFT JOIN tenants t ON p.tenant_code = t.tenant_code

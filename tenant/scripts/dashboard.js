@@ -368,6 +368,83 @@ function renderDashboard() {
                 </div>
             </div>
 
+            <!-- ==================== NEW: RENEWAL SECTION ==================== -->
+            ${dashboardData.can_renew ? `
+            <div class="renewal-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-sync-alt"></i> Lease Renewal</h2>
+                </div>
+                <div class="renewal-card">
+                    <div class="renewal-icon">
+                        <i class="fas fa-calendar-plus"></i>
+                    </div>
+                    <div class="renewal-content">
+                        <h3>Ready for a New Lease Cycle!</h3>
+                        <p>${escapeHtml(dashboardData.renewal_message || 'Your lease has ended. You can start a new lease cycle.')}</p>
+                        
+                        <div class="renewal-details">
+                            <div class="detail-row">
+                                <span class="detail-label">Previous Annual Rent:</span>
+                                <span class="detail-value">₦${formatNumber(dashboardData.annual_rent)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">New Annual Rent:</span>
+                                <span class="detail-value ${dashboardData.new_cycle_rent_amount > dashboardData.annual_rent ? 'text-warning' : 'text-success'}">
+                                    ₦${formatNumber(dashboardData.new_cycle_rent_amount)}
+                                    ${dashboardData.new_cycle_rent_amount > dashboardData.annual_rent ? 
+                                        `<small>(+₦${formatNumber(dashboardData.new_cycle_rent_amount - dashboardData.annual_rent)} increase)</small>` : 
+                                        dashboardData.new_cycle_rent_amount < dashboardData.annual_rent ?
+                                        `<small>(₦${formatNumber(dashboardData.annual_rent - dashboardData.new_cycle_rent_amount)} decrease)</small>` : ''}
+                                </span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Payment Frequency:</span>
+                                <span class="detail-value">${escapeHtml(dashboardData.payment_frequency)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">New Payment per Period:</span>
+                                <span class="detail-value">₦${formatNumber(dashboardData.new_cycle_rent_amount / getPeriodsPerYear(dashboardData.payment_frequency))}</span>
+                            </div>
+                            ${dashboardData.new_cycle_security_deposit ? `
+                            <div class="detail-row">
+                                <span class="detail-label">Security Deposit:</span>
+                                <span class="detail-value">₦${formatNumber(dashboardData.new_cycle_security_deposit)}</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                        
+                        <button class="btn-renewal" onclick="startNewLeaseCycle()">
+                            <i class="fas fa-check-circle"></i> Start New Lease Cycle
+                        </button>
+                        <p class="renewal-note">By starting a new lease cycle, you agree to the new rent amount shown above.</p>
+                    </div>
+                </div>
+            </div>
+            ` : dashboardData.is_lease_fully_paid && !dashboardData.lease_has_ended ? `
+            <div class="renewal-section">
+                <div class="renewal-card info-card">
+                    <div class="renewal-icon">
+                        <i class="fas fa-hourglass-half"></i>
+                    </div>
+                    <div class="renewal-content">
+                        <h3>Lease Fully Paid!</h3>
+                        <p>${escapeHtml(dashboardData.renewal_message || 'Your lease is fully paid but has not ended yet.')}</p>
+                        <div class="renewal-details">
+                            <div class="detail-row">
+                                <span class="detail-label">Lease End Date:</span>
+                                <span class="detail-value">${formatDate(dashboardData.lease_end_date)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Days Remaining:</span>
+                                <span class="detail-value">${dashboardData.days_remaining} days</span>
+                            </div>
+                        </div>
+                        <p class="renewal-note">You can start a new lease cycle on or after ${formatDate(dashboardData.lease_end_date)}.</p>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
             <!-- Quick Actions -->
             <div class="quick-actions">
                 <div class="section-header">
@@ -485,6 +562,88 @@ function closeModal(modalId) {
     }
 }
 
+function showConfirmModal({
+    title = 'Confirm Action',
+    message = 'Are you sure you want to continue?',
+    confirmText = 'Confirm',
+    cancelText = 'Cancel',
+    variant = 'warning'
+}) {
+    return new Promise((resolve) => {
+        let modal = document.getElementById('customConfirmModal');
+
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'customConfirmModal';
+            modal.className = 'custom-confirm-overlay';
+            modal.innerHTML = `
+                <div class="custom-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="customConfirmTitle">
+                    <div class="custom-confirm-icon">
+                        <i class="fas fa-circle-exclamation"></i>
+                    </div>
+                    <div class="custom-confirm-content">
+                        <h3 id="customConfirmTitle"></h3>
+                        <p id="customConfirmMessage"></p>
+                    </div>
+                    <div class="custom-confirm-actions">
+                        <button type="button" class="btn-secondary custom-confirm-cancel">Cancel</button>
+                        <button type="button" class="custom-confirm-ok">Confirm</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        const dialog = modal.querySelector('.custom-confirm-dialog');
+        const icon = modal.querySelector('.custom-confirm-icon i');
+        const titleElement = modal.querySelector('#customConfirmTitle');
+        const messageElement = modal.querySelector('#customConfirmMessage');
+        const confirmButton = modal.querySelector('.custom-confirm-ok');
+        const cancelButton = modal.querySelector('.custom-confirm-cancel');
+
+        const iconMap = {
+            warning: 'fa-circle-exclamation',
+            success: 'fa-circle-check',
+            info: 'fa-circle-info',
+            danger: 'fa-triangle-exclamation'
+        };
+
+        dialog.dataset.variant = variant;
+        icon.className = `fas ${iconMap[variant] || iconMap.warning}`;
+        titleElement.textContent = title;
+        messageElement.innerHTML = escapeHtml(message).replace(/\n/g, '<br>');
+        confirmButton.textContent = confirmText;
+        cancelButton.textContent = cancelText;
+
+        const handleKeydown = (event) => {
+            if (event.key === 'Escape') {
+                cleanup(false);
+            }
+        };
+
+        const cleanup = (result) => {
+            modal.classList.remove('active');
+            confirmButton.onclick = null;
+            cancelButton.onclick = null;
+            modal.onclick = null;
+            document.removeEventListener('keydown', handleKeydown);
+            resolve(result);
+        };
+
+        confirmButton.onclick = () => cleanup(true);
+        cancelButton.onclick = () => cleanup(false);
+        modal.onclick = (event) => {
+            if (event.target === modal) {
+                cleanup(false);
+            }
+        };
+
+        modal.classList.add('active');
+        document.addEventListener('keydown', handleKeydown);
+        confirmButton.focus();
+    });
+}
+
 // ==================== ACTION FUNCTIONS ====================
 function openMaintenanceModal() {
     openModal('maintenanceModal');
@@ -556,6 +715,151 @@ function navigateToPage(page) {
     } else {
         if (window.showToast) {
             window.showToast(`Page "${page}" not found`, 'error');
+        }
+    }
+}
+
+// ==================== RENEWAL FUNCTIONS ====================
+
+function getPeriodsPerYear(frequency) {
+    switch(frequency) {
+        case 'Monthly': return 12;
+        case 'Quarterly': return 4;
+        case 'Semi-Annually': return 2;
+        case 'Annually': return 1;
+        default: return 12;
+    }
+}
+
+async function startNewLeaseCycle() {
+    // Show confirmation dialog
+    const confirmed = confirm(
+        "⚠️ IMPORTANT: Starting a new lease cycle will:\n\n" +
+        "• End your current lease\n" +
+        "• Start a new 12-month lease cycle\n" +
+        "• Apply the new rent amount shown above\n" +
+        "• Create a new payment schedule\n\n" +
+        "Do you want to proceed?"
+    );
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    // Show loading state
+    const renewalBtn = document.querySelector('.btn-renewal');
+    const originalText = renewalBtn?.innerHTML || 'Start New Lease Cycle';
+    if (renewalBtn) {
+        renewalBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        renewalBtn.disabled = true;
+    }
+    
+    try {
+        const response = await fetch('../backend/tenant/initiate_new_lease_cycle.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (window.showToast) {
+                window.showToast(data.data.message, 'success');
+            }
+            
+            // Refresh dashboard to show new cycle
+            await fetchDashboardData();
+            renderDashboard();
+            
+            // Optional: Redirect to payments page to make first payment
+            setTimeout(() => {
+                if (confirm("New lease cycle created! Would you like to make your first payment now?")) {
+                    navigateToPage('payments');
+                }
+            }, 1000);
+        } else {
+            throw new Error(data.message);
+        }
+    } catch (error) {
+        console.error('Error starting new lease cycle:', error);
+        if (window.showToast) {
+            window.showToast(error.message, 'error');
+        }
+    } finally {
+        if (renewalBtn) {
+            renewalBtn.innerHTML = originalText;
+            renewalBtn.disabled = false;
+        }
+    }
+}
+
+async function startNewLeaseCycle() {
+    const confirmed = await showConfirmModal({
+        title: 'Start New Lease Cycle?',
+        message:
+            "IMPORTANT: Starting a new lease cycle will:\n\n" +
+            "• End your current lease\n" +
+            "• Start a new 12-month lease cycle\n" +
+            "• Apply the new rent amount shown above\n" +
+            "• Create a new payment schedule\n\n" +
+            "Do you want to proceed?",
+        confirmText: 'Yes, Proceed',
+        cancelText: 'Not Now',
+        variant: 'warning'
+    });
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    const renewalBtn = document.querySelector('.btn-renewal');
+    const originalText = renewalBtn?.innerHTML || 'Start New Lease Cycle';
+    if (renewalBtn) {
+        renewalBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        renewalBtn.disabled = true;
+    }
+    
+    try {
+        const response = await fetch('../backend/tenant/initiate_new_lease_cycle.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (window.showToast) {
+                window.showToast(data.data.message, 'success');
+            }
+            
+            await fetchDashboardData();
+            renderDashboard();
+            
+            setTimeout(async () => {
+                const goToPayments = await showConfirmModal({
+                    title: 'Lease Cycle Created',
+                    message: 'Your new lease cycle has been created successfully. Would you like to make your first payment now?',
+                    confirmText: 'Go to Payments',
+                    cancelText: 'Later',
+                    variant: 'success'
+                });
+                
+                if (goToPayments) {
+                    navigateToPage('payments');
+                }
+            }, 1000);
+        } else {
+            throw new Error(data.message);
+        }
+    } catch (error) {
+        console.error('Error starting new lease cycle:', error);
+        if (window.showToast) {
+            window.showToast(error.message, 'error');
+        }
+    } finally {
+        if (renewalBtn) {
+            renewalBtn.innerHTML = originalText;
+            renewalBtn.disabled = false;
         }
     }
 }

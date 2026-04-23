@@ -161,7 +161,7 @@ document
           option.value = apartment.apartment_code;
 
           // Create display text
-          let displayText = `Unit ${apartment.apartment_type_unit}`;
+          let displayText = `${apartment.apartment_type_name} Unit ${apartment.apartment_type_unit}`;
           if (apartment.apartment_number) {
             displayText += ` (Apt #${apartment.apartment_number})`;
           }

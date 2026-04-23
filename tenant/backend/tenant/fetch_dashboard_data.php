@@ -497,6 +497,74 @@ try {
     }
     $is_lease_fully_paid = ($remaining_unpaid == 0);
 
+        // ==================== RENEWAL ELIGIBILITY CHECK ====================
+    logActivity("=== RENEWAL ELIGIBILITY CHECK START ===");
+    
+    $can_renew = false;
+    $renewal_message = '';
+    $new_cycle_rent_amount = null;
+    $new_cycle_security_deposit = null;
+    
+    if ($is_lease_fully_paid) {
+        logActivity("Lease is fully paid - checking renewal eligibility");
+        
+        $today_check = new DateTime();
+        $today_check->setTime(0, 0, 0);
+        $lease_end_check = new DateTime($tenantData['lease_end_date']);
+        $lease_end_check->setTime(0, 0, 0);
+        
+        logActivity("Today: " . $today_check->format('Y-m-d'));
+        logActivity("Lease End Date: " . $lease_end_check->format('Y-m-d'));
+        
+        // Check if lease has ended (today >= lease_end_date)
+        // Allow renewal ON the lease end date (May 4)
+        if ($today_check >= $lease_end_check) {
+            logActivity("Lease has ended (today >= lease_end_date)");
+            
+            // Check if there's any pending verification payment (should not allow renewal)
+            if (!$has_pending_verification) {
+                logActivity("No pending verification found - tenant is eligible for renewal");
+                $can_renew = true;
+                
+                // Get current apartment rent (may have been updated by admin)
+                $currentRentQuery = "
+                    SELECT a.rent_amount, a.security_deposit 
+                    FROM apartments a 
+                    WHERE a.apartment_code = ?
+                ";
+                $rentStmt = $conn->prepare($currentRentQuery);
+                $rentStmt->bind_param("s", $tenantData['apartment_code']);
+                $rentStmt->execute();
+                $rentResult = $rentStmt->get_result();
+                if ($rentRow = $rentResult->fetch_assoc()) {
+                    $new_cycle_rent_amount = (float)$rentRow['rent_amount'];
+                    $new_cycle_security_deposit = (float)$rentRow['security_deposit'];
+                    logActivity("Current apartment rent amount: ₦{$new_cycle_rent_amount}");
+                    logActivity("Current security deposit: ₦{$new_cycle_security_deposit}");
+                } else {
+                    logActivity("WARNING: Could not fetch apartment rent amount for code: " . $tenantData['apartment_code']);
+                }
+                $rentStmt->close();
+                
+                $renewal_message = "Your lease has ended. You can start a new lease cycle.";
+                logActivity("Renewal eligibility: YES (can_renew = true)");
+            } else {
+                logActivity("Renewal blocked: Has pending verification payment");
+                $renewal_message = "You have a pending payment verification. Please wait for admin approval before renewing.";
+            }
+        } else {
+            $days_until_end = $today_check->diff($lease_end_check)->days;
+            logActivity("Lease not yet ended - {$days_until_end} days remaining until " . $lease_end_check->format('Y-m-d'));
+            $renewal_message = "Your lease is fully paid but ends on " . $lease_end_check->format('F j, Y') . ". You can renew on or after that date. ($days_until_end days remaining)";
+        }
+    } else {
+        logActivity("Lease is NOT fully paid - renewal not eligible");
+    }
+    
+    logActivity("=== RENEWAL ELIGIBILITY CHECK END ===");
+    logActivity("can_renew: " . ($can_renew ? 'true' : 'false'));
+    logActivity("renewal_message: " . $renewal_message);
+
     // Get recent maintenance requests
     $recentRequestsQuery = "
         SELECT request_id, issue_type, status, created_at, priority
@@ -575,7 +643,12 @@ try {
         'overdue_amount' => $overdue_amount,
         // Lease status
         'is_lease_fully_paid' => $is_lease_fully_paid,
-        'can_make_payment' => !$is_lease_fully_paid && !$has_pending_verification && $has_upcoming_payment
+        'can_make_payment' => !$is_lease_fully_paid && !$has_pending_verification && $has_upcoming_payment,
+         // ==================== NEW: RENEWAL ELIGIBILITY ====================
+        'can_renew' => $can_renew,
+        'renewal_message' => $renewal_message,
+        'new_cycle_rent_amount' => $new_cycle_rent_amount,
+        'new_cycle_security_deposit' => $new_cycle_security_deposit,
     ];
 
     logActivity("=== FETCH DASHBOARD DATA COMPLETED ===");

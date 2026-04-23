@@ -259,6 +259,88 @@ let currentPage = 1;
             currentTrackerId = null;
         }
 
+        function showConfirmModal({
+            title = 'Confirm Action',
+            message = 'Are you sure you want to continue?',
+            confirmText = 'Confirm',
+            cancelText = 'Cancel',
+            variant = 'warning'
+        }) {
+            return new Promise((resolve) => {
+                let modal = document.getElementById('customConfirmModal');
+
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'customConfirmModal';
+                    modal.className = 'custom-confirm-overlay';
+                    modal.innerHTML = `
+                        <div class="custom-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="customConfirmTitle">
+                            <div class="custom-confirm-icon">
+                                <i class="fas fa-circle-exclamation"></i>
+                            </div>
+                            <div class="custom-confirm-content">
+                                <h3 id="customConfirmTitle"></h3>
+                                <p id="customConfirmMessage"></p>
+                            </div>
+                            <div class="custom-confirm-actions">
+                                <button type="button" class="btn btn-outline custom-confirm-cancel">Cancel</button>
+                                <button type="button" class="btn custom-confirm-ok">Confirm</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                }
+
+                const dialog = modal.querySelector('.custom-confirm-dialog');
+                const icon = modal.querySelector('.custom-confirm-icon i');
+                const titleElement = modal.querySelector('#customConfirmTitle');
+                const messageElement = modal.querySelector('#customConfirmMessage');
+                const confirmButton = modal.querySelector('.custom-confirm-ok');
+                const cancelButton = modal.querySelector('.custom-confirm-cancel');
+
+                const iconMap = {
+                    warning: 'fa-circle-exclamation',
+                    success: 'fa-circle-check',
+                    info: 'fa-circle-info',
+                    danger: 'fa-triangle-exclamation'
+                };
+
+                dialog.dataset.variant = variant;
+                icon.className = `fas ${iconMap[variant] || iconMap.warning}`;
+                titleElement.textContent = title;
+                messageElement.textContent = message;
+                confirmButton.textContent = confirmText;
+                cancelButton.textContent = cancelText;
+
+                const handleKeydown = (event) => {
+                    if (event.key === 'Escape') {
+                        cleanup(false);
+                    }
+                };
+
+                const cleanup = (result) => {
+                    modal.classList.remove('active');
+                    confirmButton.onclick = null;
+                    cancelButton.onclick = null;
+                    modal.onclick = null;
+                    document.removeEventListener('keydown', handleKeydown);
+                    resolve(result);
+                };
+
+                confirmButton.onclick = () => cleanup(true);
+                cancelButton.onclick = () => cleanup(false);
+                modal.onclick = (event) => {
+                    if (event.target === modal) {
+                        cleanup(false);
+                    }
+                };
+
+                modal.classList.add('active');
+                document.addEventListener('keydown', handleKeydown);
+                confirmButton.focus();
+            });
+        }
+
         async function processVerification(action) {
             if (!currentTrackerId) {
                 alert('No payment selected');
@@ -268,7 +350,15 @@ let currentPage = 1;
             const notes = document.getElementById('verifyNotes').value;
             const actionText = action === 'approve' ? 'approve' : 'reject';
             
-            if (!confirm(`Are you sure you want to ${actionText} this payment? This action cannot be undone.`)) {
+            const confirmed = await showConfirmModal({
+                title: `${action === 'approve' ? 'Approve' : 'Reject'} Payment?`,
+                message: `Are you sure you want to ${actionText} this payment? This action cannot be undone.`,
+                confirmText: action === 'approve' ? 'Yes, Approve' : 'Yes, Reject',
+                cancelText: 'Cancel',
+                variant: action === 'approve' ? 'success' : 'danger'
+            });
+
+            if (!confirmed) {
                 return;
             }
             

@@ -30,7 +30,7 @@
                 
                 <!-- Fee Types Tab -->
                 <div id="fee-types-tab" class="tab-content active">
-                    <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <div class="section-header">
                         <h2>Fee Types</h2>
                         <button class="btn-primary" onclick="openFeeTypeModal()">
                             <i class="fas fa-plus"></i> Add Fee Type
@@ -45,7 +45,7 @@
                 <div id="property-fees-tab" class="tab-content">
                     <div class="property-selector">
                         <label>Select Property</label>
-                        <select id="propertySelect" class="filter-select" style="width: 300px;">
+                        <select id="propertySelect" class="filter-select">
                             <option value="">Select a property</option>
                         </select>
                     </div>
@@ -56,7 +56,7 @@
                 
                 <!-- Tenant Fees Tab -->
                 <div id="tenant-fees-tab" class="tab-content">
-                    <div class="filters" style="margin-bottom: 20px;">
+                    <div class="filters">
                         <select id="tenantFeeStatusFilter" class="filter-select">
                             <option value="">All Status</option>
                             <option value="pending">Pending</option>

@@ -35,6 +35,7 @@ body {
     background: #f3f4f6;
     color: var(--dark-color);
     line-height: 1.5;
+    overflow-x: hidden;
 }
 
 /* ==================== ADMIN WRAPPER ==================== */
@@ -46,23 +47,29 @@ body {
 /* ==================== ADMIN MAIN CONTENT ==================== */
 .admin-main {
     flex: 1;
-    margin-left: 280px;
+    margin-left: 0;
     transition: all 0.3s ease;
     background: #f3f4f6;
     min-height: 100vh;
+    width: 100%;
 }
 
 /* ==================== FEE MANAGEMENT CONTAINER - CENTRALIZED ==================== */
 .fee-management-container {
-    max-width: 1400px;
+    width: min(100%, 1440px);
     margin: 0 auto;
-    padding: 24px 32px;
+    padding: 28px 32px 40px;
 }
 
 /* ==================== PAGE HEADER ==================== */
 .page-header {
-    margin-bottom: 32px;
+    margin-bottom: 28px;
     text-align: left;
+    background: linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+    border: 1px solid rgba(229, 231, 235, 0.9);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-sm);
+    padding: 28px 30px;
 }
 
 .page-header h1 {
@@ -84,12 +91,15 @@ body {
     margin-bottom: 28px;
     background: white;
     border-radius: var(--radius-lg);
-    padding: 8px 16px;
+    padding: 10px;
     box-shadow: var(--shadow-sm);
-    width: fit-content;
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
 }
 
 .tab-btn {
+    flex: 0 0 auto;
     padding: 10px 24px;
     background: none;
     border: none;
@@ -115,6 +125,7 @@ body {
 .tab-content {
     display: none;
     animation: fadeIn 0.3s ease;
+    min-width: 0;
 }
 
 .tab-content.active {
@@ -140,6 +151,11 @@ body {
     margin-bottom: 24px;
     flex-wrap: wrap;
     gap: 16px;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 18px 20px;
 }
 
 .section-header h2 {
@@ -218,6 +234,7 @@ body {
     grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
     gap: 24px;
     margin-top: 20px;
+    align-items: start;
 }
 
 /* ==================== FEE TYPE CARD ==================== */
@@ -228,6 +245,10 @@ body {
     box-shadow: var(--shadow-sm);
     border: 1px solid var(--border-color);
     transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
 }
 
 .fee-type-card:hover {
@@ -240,15 +261,18 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
     padding-bottom: 12px;
     border-bottom: 2px solid var(--border-color);
+    gap: 12px;
+    min-width: 0;
 }
 
 .fee-type-name {
     font-size: 18px;
     font-weight: 600;
     color: var(--dark-color);
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .fee-type-code {
@@ -261,12 +285,16 @@ body {
 }
 
 .fee-type-details {
-    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
 .fee-detail-row {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
     padding: 10px 0;
     border-bottom: 1px solid #f3f4f6;
 }
@@ -285,6 +313,14 @@ body {
     font-weight: 500;
     color: var(--dark-color);
     font-size: 13px;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.fee-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: auto;
 }
 
 /* ==================== BADGES ==================== */
@@ -333,10 +369,14 @@ body {
 .property-selector {
     background: white;
     border-radius: var(--radius-lg);
-    padding: 20px;
+    padding: 20px 22px;
     margin-bottom: 24px;
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 16px;
 }
 
 .property-selector label {
@@ -366,6 +406,13 @@ body {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+#propertyFeesContent,
+#tenantFeesContent {
+    display: grid;
+    gap: 24px;
+    min-width: 0;
+}
+
 .property-fees-section {
     background: white;
     border-radius: var(--radius-lg);
@@ -388,6 +435,20 @@ body {
     border-bottom: 2px solid var(--border-color);
 }
 
+.fee-summary {
+    background: linear-gradient(135deg, #f8faff 0%, #f3f6ff 100%);
+    border: 1px solid rgba(102, 126, 234, 0.12);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    margin-bottom: 18px;
+}
+
+.fee-summary p {
+    margin: 0;
+    color: var(--gray-color);
+    font-size: 14px;
+}
+
 /* ==================== DATA TABLE ==================== */
 .data-table {
     width: 100%;
@@ -396,6 +457,7 @@ body {
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-sm);
+    table-layout: auto;
 }
 
 .data-table thead {
@@ -425,6 +487,7 @@ body {
 .fee-table {
     width: 100%;
     border-collapse: collapse;
+    min-width: 640px;
 }
 
 .fee-table th,
@@ -476,6 +539,10 @@ body {
     margin-bottom: 0;
 }
 
+.filters input.filter-select {
+    max-width: 260px;
+}
+
 /* ==================== MODAL STYLES ==================== */
 .modal {
     display: none;
@@ -506,6 +573,14 @@ body {
     overflow-y: auto;
     box-shadow: var(--shadow-xl);
     animation: slideUp 0.3s ease;
+}
+
+#configFeesModal .modal-content {
+    width: min(92vw, 980px);
+}
+
+#regenerateResultsModal .modal-content {
+    width: min(92vw, 720px);
 }
 
 @keyframes slideUp {
@@ -656,6 +731,11 @@ body {
     font-size: 14px;
 }
 
+.fee-types-grid > .empty-state,
+#tenantFeesContent > .empty-state {
+    grid-column: 1 / -1;
+}
+
 /* ==================== TOAST NOTIFICATIONS ==================== */
 .toast-notification {
     position: fixed;
@@ -699,6 +779,10 @@ body {
         padding: 20px;
     }
     
+    .admin-main {
+        width: 100%;
+    }
+    
     .fee-types-grid {
         grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
         gap: 20px;
@@ -716,7 +800,6 @@ body {
     
     .tabs {
         width: 100%;
-        overflow-x: auto;
         justify-content: flex-start;
     }
     
@@ -734,6 +817,12 @@ body {
         display: block;
     }
     
+    .fee-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    
     .filters {
         flex-direction: column;
         align-items: stretch;
@@ -741,6 +830,7 @@ body {
     
     .filters .filter-select {
         width: 100%;
+        max-width: 100%;
     }
     
     .modal-content {
@@ -755,6 +845,14 @@ body {
     
     .property-selector .filter-select {
         max-width: 100%;
+    }
+    
+    .property-selector {
+        align-items: stretch;
+    }
+    
+    .results-summary {
+        justify-content: flex-start;
     }
 }
 
@@ -787,6 +885,30 @@ body {
         justify-content: center;
     }
     
+    .page-header,
+    .section-header,
+    .property-selector,
+    .property-fees-section,
+    .filters {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+    
+    .fee-config-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .banner-actions {
+        width: 100%;
+        flex-direction: column;
+    }
+    
+    .btn-regenerate,
+    .btn-dismiss {
+        width: 100%;
+        justify-content: center;
+    }
+    
     .toast-notification {
         left: 16px;
         right: 16px;
@@ -807,6 +929,7 @@ body {
     padding: 15px;
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
+    min-width: 0;
 }
 
 .fee-config-item label {
@@ -843,6 +966,7 @@ body {
 .fee-input-wrapper .amount-input {
     flex: 1;
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    min-width: 0;
 }
 
 .fee-description {
@@ -932,6 +1056,7 @@ body {
 .banner-actions {
     display: flex;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .btn-regenerate {
@@ -990,10 +1115,13 @@ body {
     margin-bottom: 20px;
     display: flex;
     justify-content: space-around;
+    gap: 16px;
+    flex-wrap: wrap;
 }
 
 .summary-stat {
     text-align: center;
+    min-width: 140px;
 }
 
 .stat-label {
@@ -1025,6 +1153,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
     margin-bottom: 10px;
     padding-bottom: 8px;
     border-bottom: 1px solid #e5e7eb;

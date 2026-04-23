@@ -209,7 +209,7 @@ function renderPaymentPage() {
       `}
       
      <div class="payments-table">
-  <h3>Payment History</h3>
+  <h3>Rent Payment History</h3>
   <div style="overflow-x: auto;">
     <table>
       <thead>

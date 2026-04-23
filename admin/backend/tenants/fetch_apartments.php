@@ -84,21 +84,23 @@ if ($propertyCode === '') {
 // ------------------------------
 $sql = "
     SELECT 
-    apartment_code,
-    apartment_number,
-    apartment_type_unit,
-    rent_amount,
-    security_deposit
-FROM apartments
+    a.apartment_code,
+    a.apartment_number,
+    a.apartment_type_unit,
+    a.rent_amount,
+    a.security_deposit,
+    at.type_name AS apartment_type_name
+FROM apartments a
+LEFT JOIN apartment_type at ON a.apartment_type_id = at.type_id
 WHERE 
-    property_code = ?
-    AND status = 1
+    a.property_code = ?
+    AND a.status = 1
     AND (
-        occupancy_status = 'NOT OCCUPIED'
-        OR occupancy_status = ''
-        OR occupancy_status IS NULL
+        a.occupancy_status = 'NOT OCCUPIED'
+        OR a.occupancy_status = ''
+        OR a.occupancy_status IS NULL
     )
-ORDER BY apartment_number ASC
+ORDER BY a.apartment_number ASC
 
 ";
 

@@ -496,7 +496,7 @@ class LoginSecurity
         // Step 1: Validate input
         list($valid, $result, $code) = $this->validateInput($data);
         if (!$valid) {
-            return [$valid, $result, $code];
+            return [$valid, $result, $code, null];
         }
 
         $username = $result['username'];
@@ -505,7 +505,7 @@ class LoginSecurity
         // Step 2: Find user
         list($found, $user, $code) = $this->findUserByCredentials($username);
         if (!$found) {
-            return [$found, $user, $code];
+            return [$found, $user, $code, null];
         }
 
         $userId = $user['unique_id'];
@@ -513,13 +513,13 @@ class LoginSecurity
         // Step 3: Validate account status
         list($active, $message, $code) = $this->validateAccountStatus($user);
         if (!$active) {
-            return [$active, $message, $code];
+            return [$active, $message, $code, null];
         }
 
         // Step 4: Check lockout status
         list($unlocked, $message, $code, $lockoutInfo) = $this->checkLockoutStatus($userId);
         if (!$unlocked) {
-            return [$unlocked, $message, $code];
+            return [$unlocked, $message, $code, $lockoutInfo ?? null];
         }
 
         // Step 5: Verify password
@@ -537,7 +537,7 @@ class LoginSecurity
         // Step 7: Create new session
         if (!$this->createNewSession($user)) {
             logActivity("Session creation failed for user: {$userId}");
-            return [false, "Session creation failed", 500];
+            return [false, "Session creation failed", 500, null];
         }
 
         $this->log("Login successful for user: {$userId}");

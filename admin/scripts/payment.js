@@ -361,6 +361,88 @@ function closeViewPaymentModal() {
     if (modal) modal.style.display = "none";
 }
 
+function showConfirmModal({
+    title = "Confirm Action",
+    message = "Are you sure you want to continue?",
+    confirmText = "Confirm",
+    cancelText = "Cancel",
+    variant = "warning"
+}) {
+    return new Promise((resolve) => {
+        let modal = document.getElementById("customConfirmModal");
+
+        if (!modal) {
+            modal = document.createElement("div");
+            modal.id = "customConfirmModal";
+            modal.className = "custom-confirm-overlay";
+            modal.innerHTML = `
+                <div class="custom-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="customConfirmTitle">
+                    <div class="custom-confirm-icon">
+                        <i class="fas fa-circle-exclamation"></i>
+                    </div>
+                    <div class="custom-confirm-content">
+                        <h3 id="customConfirmTitle"></h3>
+                        <p id="customConfirmMessage"></p>
+                    </div>
+                    <div class="custom-confirm-actions">
+                        <button type="button" class="btn btn-outline custom-confirm-cancel">Cancel</button>
+                        <button type="button" class="btn custom-confirm-ok">Confirm</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        const dialog = modal.querySelector(".custom-confirm-dialog");
+        const icon = modal.querySelector(".custom-confirm-icon i");
+        const titleElement = modal.querySelector("#customConfirmTitle");
+        const messageElement = modal.querySelector("#customConfirmMessage");
+        const confirmButton = modal.querySelector(".custom-confirm-ok");
+        const cancelButton = modal.querySelector(".custom-confirm-cancel");
+
+        const iconMap = {
+            warning: "fa-circle-exclamation",
+            success: "fa-circle-check",
+            info: "fa-circle-info",
+            danger: "fa-triangle-exclamation"
+        };
+
+        dialog.dataset.variant = variant;
+        icon.className = `fas ${iconMap[variant] || iconMap.warning}`;
+        titleElement.textContent = title;
+        messageElement.textContent = message;
+        confirmButton.textContent = confirmText;
+        cancelButton.textContent = cancelText;
+
+        const handleKeydown = (event) => {
+            if (event.key === "Escape") {
+                cleanup(false);
+            }
+        };
+
+        const cleanup = (result) => {
+            modal.classList.remove("active");
+            confirmButton.onclick = null;
+            cancelButton.onclick = null;
+            modal.onclick = null;
+            document.removeEventListener("keydown", handleKeydown);
+            resolve(result);
+        };
+
+        confirmButton.onclick = () => cleanup(true);
+        cancelButton.onclick = () => cleanup(false);
+        modal.onclick = (event) => {
+            if (event.target === modal) {
+                cleanup(false);
+            }
+        };
+
+        modal.classList.add("active");
+        document.addEventListener("keydown", handleKeydown);
+        confirmButton.focus();
+    });
+}
+
 // Load tenants for quick payment (using tenant_code as string)
 async function loadQuickTenants() {
     try {
@@ -673,9 +755,15 @@ async function confirmStatusUpdate() {
         return;
     }
     
-    // Confirm with user
     const confirmMessage = `Are you sure you want to change the payment status from ${window.currentViewingPaymentStatus.toUpperCase()} to ${newStatus.toUpperCase()}?`;
-    if (!confirm(confirmMessage)) return;
+    const confirmed = await showConfirmModal({
+        title: "Update Payment Status?",
+        message: confirmMessage,
+        confirmText: "Yes, Update",
+        cancelText: "Cancel",
+        variant: "warning"
+    });
+    if (!confirmed) return;
     
     // Show loading state
     const confirmBtn = document.querySelector('#statusUpdateModal .btn-primary');
@@ -715,7 +803,15 @@ async function confirmStatusUpdate() {
 }
 // Delete payment
 async function deletePayment(paymentId) {
-    if (!confirm("Are you sure you want to delete this payment? This action cannot be undone.")) {
+    const confirmed = await showConfirmModal({
+        title: "Delete Payment?",
+        message: "Are you sure you want to delete this payment? This action cannot be undone.",
+        confirmText: "Yes, Delete",
+        cancelText: "Keep Payment",
+        variant: "danger"
+    });
+
+    if (!confirmed) {
         return;
     }
 
