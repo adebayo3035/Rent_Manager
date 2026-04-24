@@ -90,6 +90,9 @@
                             <a href="account_management.php" class="dropdown-item">
                                 <i class="fas fa-history"></i> Account Management
                             </a>
+                            <a href="evacuation_requests.php" class="dropdown-item">
+                                <i class="fas fa-delete"></i> Tenant Evacuation Portal
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -239,6 +242,9 @@
                                 </a>
                                 <a href="account_management.php" class="mobile-nav-link sub">
                                     <i class="fas fa-history"></i> Account Management
+                                </a>
+                                <a href="evacuation_requests.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-delete"></i> Tenant Evacuation Portal
                                 </a>
                             </div>
                         </div>

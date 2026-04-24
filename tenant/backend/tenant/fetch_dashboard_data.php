@@ -582,6 +582,41 @@ try {
     }
     $stmt->close();
 
+
+    //Tenant evacuation checks
+
+    // Check if tenant can request evacuation
+$can_request_evacuation = true;
+$evacuation_block_reason = null;
+
+// Check for pending payments
+$pendingPaymentQuery = "SELECT COUNT(*) as count FROM rent_payment_tracker 
+                        WHERE tenant_code = ? AND status = 'pending_verification'";
+$pendingStmt = $conn->prepare($pendingPaymentQuery);
+$pendingStmt->bind_param("s", $tenant_code);
+$pendingStmt->execute();
+$pendingCount = $pendingStmt->get_result()->fetch_assoc()['count'];
+$pendingStmt->close();
+
+if ($pendingCount > 0) {
+    $can_request_evacuation = false;
+    $evacuation_block_reason = "You have a pending payment waiting for verification.";
+}
+
+// Check for existing evacuation request
+$existingRequestQuery = "SELECT COUNT(*) as count FROM evacuation_requests 
+                         WHERE tenant_code = ? AND status IN ('pending_review', 'approved')";
+$existingStmt = $conn->prepare($existingRequestQuery);
+$existingStmt->bind_param("s", $tenant_code);
+$existingStmt->execute();
+$existingCount = $existingStmt->get_result()->fetch_assoc()['count'];
+$existingStmt->close();
+
+if ($existingCount > 0) {
+    $can_request_evacuation = false;
+    $evacuation_block_reason = "You already have a pending or approved evacuation request.";
+}
+
     $conn->close();
 
     // Prepare dashboard data
@@ -649,6 +684,11 @@ try {
         'renewal_message' => $renewal_message,
         'new_cycle_rent_amount' => $new_cycle_rent_amount,
         'new_cycle_security_deposit' => $new_cycle_security_deposit,
+
+        // ====================== fetch evacuation status =================
+        // Add to dashboardData
+        'can_request_evacuation' => $can_request_evacuation,
+        'evacuation_block_reason' => $evacuation_block_reason
     ];
 
     logActivity("=== FETCH DASHBOARD DATA COMPLETED ===");

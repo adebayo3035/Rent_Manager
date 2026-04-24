@@ -76,7 +76,7 @@ function renderApartmentDetails() {
     if(leaseInfo.payment_frequency == "Annually"){
         rent_fee = (leaseInfo.rent_amount/12)
     }else if (leaseInfo.payment_frequency == "Quarterly"){
-        rent_fee = leaseInfo.rent_amount/3
+        rent_fee = leaseInfo.rent_amount/4
     }else if(leaseInfo.payment_frequency == "Semi-Annually"){
         rent_fee = leaseInfo.rent_amount/6
     }

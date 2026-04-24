@@ -63,32 +63,37 @@ try {
     $status = isset($input['status']) ? (int) $input['status'] : null;
     $action_type = isset($input['action_type']) ? trim($input['action_type']) : 'update_all';
     
+    $rent_amount = 0.00;
+    $security_deposit = 0.00;
+
     // ================= SANITIZE NUMBER FIELDS WITH COMMAS =================
-    try {
-        $rent_amount = sanitizeNumberWithCommas(
-            $input['rent_amount'] ?? null,
-            false, // required
-            MIN_RENT_AMOUNT,
-            MAX_RENT_AMOUNT
-        );
-        
-        $security_deposit = sanitizeNumberWithCommas(
-            $input['security_deposit'] ?? null,
-            true, // allow null/empty
-            MIN_SECURITY_DEPOSIT,
-            MAX_SECURITY_DEPOSIT
-        );
-        
-        // If security deposit is null (not provided), set to 0
-        if ($security_deposit === null) {
-            $security_deposit = 0.00;
+    if ($action_type === 'update_all') {
+        try {
+            $rent_amount = sanitizeNumberWithCommas(
+                $input['rent_amount'] ?? null,
+                false, // required
+                MIN_RENT_AMOUNT,
+                MAX_RENT_AMOUNT
+            );
+            
+            $security_deposit = sanitizeNumberWithCommas(
+                $input['security_deposit'] ?? null,
+                true, // allow null/empty
+                MIN_SECURITY_DEPOSIT,
+                MAX_SECURITY_DEPOSIT
+            );
+            
+            // If security deposit is null (not provided), set to 0
+            if ($security_deposit === null) {
+                $security_deposit = 0.00;
+            }
+            
+            logActivity("Sanitized amounts - Rent: {$rent_amount}, Deposit: {$security_deposit}");
+            
+        } catch (Exception $e) {
+            logActivity("Number validation error: " . $e->getMessage());
+            json_error($e->getMessage(), 400);
         }
-        
-        logActivity("Sanitized amounts - Rent: {$rent_amount}, Deposit: {$security_deposit}");
-        
-    } catch (Exception $e) {
-        logActivity("Number validation error: " . $e->getMessage());
-        json_error($e->getMessage(), 400);
     }
 
     // ================= BASIC VALIDATION =================

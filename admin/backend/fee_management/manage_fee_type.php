@@ -3,7 +3,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
-
+session_start();
 try {
     // Check authentication and admin role
     if (!isset($_SESSION['unique_id'])) {

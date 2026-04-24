@@ -51,13 +51,21 @@ const UI = {
     // };
     document.getElementById("confirmOkBtn").onclick = () => {
       modal.style.display = "none";
-      if (typeof onConfirm === "function") onConfirm(true); // Pass true
+      if (typeof onConfirm === "function") {
+        if (onConfirm.length > 0) {
+          onConfirm(true);
+        } else {
+          onConfirm();
+        }
+      }
     };
 
-    // Also update cancel button to pass false if needed:
     document.getElementById("confirmCancelBtn").onclick = () => {
       modal.style.display = "none";
-      if (typeof onConfirm === "function") onConfirm(false); // Pass false
+      // Only notify cancel-aware callbacks that explicitly accept a result.
+      if (typeof onConfirm === "function" && onConfirm.length > 0) {
+        onConfirm(false);
+      }
     };
   },
 

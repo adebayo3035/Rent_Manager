@@ -407,6 +407,30 @@ function statusUpdate($conn, $tenant_code, $new_status, $adminId, $adminRole, $a
         logActivity("UNAUTHORIZED $action attempt by Admin=$adminId");
         json_error("You do not have permission to modify status.", 403);
     }
+    $evacuation_status = "";
+    $move_out_date = "";
+
+    if ($action === "restore") {
+        $restoreCheck = $conn->prepare("
+            SELECT evacuation_status, move_out_date
+            FROM tenants
+            WHERE tenant_code = ?
+            LIMIT 1
+        ");
+        $restoreCheck->bind_param("s", $tenant_code);
+        $restoreCheck->execute();
+        $restoreCheck->bind_result($evacuation_status, $move_out_date);
+        $restoreCheck->fetch();
+        $restoreCheck->close();
+
+        if (
+            ($evacuation_status !== null && strtolower((string)$evacuation_status) === 'evacuated') ||
+            !empty($move_out_date)
+        ) {
+            logActivity("RESTORE BLOCKED: Tenant {$tenant_code} has already been evacuated | evacuation_status={$evacuation_status} | move_out_date={$move_out_date}");
+            json_error("This tenant has already been evacuated from the apartment and cannot be restored.", 400);
+        }
+    }
 
     // If deactivating tenant (delete), clear the apartment
     if ($action === "delete" && !empty($current_apartment_code)) {
