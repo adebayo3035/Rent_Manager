@@ -140,6 +140,46 @@
             </div>
         </div>
     </div>
+
+    <!-- View Tenant Fee Modal -->
+<div id="viewTenantFeeModal" class="modal" onclick="closeModalOnOutsideClick(event, 'viewTenantFeeModal')">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3><i class="fas fa-receipt"></i> Fee Details</h3>
+            <button class="modal-close" onclick="closeViewTenantFeeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="tenantFeeDetails"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeViewTenantFeeModal()">Close</button>
+            <button class="btn-primary" id="markPaidBtn" onclick="markFeeAsPaidFromModal()" style="display: none;">
+                <i class="fas fa-check-circle"></i> Mark as Paid
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Custom Confirmation Modal -->
+<div id="customConfirmModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 450px;">
+        <div class="modal-header">
+            <div class="confirm-icon" id="confirmIcon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <button class="modal-close" onclick="closeCustomConfirmModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="confirmMessage">Are you sure you want to proceed?</p>
+            <div id="confirmDetails" class="confirm-details" style="display: none;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" id="confirmCancelBtn">Cancel</button>
+            <button class="btn-primary" id="confirmOkBtn">Confirm</button>
+        </div>
+    </div>
+</div>
     
     <script src = "../scripts/fee_management.js"> </script>
 </body>
