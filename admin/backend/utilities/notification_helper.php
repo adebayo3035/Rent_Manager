@@ -123,11 +123,6 @@ function createMaintenanceNotification($conn, $tenant_code, $request_id, $issue_
             $message = "Your maintenance request for '{$issue_type}' has been submitted successfully.";
             $priority = 'medium';
             break;
-        case 'cancelled':
-            $title = 'Maintenance Request Cancelled';
-            $message = "You Cancelled your Maintenance request for '{$issue_type}'.";
-            $priority = 'medium';
-            break;
         case 'in_progress':
             $title = 'Maintenance Request In Progress';
             $message = "Your maintenance request for '{$issue_type}' is now being processed.";

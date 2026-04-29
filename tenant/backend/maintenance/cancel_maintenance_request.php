@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 session_start();
 
@@ -39,7 +40,7 @@ try {
 
     // Verify the request belongs to this tenant and is cancellable
     $checkQuery = "
-        SELECT request_id, status 
+        SELECT request_id, status, issue_type 
         FROM maintenance_requests 
         WHERE request_id = ? AND tenant_code = ?
         LIMIT 1
@@ -59,6 +60,7 @@ try {
     if ($request['status'] !== 'pending') {
         json_error("Only pending requests can be cancelled. Current status: " . $request['status'], 400);
     }
+    $issue_type = $request['issue_type'];
 
     // Update request status to cancelled
     $updateQuery = "
@@ -79,6 +81,8 @@ try {
     $stmt->close();
 
     logActivity("Maintenance request cancelled | Request ID: $request_id | Tenant: $tenant_code | Reason: $cancel_reason");
+    createMaintenanceNotification($conn, $tenant_code, $request_id, $issue_type, 'cancelled');
+
 
     json_success([
         'request_id' => $request_id,

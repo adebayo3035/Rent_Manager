@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 session_start();
 
@@ -101,6 +102,8 @@ try {
 
     // Log activity
     logActivity("Maintenance request created | Tenant: $tenant_code | Request ID: $request_id | Priority: $priority");
+
+    createMaintenanceNotification($conn, $tenant_code, $request_id, $issue_type, 'submitted');
 
     $responseData = [
         'request_id' => $request_id,
