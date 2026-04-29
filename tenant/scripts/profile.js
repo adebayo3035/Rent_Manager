@@ -180,6 +180,10 @@ function renderSecurityTab() {
                 <label>Confirm New Password *</label>
                 <input type="password" id="confirmPassword" required oninput="validatePasswordMatch()">
             </div>
+            <div class="form-group">
+                <label>Secret Answer *</label>
+                <input type="password" id="secretAnswer" required">
+            </div>
             
             <div class="password-requirements">
                 <strong>Password Requirements:</strong>
@@ -268,7 +272,7 @@ async function updateProfile() {
     const gender = document.getElementById("gender")?.value;
 
     if (!firstname || !lastname || !email || !phone) {
-        showToast("Please fill in all required fields", "error");
+        displayMessage("Please fill in all required fields", "error");
         return;
     }
 
@@ -286,7 +290,7 @@ async function updateProfile() {
         const data = await response.json();
 
         if (data.success) {
-            showToast("Profile updated successfully", "success");
+            displayMessage("Profile updated successfully", "success");
             
             if (currentUser) {
                 currentUser.firstname = firstname;
@@ -303,7 +307,7 @@ async function updateProfile() {
         }
     } catch (error) {
         console.error("Error updating profile:", error);
-        showToast(error.message, "error");
+        displayMessage(error.message, "error");
         btn.innerHTML = originalText;
         btn.disabled = false;
     }
@@ -350,19 +354,20 @@ async function changePassword() {
     const currentPassword = document.getElementById("currentPassword")?.value;
     const newPassword = document.getElementById("newPassword")?.value;
     const confirmPassword = document.getElementById("confirmPassword")?.value;
+    const secretAnswer = document.getElementById('secretAnswer')?.value;
 
-    if (!currentPassword || !newPassword || !confirmPassword) {
-        showToast("Please fill in all fields", "error");
+    if (!currentPassword || !newPassword || !confirmPassword || !secretAnswer) {
+        displayMessage("Please fill in all fields", "error");
         return;
     }
 
     if (newPassword !== confirmPassword) {
-        showToast("New passwords do not match", "error");
+        displayMessage("New passwords do not match", "error");
         return;
     }
 
     if (!isPasswordValid()) {
-        showToast("Please meet all password requirements", "error");
+        displayMessage("Please meet all password requirements", "error");
         return;
     }
 
@@ -372,31 +377,131 @@ async function changePassword() {
     btn.disabled = true;
 
     try {
-        const response = await fetch("../backend/tenant/change_password.php", {
+        // Step 1: Change password
+        const response = await fetch("../backend/authentication/change_password.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 current_password: currentPassword,
                 new_password: newPassword,
+                secret_answer: secretAnswer,
             }),
         });
         const data = await response.json();
+        
+        console.log("Change password response:", data); // Debug log
 
         if (data.success) {
-            showToast("Password changed successfully", "success");
-            document.getElementById("passwordForm")?.reset();
-            resetPasswordValidation();
+            displayMessage(data.message || "Password changed successfully!", "success");
+            
+            // Step 2: Call logout endpoint with tenant_code from response
+            // Check different possible response structures
+            const tenantCode = data.data?.tenant_code || data.tenant_code;
+            const requireLogout = data.data?.require_logout || data.require_logout;
+            
+            console.log("Tenant code for logout:", tenantCode); // Debug log
+            
+            if (requireLogout && tenantCode) {
+                await callLogoutEndpoint(tenantCode);
+            } else {
+                console.warn("Logout not required or tenant code missing");
+                // Fallback: clear local session data
+                clearLocalSession();
+            }
+            
+            // Step 3: Redirect to login page
+            const redirectUrl = data.data?.redirect_url || data.redirect_url || '../login.php';
+            setTimeout(() => {
+                window.location.href = redirectUrl;
+            }, 2000);
         } else {
             throw new Error(data.message || "Password change failed");
         }
     } catch (error) {
         console.error("Error changing password:", error);
-        showToast(error.message, "error");
+        displayMessage(error.message, "error");
     } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
     }
 }
+
+// Helper function to call logout endpoint
+async function callLogoutEndpoint(tenant_code) {
+    console.log("Calling logout endpoint for tenant:", tenant_code);
+    
+    try {
+        const logoutResponse = await fetch("../backend/authentication/logout.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ logout_id: tenant_code }),
+        });
+        const logoutData = await logoutResponse.json();
+        
+        console.log("Logout response:", logoutData);
+        
+        if (logoutData.success) {
+            console.log("Logout successful");
+            // Clear any stored user data in localStorage/sessionStorage
+            clearLocalSession();
+            // Call this after successful logout
+            preventBackButtonAccess();
+        } else {
+            console.warn("Logout failed:", logoutData.message);
+            // Still try to clear local session even if logout API fails
+            clearLocalSession();
+        }
+    } catch (error) {
+        console.error("Error calling logout:", error);
+        // Still try to clear local session
+        clearLocalSession();
+    }
+}
+
+// Helper function to clear local session data
+function clearLocalSession() {
+    // Clear any stored user data
+    window.currentUser = null;
+    
+    // Clear localStorage if you're using it
+    localStorage.removeItem('userData');
+    localStorage.removeItem('userPreferences');
+    
+    // Clear sessionStorage if you're using it
+    sessionStorage.clear();
+    
+    console.log("Local session cleared");
+}
+
+// Helper function to call logout endpoint
+async function callLogoutEndpoint(tenant_code) {
+    try {
+        const logoutResponse = await fetch("../backend/authentication/logout.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ logout_id: tenant_code }),
+        });
+        const logoutData = await logoutResponse.json();
+        
+        if (logoutData.success) {
+            console.log("Logout successful");
+        } else {
+            console.warn("Logout failed:", logoutData.message);
+        }
+    } catch (error) {
+        console.error("Error calling logout:", error);
+    }
+}
+// Add this to your logout function to prevent back button access
+function preventBackButtonAccess() {
+    // Push a new state to history to prevent back button
+    history.pushState(null, null, location.href);
+    window.addEventListener('popstate', function () {
+        history.pushState(null, null, location.href);
+        window.location.href = '../login.php';
+    });
+}
+
 
 function resetPasswordValidation() {
     passwordValidation = { length: false, upper: false, lower: false, number: false, match: false };
@@ -410,17 +515,17 @@ async function setSecretAnswer() {
     const confirmAnswer = document.getElementById("confirmAnswer")?.value;
 
     if (!secretQuestion || !secretAnswer || !confirmAnswer) {
-        showToast("Please fill in all fields", "error");
+        displayMessage("Please fill in all fields", "error");
         return;
     }
 
     if (secretAnswer !== confirmAnswer) {
-        showToast("Secret answers do not match", "error");
+        displayMessage("Secret answers do not match", "error");
         return;
     }
 
     if (secretAnswer.length < 8) {
-        showToast("Secret answer must be at least 8 characters", "error");
+        displayMessage("Secret answer must be at least 8 characters", "error");
         return;
     }
 
@@ -430,7 +535,7 @@ async function setSecretAnswer() {
     btn.disabled = true;
 
     try {
-        const response = await fetch("../backend/tenant/set_secret_question.php", {
+        const response = await fetch("../backend/authentication/set_secret_question_answer.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -441,7 +546,7 @@ async function setSecretAnswer() {
         const data = await response.json();
 
         if (data.success) {
-            showToast(data.message || "Secret question set successfully", "success");
+            displayMessage(data.message || "Secret question set successfully", "success");
             
             if (currentUser) {
                 currentUser.has_secret_set = 1;
@@ -454,21 +559,28 @@ async function setSecretAnswer() {
         }
     } catch (error) {
         console.error("Error setting secret question:", error);
-        showToast(error.message, "error");
+        displayMessage(error.message, "error");
         btn.innerHTML = originalText;
         btn.disabled = false;
     }
 }
 
 // ==================== UTILITY FUNCTIONS ====================
-function showToast(message, type = "info") {
-    if (window.showToast) {
+// Replace the displayMessage function with this:
+function displayMessage(message, type = "info") {
+    if (window.showToast && typeof window.showToast === 'function') {
         window.showToast(message, type);
     } else {
-        alert(message);
+        // Simple fallback
+        const icons = {
+            success: '✅',
+            error: '❌',
+            warning: '⚠️',
+            info: 'ℹ️'
+        };
+        alert(`${icons[type] || 'ℹ️'} ${message}`);
     }
 }
-
 function escapeHtml(text) {
     if (!text) return "";
     const div = document.createElement("div");

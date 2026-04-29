@@ -63,6 +63,10 @@
                     <i class="fas fa-cog"></i>
                     <span>Settings</span>
                 </a>
+                <a href="notifications.php" class="nav-item" data-page="notifications">
+                    <i class="fas fa-bell"></i>
+                    <span>Notifications</span>
+                </a>
                 <a href="#" class="nav-item" id="logoutBtn">
                     <i class="fas fa-sign-out-alt"></i>
                     <span>Logout</span>

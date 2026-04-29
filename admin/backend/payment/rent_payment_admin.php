@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../../../tenant/backend/utilities/notification_helper.php';
 session_start();
 
 header('Content-Type: application/json');
@@ -83,7 +84,8 @@ function fetchPendingVerifications($conn) {
             p.property_code,
             rp.amount as annual_rent,
             rp.amount_paid as total_paid,
-            rp.balance as remaining_balance
+            rp.balance as remaining_balance,
+            rp.receipt_number
         FROM rent_payment_tracker t
         JOIN tenants ten ON t.tenant_code COLLATE utf8mb4_unicode_ci = ten.tenant_code COLLATE utf8mb4_unicode_ci
         JOIN apartments a ON t.apartment_code COLLATE utf8mb4_unicode_ci = a.apartment_code COLLATE utf8mb4_unicode_ci
@@ -108,6 +110,7 @@ function fetchPendingVerifications($conn) {
         $row['amount_formatted'] = '₦' . number_format($row['amount_paid'], 2);
         $row['payment_date_formatted'] = $row['payment_date'] ? date('M d, Y H:i', strtotime($row['payment_date'])) : 'N/A';
         $row['created_at_formatted'] = date('M d, Y H:i', strtotime($row['created_at']));
+        $receipt_number = $row['receipt_number'];
         $payments[] = $row;
     }
     
@@ -282,6 +285,7 @@ function verifyPayment($conn, $adminId) {
                 t.payment_id,
                 r.balance as rent_payment_balance,
                 r.amount as annual_rent,
+                r.receipt_number,
                 ten.tenant_code,
                 ten.lease_end_date,
                 ten.temp_lease_end_date
@@ -306,6 +310,7 @@ function verifyPayment($conn, $adminId) {
         
         $periodAmount = (float)$tracker['amount_paid'];
         $periodEndDate = $tracker['end_date'];
+        $receipt_number = $tracker['receipt_number'];
         $newStatus = ($action === 'approve') ? 'paid' : 'failed';
         
         logActivity("Processing payment - Period #{$tracker['period_number']}, Action: $action, New Status: $newStatus");
@@ -381,21 +386,13 @@ function verifyPayment($conn, $adminId) {
                 
                 logActivity("All periods completed for rent_payment_id: {$tracker['rent_payment_id']}");
             }
+             createPaymentNotification($conn, $tracker['tenant_code'], $periodAmount, 'approved', $tracker['period_number'], $receipt_number);
+        }
+        else if($action = "reject"){
+            createPaymentNotification($conn, $tracker['tenant_code'], $periodAmount, 'rejected', $tracker['period_number'], $receipt_number);
         }
         
-        // // Update payments table if linked
-        // if ($tracker['payment_id']) {
-        //     $paymentStatus = ($action === 'approve') ? 'completed' : 'failed';
-        //     $updatePaymentQuery = "
-        //         UPDATE payments 
-        //         SET payment_status = ?, updated_at = NOW()
-        //         WHERE id = ?
-        //     ";
-        //     $updatePaymentStmt = $conn->prepare($updatePaymentQuery);
-        //     $updatePaymentStmt->bind_param("si", $paymentStatus, $tracker['payment_id']);
-        //     $updatePaymentStmt->execute();
-        //     $updatePaymentStmt->close();
-        // }
+       
         
         $conn->commit();
         

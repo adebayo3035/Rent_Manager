@@ -10,10 +10,16 @@ let navbarUserPromise = null;
 const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 const WARNING_TIMEOUT = 2 * 60 * 1000; // 2 minutes warning
 
+// ==================== NOTIFICATION BADGE VARIABLES ====================
+let notificationRefreshInterval = null;
+
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', async function() {
     // Initialize in correct order
     await initializeApp();
+    
+    // Initialize notification badge (silent, no toast)
+    initNotificationBadge();
 });
 
 async function initializeApp() {
@@ -80,11 +86,11 @@ function setupEventListeners() {
         logoutBtn.addEventListener('click', handleLogoutClick);
     }
     
-    // Notifications button
+    // Notifications button - NOW shows toast when clicked
     const notifBtn = document.getElementById('notificationsBtn');
     if (notifBtn) {
-        notifBtn.removeEventListener('click', fetchNotifications);
-        notifBtn.addEventListener('click', fetchNotifications);
+        notifBtn.removeEventListener('click', fetchNotificationsWithToast);
+        notifBtn.addEventListener('click', fetchNotificationsWithToast);
     }
     
     // Set active nav item based on current page
@@ -96,6 +102,105 @@ function setupEventListeners() {
             item.classList.remove('active');
         }
     });
+}
+
+// ==================== NOTIFICATION BADGE FUNCTIONS (NEW) ====================
+
+// Silent update - only updates badge count, NO toast
+async function updateNotificationBadge() {
+    try {
+        // Only fetch if user is logged in
+        if (!navbarCurrentUser && !window.currentUser) {
+            console.log("No user logged in, skipping notification badge update");
+            return;
+        }
+        
+        const response = await fetch('../backend/tenant/fetch_notifications.php?limit=1');
+        const data = await response.json();
+        
+        if (data.success) {
+            const count = data.data?.unread_count || data.data.unread_count || 0;
+            const badge = document.getElementById('notificationBadge');
+            
+            if (badge) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.style.display = count > 0 ? 'flex' : 'none';
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching notification count:', error);
+    }
+}
+
+// Fetch notifications with toast - ONLY when bell is clicked
+async function fetchNotificationsWithToast() {
+    try {
+        const response = await fetch('../backend/tenant/fetch_notifications.php');
+        const data = await response.json();
+        
+        if (data.success) {
+            const count = data.data?.unread_count || data.data.unread_count || 0;
+            const badge = document.getElementById('notificationBadge');
+            
+            if (badge) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.style.display = count > 0 ? 'flex' : 'none';
+            }
+            
+            // Show toast ONLY when bell is clicked
+            if (count > 0) {
+                showToast(`You have ${count} unread notification${count > 1 ? 's' : ''}`, 'info');
+            } else {
+                showToast('No new notifications', 'info');
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        showToast('Failed to load notifications', 'error');
+    }
+}
+
+// Initialize notification badge on page load (silent, no toast)
+async function initNotificationBadge() {
+    // Wait for user data to be loaded
+    if (navbarCurrentUser || window.currentUser) {
+        await updateNotificationBadge();
+        startNotificationRefresh();
+    } else {
+        // Listen for user data loaded event
+        window.addEventListener('userDataLoaded', async function() {
+            await updateNotificationBadge();
+            startNotificationRefresh();
+        });
+        
+        // Also try after a short delay
+        setTimeout(async () => {
+            if (navbarCurrentUser || window.currentUser) {
+                await updateNotificationBadge();
+                startNotificationRefresh();
+            }
+        }, 1000);
+    }
+}
+
+// Start periodic refresh of notification badge (every 30 seconds, silent)
+function startNotificationRefresh() {
+    if (notificationRefreshInterval) {
+        clearInterval(notificationRefreshInterval);
+    }
+    
+    notificationRefreshInterval = setInterval(() => {
+        if (navbarCurrentUser || window.currentUser) {
+            updateNotificationBadge(); // Silent update, no toast
+        }
+    }, 30000); // Refresh every 30 seconds
+}
+
+function stopNotificationRefresh() {
+    if (notificationRefreshInterval) {
+        clearInterval(notificationRefreshInterval);
+        notificationRefreshInterval = null;
+    }
 }
 
 // Wrapper function for logout to ensure currentUser is available
@@ -283,6 +388,9 @@ async function handleLogout() {
     
     console.log('Logging out user:', navbarCurrentUser.tenant_code);
     
+    // Stop notification refresh on logout
+    stopNotificationRefresh();
+    
     // Remove any existing dialog
     const existingDialog = document.getElementById('customConfirmDialog');
     if (existingDialog) {
@@ -434,6 +542,9 @@ function showInactivityWarning() {
 }
 
 async function performAutoLogout() {
+    // Stop notification refresh on auto-logout
+    stopNotificationRefresh();
+    
     if (!navbarCurrentUser) {
         window.location.href = '../pages/index.php';
         return;
@@ -513,25 +624,6 @@ function showConfirmationDialog(title, message, onConfirm, onCancel) {
         closeDialog();
         if (onCancel) onCancel();
     };
-}
-
-// ==================== NOTIFICATIONS ====================
-async function fetchNotifications() {
-    try {
-        const response = await fetch('../backend/tenant/fetch_notifications.php');
-        const data = await response.json();
-        if (data.success) {
-            const count = data.data?.unread_count || data.unread_count || 0;
-            const badge = document.getElementById('notificationBadge');
-            if (badge) {
-                badge.textContent = count;
-                badge.style.display = count > 0 ? 'flex' : 'none';
-            }
-            showToast(`You have ${count} unread notifications`, 'info');
-        }
-    } catch (error) {
-        console.error('Error fetching notifications:', error);
-    }
 }
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -721,9 +813,8 @@ async function submitForcePasswordChange() {
 // Make functions globally available
 window.currentUser = window.currentUser || null;
 window.fetchNavbarUserData = fetchNavbarUserData;
-window.updateNavbarUserInfo = updateUserInfo;
+window.updateUserInfo = updateUserInfo;
 window.showToast = showToast;
-window.fetchNotifications = fetchNotifications;
 window.handleLogout = handleLogout;
 window.validateForcePasswordStrength = validateForcePasswordStrength;
 window.submitForcePasswordChange = submitForcePasswordChange;

@@ -396,6 +396,124 @@
     display: flex;
 }
 
+/* Delete confirmation modal */
+/* Simple Custom Confirm Modal */
+.simple-confirm-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.simple-confirm-modal {
+    background: white;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 380px;
+    overflow: hidden;
+    animation: modalSlideIn 0.2s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.simple-confirm-header {
+    padding: 20px 20px 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.simple-confirm-icon {
+    width: 40px;
+    height: 40px;
+    background: #fee2e2;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.simple-confirm-icon i {
+    color: #dc2626;
+    font-size: 20px;
+}
+
+.simple-confirm-header h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1f36;
+    margin: 0;
+}
+
+.simple-confirm-body {
+    padding: 20px;
+}
+
+.simple-confirm-body p {
+    color: #4a5568;
+    font-size: 14px;
+    margin: 0 0 10px 0;
+}
+
+.simple-confirm-body small {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.simple-confirm-footer {
+    padding: 16px 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    border-top: 1px solid #eef2f6;
+}
+
+.simple-confirm-footer .btn-cancel {
+    background: #f1f5f9;
+    color: #475569;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.simple-confirm-footer .btn-cancel:hover {
+    background: #e2e8f0;
+}
+
+.simple-confirm-footer .btn-confirm {
+    background: #dc2626;
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.simple-confirm-footer .btn-confirm:hover {
+    background: #b91c1c;
+}
+
 @keyframes slideUp {
     from {
         transform: translateY(30px);

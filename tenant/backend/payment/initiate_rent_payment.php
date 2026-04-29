@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 session_start();
 
@@ -254,6 +255,9 @@ try {
         $update_stmt->close();
         logActivity("Tracker record updated to 'pending_verification' - payment_id remains: {$existing_payment_id}");
         
+        // Payment initiated (pending verification) Initiate Payment Notification 
+        createPaymentNotification($conn, $tenant_code, $payment_per_period, 'initiated', $next_period['period_number'], $receipt_number);
+
         $conn->commit();
         logActivity("Transaction committed successfully");
         
