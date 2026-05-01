@@ -76,6 +76,7 @@ function renderNotificationsPage() {
     } else if (currentFilter === 'read') {
         filteredNotifications = filteredNotifications.filter(n => n.is_read);
     }
+     const baseUrl = "../pages";
     
     const html = `
         <div class="notifications-container">
@@ -150,7 +151,7 @@ function renderNotificationsPage() {
                             ${renderNotificationDetails(notification)}
                             <div class="notification-actions" onclick="event.stopPropagation()">
                                 ${notification.action_url ? `
-                                    <button class="btn-action btn-action-primary" onclick="window.location.href='../${notification.action_url.replace('../', '')}'">
+                                    <button class="btn-action btn-action-primary" onclick="window.location.href='${baseUrl}/${notification.action_url.replace('../', '')}'">
                                         <i class="fas fa-arrow-right"></i> ${notification.action_text || 'View Details'}
                                     </button>
                                 ` : ''}

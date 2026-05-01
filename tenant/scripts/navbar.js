@@ -193,7 +193,7 @@ function startNotificationRefresh() {
         if (navbarCurrentUser || window.currentUser) {
             updateNotificationBadge(); // Silent update, no toast
         }
-    }, 30000); // Refresh every 30 seconds
+    }, 3000000); // Refresh every 3000 seconds
 }
 
 function stopNotificationRefresh() {

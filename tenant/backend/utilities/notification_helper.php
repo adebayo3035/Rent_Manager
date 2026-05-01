@@ -329,7 +329,7 @@ function createFeeNotification($conn, $tenant_code, $fee_name, $amount, $due_dat
     $message = '';
     $priority = 'medium';
     $action_url = '../fees.php';
-    $action_text = 'View Fees';
+    $action_text = 'View Fee';
     
     switch ($status) {
         case 'added':
@@ -341,8 +341,8 @@ function createFeeNotification($conn, $tenant_code, $fee_name, $amount, $due_dat
             $title = 'Fee Paid';
             $message = "Your fee '{$fee_name}' of ₦" . number_format($amount, 2) . " has been paid successfully.";
             $priority = 'low';
-            $action_url = '../payments.php';
-            $action_text = 'View Payment';
+            $action_url = '../fees.php';
+            $action_text = 'View Fee';
             break;
         case 'overdue':
             $title = 'Fee Overdue';

@@ -582,6 +582,10 @@
         grid-template-columns: 1fr;
         gap: 15px;
     }
+    .notifications-container{
+        overflow-x: scroll;
+        overflow-y: scroll;
+    }
     
     .notification-tabs {
         width: 100%;
