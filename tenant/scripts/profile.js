@@ -92,7 +92,7 @@ function renderProfile() {
                              style="width:120px;height:120px;object-fit:cover;border-radius:60px;border:3px solid #667eea;">
                     </div>
                     <div class="profile-name">${escapeHtml(currentUser.firstname)} ${escapeHtml(currentUser.lastname)}</div>
-                    <div class="profile-role">Tenant</div>
+                    <div class="profile-role">Tenant ID: ${escapeHtml(currentUser.tenant_code)}</div>
                 </div>
                 
                 ${tabs}
