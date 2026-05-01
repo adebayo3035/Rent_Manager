@@ -5,6 +5,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 session_start();
 
@@ -281,6 +282,9 @@ try {
     $updateTenant->execute();
     $updateTenant->close();
     logActivity("Tenant record updated with new lease dates");
+
+    // Create notification
+    createLeaseNotification($conn, $tenant_code, 'renewed', $new_end->format('Y-m-d'));
     
     $conn->commit();
     logActivity("Transaction committed successfully");

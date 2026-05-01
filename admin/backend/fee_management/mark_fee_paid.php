@@ -5,6 +5,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 session_start();
 
 try {
@@ -177,6 +178,8 @@ try {
             }
             $check_stmt->close();
         }
+
+        createFeeNotification($conn, $tenant_code, $fee_name, $amount, $due_date, 'paid');
 
         $conn->commit();
 

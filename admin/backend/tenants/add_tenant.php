@@ -22,6 +22,7 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 logActivity("========== STARTING TENANT ONBOARDING PROCESS ==========");
 
@@ -814,6 +815,10 @@ $verify_tracker->close();
     // Commit transaction
     logActivity("Step 3.9: Committing transaction");
     $conn->commit();
+
+    // create notification
+    createApartmentNotification($conn, $tenant_code, $inputs['apartment_code'], 'assigned');
+
     logActivity("Transaction committed successfully");
 
     // Log success

@@ -5,6 +5,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 session_start();
 
@@ -147,6 +148,8 @@ try {
 
     logActivity("Document uploaded successfully - ID: {$document_id}, Hash: {$file_hash}");
 
+    //Create notification after successful document upload
+    createDocumentNotification($conn, $tenant_code, $document_name, 'uploaded');
     json_success([
         'document_id' => $document_id,
         'document_name' => $document_name,

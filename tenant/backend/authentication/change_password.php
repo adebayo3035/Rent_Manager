@@ -5,6 +5,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 // Error handling setup
 error_reporting(E_ALL);
@@ -368,6 +369,8 @@ try {
     
     logActivity("[TENANT_PASSWORD_CHANGE_COMPLETE] [ID:{$requestId}] Password change completed for tenant: {$tenant_code}");
     
+    // send notification
+    createSecurityNotification($conn, $tenant_code, 'password_changed');
     // Send the response
     echo json_encode($response);
     

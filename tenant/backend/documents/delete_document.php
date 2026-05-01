@@ -5,6 +5,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 session_start();
 
@@ -116,7 +117,11 @@ try {
     logActivity("Step 8 - Database record updated. Affected rows: {$affected_rows}");
 
     // Step 9: Log completion
-    logActivity("Document deleted successfully - ID: {$document_id}, File deleted: " . ($file_deleted ? 'Yes' : 'No'));
+    logActivity("Document deleted successfully - ID: {$document_id}
+    , File deleted: " . ($file_deleted ? 'Yes' : 'No'));
+
+    // send notification after successful document deletion
+    createDocumentNotification($conn, $tenant_code, $document['document_name'], 'deleted');
     logActivity("========== DELETE DOCUMENT - END ==========");
 
     // Step 10: Return success response

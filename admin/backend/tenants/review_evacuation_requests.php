@@ -58,6 +58,8 @@ try {
         $updateStmt->close();
         
         $message = "Evacuation request approved. Move-out scheduled for " . date('M d, Y', strtotime($approved_move_out_date));
+
+        
         
     } else {
         // Reject

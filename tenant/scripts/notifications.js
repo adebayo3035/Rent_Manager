@@ -76,7 +76,6 @@ function renderNotificationsPage() {
     } else if (currentFilter === 'read') {
         filteredNotifications = filteredNotifications.filter(n => n.is_read);
     }
-    const baseUrl = "/pages";
     
     const html = `
         <div class="notifications-container">
@@ -151,7 +150,7 @@ function renderNotificationsPage() {
                             ${renderNotificationDetails(notification)}
                             <div class="notification-actions" onclick="event.stopPropagation()">
                                 ${notification.action_url ? `
-                                    <button class="btn-action btn-action-primary" onclick="window.location.href='baseUrl/${notification.action_url}'">
+                                    <button class="btn-action btn-action-primary" onclick="window.location.href='../${notification.action_url.replace('../', '')}'">
                                         <i class="fas fa-arrow-right"></i> ${notification.action_text || 'View Details'}
                                     </button>
                                 ` : ''}
@@ -165,6 +164,9 @@ function renderNotificationsPage() {
                     `).join('')}
                 </div>
             `}
+            
+            <!-- ADD PAGINATION CONTAINER HERE -->
+            <div id="pagination"></div>
         </div>
     `;
     
@@ -264,7 +266,7 @@ function renderPagination(pagination) {
     let html = '<div class="pagination">';
     
     // Previous button
-    html += `<button class="page-btn ${pagination.has_previous_page ? '' : 'disabled'}" onclick="goToPage(${pagination.page - 1})" ${!pagination.has_previous_page ? 'disabled' : ''}>
+    html += `<button class="page-btn ${pagination.page > 1 ? '' : 'disabled'}" onclick="goToPage(${pagination.page - 1})" ${pagination.page <= 1 ? 'disabled' : ''}>
         <i class="fas fa-chevron-left"></i>
     </button>`;
     
@@ -278,7 +280,7 @@ function renderPagination(pagination) {
     }
     
     // Next button
-    html += `<button class="page-btn ${pagination.has_next_page ? '' : 'disabled'}" onclick="goToPage(${pagination.page + 1})" ${!pagination.has_next_page ? 'disabled' : ''}>
+    html += `<button class="page-btn ${pagination.page < pagination.total_pages ? '' : 'disabled'}" onclick="goToPage(${pagination.page + 1})" ${pagination.page >= pagination.total_pages ? 'disabled' : ''}>
         <i class="fas fa-chevron-right"></i>
     </button>`;
     
@@ -346,32 +348,6 @@ async function viewNotificationDetails(notificationId) {
         </div>
     `;
     
-    // Add styles for detail rows
-    const style = document.createElement('style');
-    style.textContent = `
-        .notification-detail-section {
-            margin-top: 10px;
-        }
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-        .detail-row:last-child {
-            border-bottom: none;
-        }
-        .detail-label {
-            font-weight: 500;
-            color: #666;
-        }
-        .detail-value {
-            color: #1a1f36;
-            font-weight: 500;
-        }
-    `;
-    document.head.appendChild(style);
-    
     // If notification is unread, mark it as read when viewed
     if (!notification.is_read) {
         await markAsRead(notificationId);
@@ -396,8 +372,20 @@ async function markAsRead(notificationId) {
                 notification.is_read = true;
             }
             
-            // Re-render the page
-            await loadNotifications();
+            // Update the UI without full reload
+            const card = document.querySelector(`.notification-card[onclick*="viewNotificationDetails(${notificationId})"]`);
+            if (card) {
+                card.classList.remove('unread');
+            }
+            
+            // Update unread count
+            const unreadCount = parseInt(document.querySelector('.summary-card.unread .amount')?.textContent || '0');
+            if (unreadCount > 0) {
+                document.querySelector('.summary-card.unread .amount').textContent = unreadCount - 1;
+            }
+            
+            // Update navbar badge
+            updateStats(unreadCount - 1, notifications.length);
         }
     } catch (error) {
         console.error('Error marking notification as read:', error);
@@ -415,10 +403,7 @@ async function markAllAsRead() {
         const data = await response.json();
         
         if (data.success) {
-            // Update local data
-            notifications.forEach(n => { n.is_read = true; });
-            
-            // Re-render the page
+            // Reload the page to refresh all notifications
             await loadNotifications();
             
             if (window.showToast) {

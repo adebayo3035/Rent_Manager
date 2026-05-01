@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 session_start();
 
@@ -141,6 +142,8 @@ try {
     // Log the activity
     logActivity("Secret question and answer set for tenant: $tenant_code");
 
+    // Create notification
+    createSecurityNotification($conn, $tenant_code, 'secret_question_set');
     // Return success response
     json_success([
         'has_secret_set' => true,
