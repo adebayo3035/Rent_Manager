@@ -60,80 +60,169 @@ try {
 
     // Generate HTML for PDF
     $html = '
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .header h1 { color: #667eea; margin: 0; }
-            .receipt-title { text-align: center; margin: 20px 0; }
-            .receipt-title h2 { color: #333; }
-            .company-info { text-align: center; margin-bottom: 30px; }
-            .receipt-details { margin: 20px 0; }
-            .receipt-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            .receipt-table th, .receipt-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            .receipt-table th { background-color: #f2f2f2; }
-            .total-row { font-weight: bold; background-color: #f9f9f9; }
-            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>RentEase</h1>
-            <p>Property Management System</p>
-        </div>
-        
-        <div class="receipt-title">
-            <h2>FEE PAYMENT RECEIPT</h2>
-        </div>
-        
-        <div class="company-info">
-            <p><strong>Receipt Number:</strong> ' . htmlspecialchars($payment['receipt_number']) . '</p>
-            <p><strong>Payment Date:</strong> ' . date('F j, Y g:i A', strtotime($payment['payment_date'])) . '</p>
-        </div>
-        
-        <div class="receipt-details">
-            <h3>Tenant Information</h3>
-            <p><strong>Name:</strong> ' . htmlspecialchars($payment['firstname'] . ' ' . $payment['lastname']) . '</p>
-            <p><strong>Email:</strong> ' . htmlspecialchars($payment['email']) . '</p>
-            <p><strong>Phone:</strong> ' . htmlspecialchars($payment['phone']) . '</p>
-            <p><strong>Property:</strong> ' . htmlspecialchars($payment['property_name']) . '</p>
-            <p><strong>Apartment:</strong> ' . htmlspecialchars($payment['apartment_number']) . '</p>
-        </div>
-        
-        <table class="receipt-table">
-            <thead>
-                <tr>
-                    <th>Description</th>
-                    <th>Amount</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>' . htmlspecialchars($payment['fee_name']) . ' (' . htmlspecialchars($payment['fee_code']) . ')</td>
-                    <td>N' . number_format($payment['amount'], 2) . '</td>
-                </tr>
-                <tr class="total-row">
-                    <td><strong>Total</strong></td>
-                    <td><strong>N' . number_format($payment['amount'], 2) . '</strong></td>
-                </tr>
-            </tbody>
-        </table>
-        
-        <div class="payment-details">
-            <p><strong>Payment Method:</strong> ' . ucfirst(str_replace('_', ' ', $payment['payment_method'])) . '</p>
-            <p><strong>Reference Number:</strong> ' . htmlspecialchars($payment['reference_number'] ?? 'N/A') . '</p>
-            <p><strong>Due Date:</strong> ' . date('F j, Y', strtotime($payment['due_date'])) . '</p>
-        </div>
-        
-        <div class="footer">
-            <p>Thank you for your payment!</p>
-            <p>This is a computer-generated receipt and does not require a signature.</p>
-        </div>
-    </body>
-    </html>
-    ';
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 11px;
+        color: #333;
+    }
+
+    .container {
+        border: 1px solid #ccc;
+        padding: 10px;
+    }
+
+    .title {
+        font-size: 16px;
+        font-weight: bold;
+    }
+
+    .right {
+        text-align: right;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    td {
+        padding: 4px;
+        vertical-align: top;
+    }
+
+    .section-title {
+        font-weight: bold;
+        font-size: 13px;
+        margin-top: 10px;
+    }
+
+    .table th {
+        border: 1px solid #ccc;
+        background: #f2f2f2;
+        padding: 5px;
+        text-align: left;
+    }
+
+    .table td {
+        border: 1px solid #ccc;
+        padding: 5px;
+    }
+
+    .total {
+        font-weight: bold;
+    }
+
+    .footer {
+        text-align: center;
+        font-size: 10px;
+        margin-top: 10px;
+        color: #666;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<!-- HEADER -->
+<table>
+    <tr>
+        <td width="60%">
+            <span class="title">RentEase</span><br>
+            Property Management System
+        </td>
+        <td width="40%" class="right">
+            <b>RECEIPT</b><br>
+            Receipt No: ' . htmlspecialchars($payment['receipt_number']) . '<br>
+            Date: ' . date('d M Y, H:i', strtotime($payment['payment_date'])) . '
+        </td>
+    </tr>
+</table>
+
+<br>
+
+<!-- TENANT INFO -->
+<div class="section-title">Tenant Information</div>
+<table border="0">
+    <tr>
+        <td width="25%"><b>Name:</b></td>
+        <td width="25%">' . htmlspecialchars($payment['firstname'] . ' ' . $payment['lastname']) . '</td>
+
+        <td width="25%"><b>Phone:</b></td>
+        <td width="25%">' . htmlspecialchars($payment['phone']) . '</td>
+    </tr>
+
+    <tr>
+        <td><b>Email:</b></td>
+        <td>' . htmlspecialchars($payment['email']) . '</td>
+
+        <td><b>Apartment:</b></td>
+        <td>' . htmlspecialchars($payment['apartment_number']) . '</td>
+    </tr>
+
+    <tr>
+        <td><b>Property:</b></td>
+        <td colspan="3">' . htmlspecialchars($payment['property_name']) . '</td>
+    </tr>
+</table>
+
+<br>
+
+<!-- PAYMENT DETAILS -->
+<div class="section-title">Payment Details</div>
+
+<table class="table">
+    <tr>
+        <th width="70%">Description</th>
+        <th width="30%">Amount (₦)</th>
+    </tr>
+
+    <tr>
+        <td>' . htmlspecialchars($payment['fee_name']) . ' (' . htmlspecialchars($payment['fee_code']) . ')</td>
+        <td>' . number_format($payment['amount'], 2) . '</td>
+    </tr>
+
+    <tr class="total">
+        <td>Total</td>
+        <td>' . number_format($payment['amount'], 2) . '</td>
+    </tr>
+</table>
+
+<br>
+
+<table>
+    <tr>
+        <td width="25%"><b>Payment Method:</b></td>
+        <td width="25%">' . ucfirst(str_replace('_', ' ', $payment['payment_method'])) . '</td>
+
+        <td width="25%"><b>Reference:</b></td>
+        <td width="25%">' . htmlspecialchars($payment['reference_number'] ?? 'N/A') . '</td>
+    </tr>
+
+    <tr>
+        <td><b>Due Date:</b></td>
+        <td>' . date('d M Y', strtotime($payment['due_date'])) . '</td>
+    </tr>
+</table>
+
+<br>
+
+<!-- FOOTER -->
+<div class="footer">
+    Thank you for your payment.<br>
+    This is a system-generated receipt.
+</div>
+
+</div>
+
+</body>
+</html>
+';
 
     // Output as PDF
     require_once __DIR__ . '/../../../vendor/autoload.php';

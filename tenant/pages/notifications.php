@@ -29,6 +29,28 @@
         </div>
     </div>
 
+    <!-- Mark as read notification confirmation -->
+     <!-- Custom Confirmation Modal -->
+<div id="customConfirmModal" class="modal">
+    <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+            <div class="confirm-icon">
+                <i class="fas fa-bell-slash"></i>
+            </div>
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <button class="modal-close" onclick="closeCustomConfirmModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="confirmMessage">Are you sure you want to proceed?</p>
+            <div id="confirmDetails" class="confirm-details" style="display: none;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" id="confirmCancelBtn">Cancel</button>
+            <button class="btn-primary" id="confirmOkBtn">Confirm</button>
+        </div>
+    </div>
+</div>
+
     <script src="../scripts/notifications.js"></script>
 </body>
 </html>

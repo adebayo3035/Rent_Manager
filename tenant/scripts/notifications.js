@@ -29,7 +29,7 @@ async function initializeNotifications() {
 
 async function loadNotifications() {
     try {
-        let url = `../backend/tenant/fetch_notifications.php?page=${currentPage}&limit=10`;
+        let url = `../backend/notification/fetch_notifications.php?page=${currentPage}&limit=10`;
         if (currentType !== 'all') url += `&type=${currentType}`;
         if (currentFilter === 'unread') url += `&is_read=false`;
         if (currentFilter === 'read') url += `&is_read=true`;
@@ -41,6 +41,8 @@ async function loadNotifications() {
         
         if (data.success) {
             notifications = data.data.notifications || [];
+            unreadNotifications = data.data.unread_count;
+            totalNotification = data.data.pagination.total;
             renderNotificationsPage();
             updateStats(data.data.unread_count, data.data.pagination.total);
             renderPagination(data.data.pagination);
@@ -61,8 +63,10 @@ function renderNotificationsPage() {
     if (!contentArea) return;
     
     // Calculate summary
-    const totalUnread = notifications.filter(n => !n.is_read).length;
-    const totalNotifications = notifications.length;
+    // const totalUnread = notifications.filter(n => !n.is_read).length;
+    const totalUnread = unreadNotifications;
+    // const totalNotifications = notifications.length;
+    const totalNotifications = totalNotification;
     
     // Filter notifications based on current tab and filter
     let filteredNotifications = [...notifications];
@@ -299,6 +303,7 @@ function switchNotificationTab(tab) {
     currentType = tab;
     currentPage = 1;
     loadNotifications();
+   
 }
 
 function filterByStatus() {
@@ -359,7 +364,7 @@ async function viewNotificationDetails(notificationId) {
 
 async function markAsRead(notificationId) {
     try {
-        const response = await fetch('../backend/tenant/mark_notification_read.php', {
+        const response = await fetch('../backend/notification/mark_notification_read.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ notification_id: notificationId })
@@ -387,36 +392,197 @@ async function markAsRead(notificationId) {
             
             // Update navbar badge
             updateStats(unreadCount - 1, notifications.length);
+            window.location.reload();
         }
     } catch (error) {
         console.error('Error marking notification as read:', error);
     }
 }
 
-async function markAllAsRead() {
-    if (!confirm('Mark all notifications as read?')) return;
-    
-    try {
-        const response = await fetch('../backend/tenant/mark_all_read.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await response.json();
+// ==================== CUSTOM CONFIRMATION MODAL ====================
+
+let confirmResolve = null;
+
+function showCustomConfirm(options) {
+    return new Promise((resolve) => {
+        confirmResolve = resolve;
         
-        if (data.success) {
-            // Reload the page to refresh all notifications
-            await loadNotifications();
+        const modal = document.getElementById('customConfirmModal');
+        const titleEl = document.getElementById('confirmTitle');
+        const messageEl = document.getElementById('confirmMessage');
+        const iconEl = document.querySelector('#customConfirmModal .confirm-icon');
+        const detailsEl = document.getElementById('confirmDetails');
+        const cancelBtn = document.getElementById('confirmCancelBtn');
+        const okBtn = document.getElementById('confirmOkBtn');
+        
+        // Set title
+        titleEl.textContent = options.title || 'Confirm Action';
+        
+        // Set message
+        messageEl.textContent = options.message || 'Are you sure you want to proceed?';
+        
+        // Set icon based on type
+        if (options.type === 'danger') {
+            iconEl.style.background = '#fee2e2';
+            iconEl.querySelector('i').style.color = '#dc2626';
+            iconEl.querySelector('i').className = 'fas fa-exclamation-triangle';
+        } else if (options.type === 'success') {
+            iconEl.style.background = '#d4edda';
+            iconEl.querySelector('i').style.color = '#10b981';
+            iconEl.querySelector('i').className = 'fas fa-check-circle';
+        } else if (options.type === 'warning') {
+            iconEl.style.background = '#fff3cd';
+            iconEl.querySelector('i').style.color = '#f59e0b';
+            iconEl.querySelector('i').className = 'fas fa-exclamation-triangle';
+        } else {
+            iconEl.style.background = '#e8f0fe';
+            iconEl.querySelector('i').style.color = '#667eea';
+            iconEl.querySelector('i').className = 'fas fa-info-circle';
+        }
+        
+        // Set confirm button text and class
+        okBtn.textContent = options.confirmText || 'Confirm';
+        okBtn.className = options.confirmClass || 'btn-primary';
+        
+        // Set cancel button text
+        cancelBtn.textContent = options.cancelText || 'Cancel';
+        
+        // Build details if provided
+        if (options.details && options.details.length > 0) {
+            detailsEl.innerHTML = `
+                <div class="confirm-details">
+                    ${options.details.map(detail => `
+                        <div class="confirm-detail-row">
+                            <span class="confirm-detail-label">${escapeHtml(detail.label)}:</span>
+                            <span class="confirm-detail-value">${escapeHtml(detail.value)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            detailsEl.style.display = 'block';
+        } else {
+            detailsEl.style.display = 'none';
+        }
+        
+        // Show modal
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        
+        // Setup event handlers (remove old ones first)
+        const oldOkBtn = okBtn.cloneNode(true);
+        const oldCancelBtn = cancelBtn.cloneNode(true);
+        okBtn.parentNode.replaceChild(oldOkBtn, okBtn);
+        cancelBtn.parentNode.replaceChild(oldCancelBtn, cancelBtn);
+        
+        oldOkBtn.onclick = () => {
+            closeCustomConfirmModal();
+            resolve(true);
+            if (options.onConfirm) options.onConfirm();
+        };
+        
+        oldCancelBtn.onclick = () => {
+            closeCustomConfirmModal();
+            resolve(false);
+            if (options.onCancel) options.onCancel();
+        };
+        
+        // Close on escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                closeCustomConfirmModal();
+                resolve(false);
+                document.removeEventListener('keydown', handleEscape);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+        
+        // Close on backdrop click
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                closeCustomConfirmModal();
+                resolve(false);
+            }
+        };
+        
+        // Store cleanup function
+        window._confirmCleanup = () => {
+            document.removeEventListener('keydown', handleEscape);
+        };
+    });
+}
+
+function closeCustomConfirmModal() {
+    const modal = document.getElementById('customConfirmModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+    if (window._confirmCleanup) {
+        window._confirmCleanup();
+    }
+}
+
+// ==================== UPDATED MARK ALL AS READ FUNCTION ====================
+
+async function markAllAsRead() {
+    // Get current unread count for display
+    let unreadCount = 0;
+    const unreadElement = document.querySelector('.summary-card.unread .amount');
+    if (unreadElement) {
+        unreadCount = parseInt(unreadElement.textContent) || 0;
+    }
+    
+    // Show custom confirmation modal
+    const confirmed = await showCustomConfirm({
+        title: 'Mark All as Read',
+        type: 'warning',
+        message: 'Are you sure you want to mark all notifications as read?',
+        details: [
+            { label: 'Notifications to mark', value: unreadCount + ' unread' },
+            { label: 'Action', value: 'This action cannot be undone' }
+        ],
+        confirmText: 'Yes, Mark All',
+        confirmClass: 'btn-primary',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+            // Show loading state on confirm button
+            const confirmBtn = document.querySelector('#customConfirmModal .btn-primary');
+            const originalText = confirmBtn.innerHTML;
+            confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            confirmBtn.disabled = true;
             
-            if (window.showToast) {
-                window.showToast('All notifications marked as read', 'success');
+            try {
+                const response = await fetch('../backend/notification/mark_all_notification_read.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Close modal
+                    closeCustomConfirmModal();
+                    
+                    // Reload notifications
+                    await loadNotifications();
+                    
+                    // Show success toast
+                    if (window.showToast) {
+                        window.showToast('All notifications marked as read', 'success');
+                    }
+                } else {
+                    throw new Error(data.message || 'Failed to mark all as read');
+                }
+            } catch (error) {
+                console.error('Error marking all as read:', error);
+                closeCustomConfirmModal();
+                if (window.showToast) {
+                    window.showToast(error.message || 'Failed to mark all as read', 'error');
+                }
             }
         }
-    } catch (error) {
-        console.error('Error marking all as read:', error);
-        if (window.showToast) {
-            window.showToast('Failed to mark all as read', 'error');
-        }
-    }
+    });
 }
 
 function openModal(modalId) {

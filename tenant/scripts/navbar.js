@@ -115,7 +115,7 @@ async function updateNotificationBadge() {
             return;
         }
         
-        const response = await fetch('../backend/tenant/fetch_notifications.php?limit=1');
+        const response = await fetch('../backend/notification/fetch_notifications.php?limit=1');
         const data = await response.json();
         
         if (data.success) {
@@ -135,7 +135,7 @@ async function updateNotificationBadge() {
 // Fetch notifications with toast - ONLY when bell is clicked
 async function fetchNotificationsWithToast() {
     try {
-        const response = await fetch('../backend/tenant/fetch_notifications.php');
+        const response = await fetch('../backend/notification/fetch_notifications.php');
         const data = await response.json();
         
         if (data.success) {
