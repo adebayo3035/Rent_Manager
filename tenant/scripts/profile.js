@@ -3,81 +3,81 @@
 // ==================== STATE MANAGEMENT ====================
 let currentUser = null;
 let passwordValidation = {
-    length: false,
-    upper: false,
-    lower: false,
-    number: false,
-    match: false
+  length: false,
+  upper: false,
+  lower: false,
+  number: false,
+  match: false,
 };
 
 // ==================== INITIALIZATION ====================
 document.addEventListener("DOMContentLoaded", () => {
-    initializeProfile();
+  initializeProfile();
 });
 
 async function initializeProfile() {
-    console.log("Initializing profile...");
+  console.log("Initializing profile...");
 
-    if (window.currentUser?.firstname) {
-        currentUser = window.currentUser;
+  if (window.currentUser?.firstname) {
+    currentUser = window.currentUser;
+    renderProfile();
+  } else {
+    // Listen for user data loaded event
+    window.addEventListener("userDataLoaded", (e) => {
+      currentUser = e.detail || window.currentUser;
+      renderProfile();
+    });
+
+    // Fallback: fetch directly if event doesn't fire within 500ms
+    setTimeout(async () => {
+      if (!currentUser?.firstname) {
+        await fetchUserData();
         renderProfile();
-    } else {
-        // Listen for user data loaded event
-        window.addEventListener("userDataLoaded", (e) => {
-            currentUser = e.detail || window.currentUser;
-            renderProfile();
-        });
-
-        // Fallback: fetch directly if event doesn't fire within 500ms
-        setTimeout(async () => {
-            if (!currentUser?.firstname) {
-                await fetchUserData();
-                renderProfile();
-            }
-        }, 500);
-    }
+      }
+    }, 500);
+  }
 }
 
 async function fetchUserData() {
-    try {
-        const response = await fetch("../backend/tenant/fetch_user_data.php");
-        const data = await response.json();
+  try {
+    const response = await fetch("../backend/tenant/fetch_user_data.php");
+    const data = await response.json();
 
-        if (data.success && data.data) {
-            currentUser = data.data;
-            window.currentUser = currentUser;
-        } else {
-            console.error("Failed to fetch user data:", data);
-        }
-    } catch (error) {
-        console.error("Error fetching user data:", error);
+    if (data.success && data.data) {
+      currentUser = data.data;
+      window.currentUser = currentUser;
+    } else {
+      console.error("Failed to fetch user data:", data);
     }
+  } catch (error) {
+    console.error("Error fetching user data:", error);
+  }
 }
 
 // ==================== RENDER PROFILE ====================
 function renderProfile() {
-    const contentArea = document.getElementById("contentArea");
-    if (!contentArea) return;
+  const contentArea = document.getElementById("contentArea");
+  if (!contentArea) return;
 
-    if (!currentUser?.firstname) {
-        contentArea.innerHTML = `
+  if (!currentUser?.firstname) {
+    contentArea.innerHTML = `
             <div class="profile-container">
                 <div class="loading-spinner">
                     <div class="spinner"></div>
                     <p>Loading profile data...</p>
                 </div>
             </div>`;
-        return;
-    }
+    return;
+  }
 
-    const photoUrl = currentUser.photo 
-        ? `../../admin/backend/tenants/tenant_photos/${currentUser.photo}` 
-        : "";
-    
-    const showSecretTab = !currentUser.has_secret_set;
-    const tabs = getTabsHtml(showSecretTab);
+  const photoUrl = currentUser.photo
+    ? `../../admin/backend/tenants/tenant_photos/${currentUser.photo}`
+    : "";
 
-    contentArea.innerHTML = `
+  const showSecretTab = !currentUser.has_secret_set;
+  const tabs = getTabsHtml(showSecretTab);
+
+  contentArea.innerHTML = `
         <div class="profile-container">
             <div class="page-header">
                 <h1>My Profile</h1>
@@ -105,29 +105,34 @@ function renderProfile() {
                     ${renderSecurityTab()}
                 </div>
 
+                <div id="resetSecretTab" class="tab-content">
+                    ${renderResetSecretTab()}
+                </div>
+
                 ${showSecretTab ? renderSecretTab() : renderSecretAlreadySetTab()}
             </div>
         </div>`;
 
-    attachTabListeners();
+  attachTabListeners();
 }
 
 function getTabsHtml(showSecretTab) {
-    let tabsHtml = `
+  let tabsHtml = `
         <div class="tabs">
             <button class="tab-btn active" data-tab="personal">Personal Information</button>
-            <button class="tab-btn" data-tab="security">Security</button>`;
-    
-    if (showSecretTab) {
-        tabsHtml += ` <button class="tab-btn" data-tab="secret">Secret Question</button>`;
-    }
-    
-    tabsHtml += `</div>`;
-    return tabsHtml;
+            <button class="tab-btn" data-tab="security">Security</button>
+            <button class="tab-btn" data-tab="resetSecret">Reset Secret Details</button>`;
+
+  if (showSecretTab) {
+    tabsHtml += ` <button class="tab-btn" data-tab="secret">Secret Question</button>`;
+  }
+
+  tabsHtml += `</div>`;
+  return tabsHtml;
 }
 
 function renderPersonalTab() {
-    return `
+  return `
         <form class="profile-form" id="profileForm">
             <div class="form-row">
                 <div class="form-group">
@@ -166,7 +171,7 @@ function renderPersonalTab() {
 }
 
 function renderSecurityTab() {
-    return `
+  return `
         <form class="profile-form" id="passwordForm">
             <div class="form-group">
                 <label>Current Password *</label>
@@ -202,8 +207,47 @@ function renderSecurityTab() {
         </form>`;
 }
 
+function renderResetSecretTab() {
+  return `
+     
+            <form class="profile-form" id="resetSecretForm">
+                <div class="form-group">
+                    <label>Secret Question *</label>
+                    <select id="resetSecretQuestion" required>
+                        <option value="">-- Select a Secret Question --</option>
+                        <option value="mother_maiden_name">What is your mother's maiden name?</option>
+                        <option value="first_pet">What was the name of your first pet?</option>
+                        <option value="first_school">What was the name of your first school?</option>
+                        <option value="birth_city">In which city were you born?</option>
+                        <option value="favorite_teacher">What is the name of your favorite teacher?</option>
+                        <option value="childhood_friend">What is the name of your childhood best friend?</option>
+                        <option value="first_car">What was your first car?</option>
+                        <option value="favorite_food">What is your favorite food?</option>
+                        <option value="dream_job">What was your dream job as a child?</option>
+                        <option value="favorite_place">What is your favorite place to visit?</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Secret Answer *</label>
+                    <input type="password" id="resetAnswer" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Confirm Secret Answer *</label>
+                    <input type="password" id="confirmResetAnswer" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Enter your Password *</label>
+                    <input type="password" id="resetSecretPassword" required autocomplete="off">
+                </div>
+                <button type="button" class="btn-save" onclick="resetSecretAnswer()">
+                    <i class="fas fa-shield-alt"></i> Reset Secret Question
+                </button>
+            </form>
+        `;
+}
+
 function renderSecretTab() {
-    return `
+  return `
         <div id="secretTab" class="tab-content">
             <form class="profile-form" id="secretForm">
                 <div class="form-group">
@@ -224,7 +268,7 @@ function renderSecretTab() {
                 </div>
                 <div class="form-group">
                     <label>Secret Answer *</label>
-                    <input type="password" id="secretAnswer" required autocomplete="off">
+                    <input type="password" id="setAnswer" required autocomplete="off">
                 </div>
                 <div class="form-group">
                     <label>Confirm Secret Answer *</label>
@@ -238,7 +282,7 @@ function renderSecretTab() {
 }
 
 function renderSecretAlreadySetTab() {
-    return `
+  return `
         <div id="secretTab" class="tab-content">
             <div class="profile-form" style="text-align: center; padding: 40px;">
                 <i class="fas fa-check-circle" style="font-size: 64px; color: #10b981; margin-bottom: 20px;"></i>
@@ -252,338 +296,468 @@ function renderSecretAlreadySetTab() {
 }
 
 function attachTabListeners() {
-    document.querySelectorAll(".tab-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-            const tab = btn.dataset.tab;
-            document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-            document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
-            btn.classList.add("active");
-            document.getElementById(`${tab}Tab`).classList.add("active");
-        });
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.tab;
+      document
+        .querySelectorAll(".tab-btn")
+        .forEach((b) => b.classList.remove("active"));
+      document
+        .querySelectorAll(".tab-content")
+        .forEach((c) => c.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(`${tab}Tab`).classList.add("active");
     });
+  });
 }
 
 // ==================== PROFILE FUNCTIONS ====================
 async function updateProfile() {
-    const firstname = document.getElementById("firstname")?.value.trim();
-    const lastname = document.getElementById("lastname")?.value.trim();
-    const email = document.getElementById("email")?.value.trim();
-    const phone = document.getElementById("phone")?.value.trim();
-    const gender = document.getElementById("gender")?.value;
+  const firstname = document.getElementById("firstname")?.value.trim();
+  const lastname = document.getElementById("lastname")?.value.trim();
+  const email = document.getElementById("email")?.value.trim();
+  const phone = document.getElementById("phone")?.value.trim();
+  const gender = document.getElementById("gender")?.value;
 
-    if (!firstname || !lastname || !email || !phone) {
-        displayMessage("Please fill in all required fields", "error");
-        return;
+  if (!firstname || !lastname || !email || !phone) {
+    displayMessage("Please fill in all required fields", "error");
+    return;
+  }
+
+  const btn = document.querySelector("#personalTab .btn-save");
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  btn.disabled = true;
+
+  try {
+    const response = await fetch("../backend/tenant/update_profile.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ firstname, lastname, email, phone, gender }),
+    });
+    const data = await response.json();
+
+    if (data.success) {
+      displayMessage("Profile updated successfully", "success");
+
+      if (currentUser) {
+        currentUser.firstname = firstname;
+        currentUser.lastname = lastname;
+        currentUser.email = email;
+        currentUser.phone = phone;
+        currentUser.gender = gender;
+        window.currentUser = currentUser;
+      }
+
+      renderProfile();
+    } else {
+      throw new Error(data.message || "Update failed");
     }
-
-    const btn = document.querySelector('#personalTab .btn-save');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    btn.disabled = true;
-
-    try {
-        const response = await fetch("../backend/tenant/update_profile.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ firstname, lastname, email, phone, gender }),
-        });
-        const data = await response.json();
-
-        if (data.success) {
-            displayMessage("Profile updated successfully", "success");
-            
-            if (currentUser) {
-                currentUser.firstname = firstname;
-                currentUser.lastname = lastname;
-                currentUser.email = email;
-                currentUser.phone = phone;
-                currentUser.gender = gender;
-                window.currentUser = currentUser;
-            }
-            
-            renderProfile();
-        } else {
-            throw new Error(data.message || "Update failed");
-        }
-    } catch (error) {
-        console.error("Error updating profile:", error);
-        displayMessage(error.message, "error");
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-    }
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    displayMessage(error.message, "error");
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
 }
 
 // ==================== PASSWORD FUNCTIONS ====================
 function validatePassword() {
-    const password = document.getElementById("newPassword")?.value || "";
-    
-    passwordValidation.length = password.length >= 8;
-    passwordValidation.upper = /[A-Z]/.test(password);
-    passwordValidation.lower = /[a-z]/.test(password);
-    passwordValidation.number = /[0-9]/.test(password);
+  const password = document.getElementById("newPassword")?.value || "";
 
-    updateRequirementUI("req-length", passwordValidation.length, "At least 8 characters");
-    updateRequirementUI("req-upper", passwordValidation.upper, "At least one uppercase letter");
-    updateRequirementUI("req-lower", passwordValidation.lower, "At least one lowercase letter");
-    updateRequirementUI("req-number", passwordValidation.number, "At least one number");
+  passwordValidation.length = password.length >= 8;
+  passwordValidation.upper = /[A-Z]/.test(password);
+  passwordValidation.lower = /[a-z]/.test(password);
+  passwordValidation.number = /[0-9]/.test(password);
 
-    validatePasswordMatch();
+  updateRequirementUI(
+    "req-length",
+    passwordValidation.length,
+    "At least 8 characters",
+  );
+  updateRequirementUI(
+    "req-upper",
+    passwordValidation.upper,
+    "At least one uppercase letter",
+  );
+  updateRequirementUI(
+    "req-lower",
+    passwordValidation.lower,
+    "At least one lowercase letter",
+  );
+  updateRequirementUI(
+    "req-number",
+    passwordValidation.number,
+    "At least one number",
+  );
+
+  validatePasswordMatch();
 }
 
 function validatePasswordMatch() {
-    const password = document.getElementById("newPassword")?.value || "";
-    const confirm = document.getElementById("confirmPassword")?.value || "";
-    
-    passwordValidation.match = password === confirm && password !== "";
-    updateRequirementUI("req-match", passwordValidation.match, "Passwords match");
+  const password = document.getElementById("newPassword")?.value || "";
+  const confirm = document.getElementById("confirmPassword")?.value || "";
+
+  passwordValidation.match = password === confirm && password !== "";
+  updateRequirementUI("req-match", passwordValidation.match, "Passwords match");
 }
 
 function updateRequirementUI(elementId, isValid, text) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.className = isValid ? "valid" : "";
-        element.textContent = isValid ? `✓ ${text}` : text;
-    }
+  const element = document.getElementById(elementId);
+  if (element) {
+    element.className = isValid ? "valid" : "";
+    element.textContent = isValid ? `✓ ${text}` : text;
+  }
 }
 
 function isPasswordValid() {
-    return Object.values(passwordValidation).every(v => v === true);
+  return Object.values(passwordValidation).every((v) => v === true);
 }
 
 async function changePassword() {
-    const currentPassword = document.getElementById("currentPassword")?.value;
-    const newPassword = document.getElementById("newPassword")?.value;
-    const confirmPassword = document.getElementById("confirmPassword")?.value;
-    const secretAnswer = document.getElementById('secretAnswer')?.value;
+  const currentPassword = document.getElementById("currentPassword")?.value;
+  const newPassword = document.getElementById("newPassword")?.value;
+  const confirmPassword = document.getElementById("confirmPassword")?.value;
+  const secretAnswer = document.getElementById("secretAnswer")?.value;
 
-    if (!currentPassword || !newPassword || !confirmPassword || !secretAnswer) {
-        displayMessage("Please fill in all fields", "error");
-        return;
+  if (!currentPassword || !newPassword || !confirmPassword || !secretAnswer) {
+    displayMessage("Please fill in all fields", "error");
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    displayMessage("New passwords do not match", "error");
+    return;
+  }
+
+  if (!isPasswordValid()) {
+    displayMessage("Please meet all password requirements", "error");
+    return;
+  }
+
+  const btn = document.querySelector("#securityTab .btn-save");
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Changing...';
+  btn.disabled = true;
+
+  try {
+    // Step 1: Change password
+    const response = await fetch(
+      "../backend/authentication/change_password.php",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          secret_answer: secretAnswer,
+        }),
+      },
+    );
+    const data = await response.json();
+
+    console.log("Change password response:", data); // Debug log
+
+    if (data.success) {
+      displayMessage(
+        data.message || "Password changed successfully!",
+        "success",
+      );
+
+      // Step 2: Call logout endpoint with tenant_code from response
+      // Check different possible response structures
+      const tenantCode = data.data?.tenant_code || data.tenant_code;
+      const requireLogout = data.data?.require_logout || data.require_logout;
+
+      console.log("Tenant code for logout:", tenantCode); // Debug log
+
+      if (requireLogout && tenantCode) {
+        await callLogoutEndpoint(tenantCode);
+      } else {
+        console.warn("Logout not required or tenant code missing");
+        // Fallback: clear local session data
+        clearLocalSession();
+      }
+
+      // Step 3: Redirect to login page
+      const redirectUrl =
+        data.data?.redirect_url || data.redirect_url || "../login.php";
+      setTimeout(() => {
+        window.location.href = redirectUrl;
+      }, 2000);
+    } else {
+      throw new Error(data.message || "Password change failed");
     }
-
-    if (newPassword !== confirmPassword) {
-        displayMessage("New passwords do not match", "error");
-        return;
-    }
-
-    if (!isPasswordValid()) {
-        displayMessage("Please meet all password requirements", "error");
-        return;
-    }
-
-    const btn = document.querySelector('#securityTab .btn-save');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Changing...';
-    btn.disabled = true;
-
-    try {
-        // Step 1: Change password
-        const response = await fetch("../backend/authentication/change_password.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                current_password: currentPassword,
-                new_password: newPassword,
-                secret_answer: secretAnswer,
-            }),
-        });
-        const data = await response.json();
-        
-        console.log("Change password response:", data); // Debug log
-
-        if (data.success) {
-            displayMessage(data.message || "Password changed successfully!", "success");
-            
-            // Step 2: Call logout endpoint with tenant_code from response
-            // Check different possible response structures
-            const tenantCode = data.data?.tenant_code || data.tenant_code;
-            const requireLogout = data.data?.require_logout || data.require_logout;
-            
-            console.log("Tenant code for logout:", tenantCode); // Debug log
-            
-            if (requireLogout && tenantCode) {
-                await callLogoutEndpoint(tenantCode);
-            } else {
-                console.warn("Logout not required or tenant code missing");
-                // Fallback: clear local session data
-                clearLocalSession();
-            }
-            
-            // Step 3: Redirect to login page
-            const redirectUrl = data.data?.redirect_url || data.redirect_url || '../login.php';
-            setTimeout(() => {
-                window.location.href = redirectUrl;
-            }, 2000);
-        } else {
-            throw new Error(data.message || "Password change failed");
-        }
-    } catch (error) {
-        console.error("Error changing password:", error);
-        displayMessage(error.message, "error");
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-    }
+  } catch (error) {
+    console.error("Error changing password:", error);
+    displayMessage(error.message, "error");
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
 }
 
 // Helper function to call logout endpoint
 async function callLogoutEndpoint(tenant_code) {
-    console.log("Calling logout endpoint for tenant:", tenant_code);
-    
-    try {
-        const logoutResponse = await fetch("../backend/authentication/logout.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ logout_id: tenant_code }),
-        });
-        const logoutData = await logoutResponse.json();
-        
-        console.log("Logout response:", logoutData);
-        
-        if (logoutData.success) {
-            console.log("Logout successful");
-            // Clear any stored user data in localStorage/sessionStorage
-            clearLocalSession();
-            // Call this after successful logout
-            preventBackButtonAccess();
-        } else {
-            console.warn("Logout failed:", logoutData.message);
-            // Still try to clear local session even if logout API fails
-            clearLocalSession();
-        }
-    } catch (error) {
-        console.error("Error calling logout:", error);
-        // Still try to clear local session
-        clearLocalSession();
+  console.log("Calling logout endpoint for tenant:", tenant_code);
+
+  try {
+    const logoutResponse = await fetch("../backend/authentication/logout.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logout_id: tenant_code }),
+    });
+    const logoutData = await logoutResponse.json();
+
+    console.log("Logout response:", logoutData);
+
+    if (logoutData.success) {
+      console.log("Logout successful");
+      // Clear any stored user data in localStorage/sessionStorage
+      clearLocalSession();
+      // Call this after successful logout
+      preventBackButtonAccess();
+    } else {
+      console.warn("Logout failed:", logoutData.message);
+      // Still try to clear local session even if logout API fails
+      clearLocalSession();
     }
+  } catch (error) {
+    console.error("Error calling logout:", error);
+    // Still try to clear local session
+    clearLocalSession();
+  }
 }
 
 // Helper function to clear local session data
 function clearLocalSession() {
-    // Clear any stored user data
-    window.currentUser = null;
-    
-    // Clear localStorage if you're using it
-    localStorage.removeItem('userData');
-    localStorage.removeItem('userPreferences');
-    
-    // Clear sessionStorage if you're using it
-    sessionStorage.clear();
-    
-    console.log("Local session cleared");
+  // Clear any stored user data
+  window.currentUser = null;
+
+  // Clear localStorage if you're using it
+  localStorage.removeItem("userData");
+  localStorage.removeItem("userPreferences");
+
+  // Clear sessionStorage if you're using it
+  sessionStorage.clear();
+
+  console.log("Local session cleared");
 }
 
 // Helper function to call logout endpoint
 async function callLogoutEndpoint(tenant_code) {
-    try {
-        const logoutResponse = await fetch("../backend/authentication/logout.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ logout_id: tenant_code }),
-        });
-        const logoutData = await logoutResponse.json();
-        
-        if (logoutData.success) {
-            console.log("Logout successful");
-        } else {
-            console.warn("Logout failed:", logoutData.message);
-        }
-    } catch (error) {
-        console.error("Error calling logout:", error);
+  try {
+    const logoutResponse = await fetch("../backend/authentication/logout.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logout_id: tenant_code }),
+    });
+    const logoutData = await logoutResponse.json();
+
+    if (logoutData.success) {
+      console.log("Logout successful");
+    } else {
+      console.warn("Logout failed:", logoutData.message);
     }
+  } catch (error) {
+    console.error("Error calling logout:", error);
+  }
 }
 // Add this to your logout function to prevent back button access
 function preventBackButtonAccess() {
-    // Push a new state to history to prevent back button
+  // Push a new state to history to prevent back button
+  history.pushState(null, null, location.href);
+  window.addEventListener("popstate", function () {
     history.pushState(null, null, location.href);
-    window.addEventListener('popstate', function () {
-        history.pushState(null, null, location.href);
-        window.location.href = '../login.php';
-    });
+    window.location.href = "../login.php";
+  });
 }
 
-
 function resetPasswordValidation() {
-    passwordValidation = { length: false, upper: false, lower: false, number: false, match: false };
-    validatePassword();
+  passwordValidation = {
+    length: false,
+    upper: false,
+    lower: false,
+    number: false,
+    match: false,
+  };
+  validatePassword();
 }
 
 // ==================== SECRET QUESTION FUNCTIONS ====================
 async function setSecretAnswer() {
-    const secretQuestion = document.getElementById("secretQuestion")?.value;
-    const secretAnswer = document.getElementById("secretAnswer")?.value;
-    const confirmAnswer = document.getElementById("confirmAnswer")?.value;
+  const secretQuestion = document.getElementById("secretQuestion")?.value;
+  const secretAnswer = document.getElementById("setAnswer")?.value;
+  const confirmAnswer = document.getElementById("confirmAnswer")?.value;
 
-    if (!secretQuestion || !secretAnswer || !confirmAnswer) {
-        displayMessage("Please fill in all fields", "error");
-        return;
+  if (!secretQuestion) {
+    displayMessage("Secret Question is Required", "error");
+    return;
+  }
+  if (!secretAnswer) {
+    displayMessage("Secret Answer is Required", "error");
+    return;
+  }
+  if (!confirmAnswer) {
+    displayMessage("Confirm Secret Answer is Required", "error");
+    return;
+  }
+
+  if (secretAnswer !== confirmAnswer) {
+    displayMessage("Secret answers do not match", "error");
+    return;
+  }
+
+  if (secretAnswer.length < 8) {
+    displayMessage("Secret answer must be at least 8 characters", "error");
+    return;
+  }
+
+  const btn = document.querySelector("#secretTab .btn-save");
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  btn.disabled = true;
+
+  try {
+    const response = await fetch(
+      "../backend/authentication/set_secret_question_answer.php",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          secret_question: secretQuestion,
+          secret_answer: secretAnswer,
+        }),
+      },
+    );
+    const data = await response.json();
+
+    if (data.success) {
+      displayMessage(
+        data.message || "Secret question set successfully",
+        "success",
+      );
+
+      if (currentUser) {
+        currentUser.has_secret_set = 1;
+        window.currentUser = currentUser;
+      }
+
+      setTimeout(() => window.location.reload(), 2000);
+    } else {
+      throw new Error(data.message || "Failed to set secret question");
     }
+  } catch (error) {
+    console.error("Error setting secret question:", error);
+    displayMessage(error.message, "error");
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
+}
 
-    if (secretAnswer !== confirmAnswer) {
-        displayMessage("Secret answers do not match", "error");
-        return;
+//================== RESET SECRET QUESTION AND ANSWER FUNCTION =======================
+async function resetSecretAnswer() {
+  const resecretQuestionInput = document.getElementById("resetSecretQuestion")?.value;
+  const resetAnswerInput = document.getElementById("resetAnswer")?.value;
+  const confirmResetAnswerInput = document.getElementById("confirmResetAnswer")?.value;
+  const resetSecretPasswordInput = document.getElementById("resetSecretPassword")?.value;
+
+  // Validate all inputs
+  if (!resecretQuestionInput) {
+    displayMessage("Secret Question is Required", "error");
+    return;
+  }
+  if (!resetAnswerInput) {
+    displayMessage("Secret Answer is Required", "error");
+    return;
+  }
+  if (!confirmResetAnswerInput) {
+    displayMessage("Confirm Secret Answer is Required", "error");
+    return;
+  }
+  if (!resetSecretPasswordInput) {
+    displayMessage("Your Password is Required", "error");
+    return;
+  }
+
+  // Check if answers match
+  if (resetAnswerInput !== confirmResetAnswerInput) {
+    displayMessage("Secret answers do not match", "error");
+    return;
+  }
+
+  // Check minimum length (FIXED: use correct variable name)
+  if (resetAnswerInput.length < 8) {
+    displayMessage("Secret answer must be at least 8 characters", "error");
+    return;
+  }
+
+  // Check if user has secret set (FIXED: proper condition)
+  if (currentUser && currentUser.has_secret_set !== 1) {
+    displayMessage("Please set your Secret Question and answer first", "error");
+    return;
+  }
+
+  const btn = document.querySelector("#resetSecretTab .btn-save");
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Resetting...';
+  btn.disabled = true;
+
+  try {
+    const response = await fetch("../backend/authentication/reset_secret_question_answer.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret_question: resecretQuestionInput,
+        secret_answer: resetAnswerInput,
+        confirm_answer: confirmResetAnswerInput,
+        password: resetSecretPasswordInput,
+      }),
+    });
+    
+    const data = await response.json();
+
+    if (data.success) {
+      displayMessage(data.message || "Secret Details Reset Successfully", "success");
+
+      // Update currentUser object
+      if (currentUser) {
+        currentUser.has_secret_set = 1;
+        currentUser.secret_question = data.secret_question;
+        window.currentUser = currentUser;
+      }
+
+      setTimeout(() => window.location.reload(), 2000);
+    } else {
+      throw new Error(data.message || "Failed to reset secret question");
     }
-
-    if (secretAnswer.length < 8) {
-        displayMessage("Secret answer must be at least 8 characters", "error");
-        return;
-    }
-
-    const btn = document.querySelector('#secretTab .btn-save');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    btn.disabled = true;
-
-    try {
-        const response = await fetch("../backend/authentication/set_secret_question_answer.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                secret_question: secretQuestion,
-                secret_answer: secretAnswer,
-            }),
-        });
-        const data = await response.json();
-
-        if (data.success) {
-            displayMessage(data.message || "Secret question set successfully", "success");
-            
-            if (currentUser) {
-                currentUser.has_secret_set = 1;
-                window.currentUser = currentUser;
-            }
-            
-            setTimeout(() => window.location.reload(), 2000);
-        } else {
-            throw new Error(data.message || "Failed to set secret question");
-        }
-    } catch (error) {
-        console.error("Error setting secret question:", error);
-        displayMessage(error.message, "error");
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-    }
+  } catch (error) {
+    console.error("Error resetting secret question and answer:", error);
+    displayMessage(error.message, "error");
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
 }
 
 // ==================== UTILITY FUNCTIONS ====================
 // Replace the displayMessage function with this:
 function displayMessage(message, type = "info") {
-    if (window.showToast && typeof window.showToast === 'function') {
-        window.showToast(message, type);
-    } else {
-        // Simple fallback
-        const icons = {
-            success: '✅',
-            error: '❌',
-            warning: '⚠️',
-            info: 'ℹ️'
-        };
-        alert(`${icons[type] || 'ℹ️'} ${message}`);
-    }
+  if (window.showToast && typeof window.showToast === "function") {
+    window.showToast(message, type);
+  } else {
+    // Simple fallback
+    const icons = {
+      success: "✅",
+      error: "❌",
+      warning: "⚠️",
+      info: "ℹ️",
+    };
+    alert(`${icons[type] || "ℹ️"} ${message}`);
+  }
 }
 function escapeHtml(text) {
-    if (!text) return "";
-    const div = document.createElement("div");
-    div.textContent = text;
-    return div.innerHTML;
+  if (!text) return "";
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
 }

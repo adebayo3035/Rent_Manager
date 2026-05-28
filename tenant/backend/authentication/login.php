@@ -166,6 +166,17 @@ class LoginSecurity
         return false;
     }
 
+    public function checkSecretChangeRequired($user)
+    {
+        // Check if password_changed flag exists and is 0
+        // If the field doesn't exist in your table, we'll need to add it first
+        if (isset($user['has_secret_set']) && $user['has_secret_set'] == 0) {
+            $this->log("Secret Question and Answer change required for user: {$user['tenant_code']}");
+            return true;
+        }
+        return false;
+    }
+
     public function checkLockoutStatus($userId)
     {
         $this->log("Checking lockout status for user: {$userId}");
@@ -578,6 +589,7 @@ class LoginSecurity
 
         // Step 6: Check if password change is required (first login)
         $needsPasswordChange = $this->checkPasswordChangeRequired($user);
+        $needsSecretChange = $this->checkSecretChangeRequired($user);
 
         // If password change is required, we still create session but with a flag
         // Step 7: Destroy existing session (if any)
@@ -605,7 +617,8 @@ class LoginSecurity
             'user_id' => $userId,
             'firstname' => $user['firstname'],
             'lastname' => $user['lastname'],
-            'needs_password_change' => $needsPasswordChange
+            'needs_password_change' => $needsPasswordChange,
+            'needs_secret_change' => $needsSecretChange
         ];
 
         return [

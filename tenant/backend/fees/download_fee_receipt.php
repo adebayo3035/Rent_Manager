@@ -179,7 +179,7 @@ try {
 <table class="table">
     <tr>
         <th width="70%">Description</th>
-        <th width="30%">Amount (₦)</th>
+        <th width="30%">Amount (#)</th>
     </tr>
 
     <tr>

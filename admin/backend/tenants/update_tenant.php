@@ -399,75 +399,171 @@ function fullUpdate($conn, $input, $tenant_code, $adminId, $adminRole, $current_
 /* ============================================================
    STATUS UPDATE (delete / restore)
    ============================================================ */
-function statusUpdate($conn, $tenant_code, $new_status, $adminId, $adminRole, $action, $current_apartment_code)
+function statusUpdate($conn, $tenant_code, $new_status, $adminId, $adminRole, $action, $current_apartment_code = null)
 {
     logActivity("STATUS UPDATE START ($action) for Tenant=$tenant_code by Admin=$adminId");
+    logActivity("STATUS UPDATE DETAILS - New Status: $new_status, Action: $action");
 
+    // Validate admin permissions
     if ($adminRole !== "Super Admin") {
         logActivity("UNAUTHORIZED $action attempt by Admin=$adminId");
         json_error("You do not have permission to modify status.", 403);
     }
-    $evacuation_status = "";
-    $move_out_date = "";
 
-    if ($action === "restore") {
-        $restoreCheck = $conn->prepare("
-            SELECT evacuation_status, move_out_date
-            FROM tenants
+    // Start transaction for data consistency
+    $conn->begin_transaction();
+
+    try {
+        // First, fetch current tenant data to validate status
+        $fetchTenant = $conn->prepare("
+            SELECT tenant_code, status, evacuation_status, move_out_date 
+            FROM tenants 
+            WHERE tenant_code = ? 
+            LIMIT 1
+        ");
+        $fetchTenant->bind_param("s", $tenant_code);
+        $fetchTenant->execute();
+        $result = $fetchTenant->get_result();
+        
+        if ($result->num_rows === 0) {
+            logActivity("TENANT NOT FOUND: $tenant_code");
+            json_error("Tenant not found", 404);
+        }
+        
+        $tenantData = $result->fetch_assoc();
+        $current_status = $tenantData['status'];
+        $evacuation_status = $tenantData['evacuation_status'];
+        $move_out_date = $tenantData['move_out_date'];
+        $fetchTenant->close();
+        
+        logActivity("CURRENT TENANT STATUS: $current_status");
+
+        // Handle DELETE (deactivation) operation
+        if ($action === "delete") {
+            logActivity("Processing DEACTIVATION for tenant: $tenant_code");
+            
+            // Check if tenant is currently active (status = 1)
+            if ($current_status != 1) {
+                logActivity("DEACTIVATION BLOCKED: Tenant {$tenant_code} is not active. Current status: {$current_status}");
+                json_error("Cannot deactivate tenant. Tenant account is not currently active.", 400);
+            }
+            
+            // Validate new_status is for deactivation (should be 0 or 'inactive')
+            $allowed_deactivate_statuses = [0, '0', 'inactive', 'deactivated'];
+            if (!in_array($new_status, $allowed_deactivate_statuses)) {
+                logActivity("DEACTIVATION BLOCKED: Invalid status value '{$new_status}' for deactivation");
+                json_error("Invalid status value for deactivation.", 400);
+            }
+            
+            logActivity("DEACTIVATION VALIDATION PASSED: Tenant is active, proceeding with deactivation");
+        }
+
+        // Handle RESTORE operation
+        if ($action === "restore") {
+            logActivity("Processing RESTORATION for tenant: $tenant_code");
+            
+            // Check if tenant is currently inactive
+            if ($current_status == 1) {
+                logActivity("RESTORE BLOCKED: Tenant {$tenant_code} is already active. Current status: {$current_status}");
+                json_error("Cannot restore tenant. Tenant account is already active.", 400);
+            }
+            
+            // Check if tenant has been evacuated
+            if (
+                ($evacuation_status !== null && strtolower((string)$evacuation_status) === 'evacuated') ||
+                !empty($move_out_date)
+            ) {
+                logActivity("RESTORE BLOCKED: Tenant {$tenant_code} has already been evacuated | evacuation_status={$evacuation_status} | move_out_date={$move_out_date}");
+                json_error("This tenant has already been evacuated from the apartment and cannot be restored.", 400);
+            }
+
+            // Check for pending activation request
+            $pendingRequestCheck = $conn->prepare("
+                SELECT id, status, email, user_type, created_at
+                FROM account_reactivation_requests
+                WHERE user_id = ? AND status = 'pending' AND user_type = 'tenant'
+                ORDER BY created_at DESC
+                LIMIT 1
+            ");
+            $pendingRequestCheck->bind_param("s", $tenant_code);
+            $pendingRequestCheck->execute();
+            $pendingResult = $pendingRequestCheck->get_result();
+            
+            if ($pendingResult->num_rows > 0) {
+                $pendingRequest = $pendingResult->fetch_assoc();
+                logActivity("RESTORE BLOCKED: Tenant {$tenant_code} has a pending account reactivation request (ID: {$pendingRequest['id']})");
+                json_error("Tenant has a pending account reactivation request. Please process or reject it first.", 400);
+            }
+            $pendingRequestCheck->close();
+            
+            // Validate new_status is for restoration (should be 1 or 'active')
+            $allowed_restore_statuses = [1, '1', 'active'];
+            if (!in_array($new_status, $allowed_restore_statuses)) {
+                logActivity("RESTORE BLOCKED: Invalid status value '{$new_status}' for restoration");
+                json_error("Invalid status value for restoration.", 400);
+            }
+            
+            logActivity("RESTORATION VALIDATION PASSED: Tenant is inactive, proceeding with restoration");
+        }
+
+        // Update tenant status ONLY - NO apartment changes
+        $stmt = $conn->prepare("
+            UPDATE tenants
+            SET status = ?, 
+                last_updated_by = ?, 
+                last_updated_at = NOW()
+                
             WHERE tenant_code = ?
             LIMIT 1
         ");
-        $restoreCheck->bind_param("s", $tenant_code);
-        $restoreCheck->execute();
-        $restoreCheck->bind_result($evacuation_status, $move_out_date);
-        $restoreCheck->fetch();
-        $restoreCheck->close();
 
-        if (
-            ($evacuation_status !== null && strtolower((string)$evacuation_status) === 'evacuated') ||
-            !empty($move_out_date)
-        ) {
-            logActivity("RESTORE BLOCKED: Tenant {$tenant_code} has already been evacuated | evacuation_status={$evacuation_status} | move_out_date={$move_out_date}");
-            json_error("This tenant has already been evacuated from the apartment and cannot be restored.", 400);
+        // Convert status to appropriate format for database
+        $db_status = null;
+        if ($action === "delete") {
+            $db_status = 0; // Inactive/Deactivated
+        } else if ($action === "restore") {
+            $db_status = 1; // Active
+        } else {
+            $db_status = $new_status;
         }
-    }
-
-    // If deactivating tenant (delete), clear the apartment
-    if ($action === "delete" && !empty($current_apartment_code)) {
-        logActivity("Deactivating tenant - clearing apartment {$current_apartment_code}");
         
-        $clearApartmentStmt = $conn->prepare("
-            UPDATE apartments 
-            SET occupied_by = NULL, 
-                occupancy_status = 'NOT OCCUPIED',
-                last_updated_by = ?,
-                updated_at = NOW()
-            WHERE apartment_code = ? AND occupied_by = ?
-        ");
-        $clearApartmentStmt->bind_param("iss", $adminId, $current_apartment_code, $tenant_code);
-        $clearApartmentStmt->execute();
+        $stmt->bind_param("iis", $db_status, $adminId, $tenant_code);
         
-        if ($clearApartmentStmt->affected_rows > 0) {
-            logActivity("SUCCESS: Apartment {$current_apartment_code} cleared for deactivated tenant");
+        if (!$stmt->execute()) {
+            throw new Exception("Failed to update tenant status: " . $stmt->error);
         }
-        $clearApartmentStmt->close();
+        
+        $affected_rows = $stmt->affected_rows;
+        $stmt->close();
+        
+        if ($affected_rows === 0) {
+            throw new Exception("No changes made. Tenant status may already be set to the requested value.");
+        }
+        
+        logActivity("STATUS UPDATE SUCCESS ($action) for Tenant=$tenant_code | Status changed from {$current_status} to {$db_status}");
+
+        // Commit transaction
+        $conn->commit();
+        
+        logActivity("TRANSACTION COMMITTED: Status update completed for tenant {$tenant_code}");
+        
+        return [
+            "success" => true,
+            "message" => "Tenant " . ($action === "delete" ? "deactivated" : "restored") . " successfully.",
+            "data" => [
+                "tenant_code" => $tenant_code,
+                "old_status" => $current_status,
+                "new_status" => $db_status,
+                "action" => $action,
+                "apartment_unchanged" => true,
+                "note" => "Apartment assignment was not affected by this operation"
+            ]
+        ];
+        
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $conn->rollback();
+        logActivity("STATUS UPDATE ERROR ($action) for Tenant=$tenant_code: " . $e->getMessage());
+        json_error($e->getMessage(), 500);
     }
-
-    // Update tenant status
-    $stmt = $conn->prepare("
-        UPDATE tenants
-        SET status = ?, last_updated_by = ?, last_updated_at = NOW()
-        WHERE tenant_code = ?
-        LIMIT 1
-    ");
-
-    $stmt->bind_param("iss", $new_status, $adminId, $tenant_code);
-    $stmt->execute();
-
-    logActivity("STATUS UPDATE SUCCESS ($action) for Tenant=$tenant_code | NewStatus=$new_status");
-
-    return [
-        "success" => true,
-        "message" => "Tenant " . ($action === "delete" ? "deactivated" : "restored") . " successfully."
-    ];
 }

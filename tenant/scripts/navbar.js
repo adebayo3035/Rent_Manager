@@ -749,8 +749,11 @@ function updateRequirement(elementId, isValid) {
 async function submitForcePasswordChange() {
     const newPassword = document.getElementById('forceNewPassword')?.value;
     const confirmPassword = document.getElementById('forceConfirmPassword')?.value;
+    const newQuestion = document.getElementById('newSecretQuestion')?.value;
+    const newAnswer = document.getElementById('newAnswer')?.value;
+    const confirmAnswer = document.getElementById('confirmNewAnswer')?.value;
     
-    if (!newPassword || !confirmPassword) {
+    if (!newPassword || !confirmPassword || !newQuestion || !newAnswer || !confirmAnswer) {
         showToast('Please fill in all fields', 'error');
         return;
     }
@@ -780,20 +783,29 @@ async function submitForcePasswordChange() {
         return;
     }
     
+    if (newAnswer !== confirmAnswer) {
+        showToast('Secret Answers do not match', 'error');
+        return;
+    }
+    
     try {
         const response = await fetch('../backend/authentication/change_default_password.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 new_password: newPassword,
-                confirm_password: confirmPassword
+                confirm_password: confirmPassword,
+                new_question : newQuestion,
+                new_answer: newAnswer,
+                confirm_answer: confirmAnswer
+
             })
         });
         
         const data = await response.json();
         
         if (data.success) {
-            showToast('Password changed successfully! Please log in again.', 'success');
+            showToast('Security Details changed successfully! Please log in again.', 'success');
             sessionStorage.removeItem('needs_password_change');
             sessionStorage.removeItem('temp_user_id');
             closeForcePasswordModal();

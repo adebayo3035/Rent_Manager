@@ -143,10 +143,13 @@ try {
     $client_code = "CLIENT" . random_unique_id();
     logActivity("Generated unique client code: {$client_code}");
 
+    // creating default password for client
+     $encrypt_pass = password_hash($client_code, PASSWORD_ARGON2ID);
+
     $insert_sql = "
         INSERT INTO clients
-        (client_code, firstname, lastname, email, phone, address, photo, gender, onboarded_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (client_code, firstname, lastname, email, password, phone, address, photo, gender, onboarded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ";
 
     $stmt = $conn->prepare($insert_sql);
@@ -156,11 +159,12 @@ try {
     }
 
     $stmt->bind_param(
-        "ssssssssi",
+        "sssssssssi",
         $client_code,
         $inputs['firstname'],
         $inputs['lastname'],
         $inputs['email'],
+        $encrypt_pass,
         $inputs['phone'],
         $inputs['address'],
         $file_name,

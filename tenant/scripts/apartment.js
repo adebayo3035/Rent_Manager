@@ -73,12 +73,23 @@ function renderApartmentDetails() {
 
     const tenantInfo = apartmentDetails.tenant_details || {};
     let rent_fee = 0;
-    if(leaseInfo.payment_frequency == "Annually"){
+    // if(leaseInfo.payment_frequency == "Annually"){
+    //     rent_fee = (leaseInfo.rent_amount/12)
+    // }else if (leaseInfo.payment_frequency == "Quarterly"){
+    //     rent_fee = leaseInfo.rent_amount/4
+    // }else if(leaseInfo.payment_frequency == "Semi-Annually"){
+    //     rent_fee = leaseInfo.rent_amount/6
+    // }
+    // else{
+    //     rent_fee = leaseInfo.rent_amount;
+    // }
+
+    if(leaseInfo.payment_frequency == "Monthly"){
         rent_fee = (leaseInfo.rent_amount/12)
     }else if (leaseInfo.payment_frequency == "Quarterly"){
         rent_fee = leaseInfo.rent_amount/4
     }else if(leaseInfo.payment_frequency == "Semi-Annually"){
-        rent_fee = leaseInfo.rent_amount/6
+        rent_fee = leaseInfo.rent_amount/2
     }
     else{
         rent_fee = leaseInfo.rent_amount;

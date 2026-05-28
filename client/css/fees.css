@@ -1,0 +1,782 @@
+/* tenant-fees.css - Page-specific styles for tenant fee management */
+.fee-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+
+.fee-info {
+    flex: 1;
+}
+
+.fee-property {
+    font-size: 12px;
+    color: #666;
+    display: block;
+    margin-top: 4px;
+}
+
+.fee-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1f36;
+}
+
+.btn-view-receipt {
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.btn-view-receipt:hover {
+    background: #059669;
+    transform: translateY(-1px);
+}
+
+.fee-filters {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    background: white;
+    padding: 15px 20px;
+    border-radius: 12px;
+    border: 1px solid #f0f0f0;
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    flex: 1;
+    min-width: 180px;
+}
+
+.filter-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+.filter-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-family: inherit;
+    background: white;
+}
+
+.detail-section {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.detail-section:last-child {
+    border-bottom: none;
+}
+
+.detail-section h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #667eea;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #f5f5f5;
+}
+
+.detail-row:last-child {
+    border-bottom: none;
+}
+
+.detail-label {
+    font-weight: 500;
+    color: #666;
+}
+
+.detail-value {
+    color: #1a1f36;
+}
+/* Fees Container */
+.fees-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Page Header */
+.page-header {
+    margin-bottom: 30px;
+}
+
+.page-header h1 {
+    font-size: 28px;
+    color: #1a1f36;
+    margin-bottom: 8px;
+}
+
+.page-header p {
+    color: #666;
+    font-size: 14px;
+}
+
+/* Summary Cards */
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.summary-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f0f0f0;
+    transition: all 0.3s;
+}
+
+.summary-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.summary-card h4 {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+
+.summary-card .amount {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1a1f36;
+}
+
+.summary-card .label {
+    font-size: 12px;
+    color: #999;
+    margin-top: 8px;
+}
+
+.summary-card.total-pending .amount {
+    color: #f59e0b;
+}
+
+.summary-card.total-paid .amount {
+    color: #10b981;
+}
+
+.summary-card.total-overdue .amount {
+    color: #ef4444;
+}
+
+/* Tabs */
+.fee-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    background: white;
+    border-radius: 12px;
+    padding: 8px 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    width: fit-content;
+}
+
+.fee-tab {
+    padding: 10px 24px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 14px;
+    color: #666;
+    transition: all 0.3s;
+    border-radius: 8px;
+}
+
+.fee-tab:hover {
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+}
+
+.fee-tab.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+/* Filters */
+.fee-filters {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    border: 1px solid #f0f0f0;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.filter-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #666;
+}
+
+.filter-select {
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-family: inherit;
+    min-width: 150px;
+    cursor: pointer;
+    font-size: 14px;
+    background: white;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+/* Fees Grid */
+.fees-grid {
+    display: grid;
+    gap: 16px;
+}
+
+.fee-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f0f0f0;
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+.fee-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.fee-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.fee-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1f36;
+}
+
+.fee-status {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-paid {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-overdue {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.fee-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.fee-detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f5f5f5;
+}
+
+.fee-detail-label {
+    font-size: 13px;
+    color: #666;
+}
+
+.fee-detail-value {
+    font-weight: 500;
+    color: #1a1f36;
+}
+
+.fee-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.btn-pay {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.btn-pay:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.btn-view {
+    background: #f3f4f6;
+    color: #1a1f36;
+    border: 1px solid #e5e7eb;
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.btn-view:hover {
+    background: #e5e7eb;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 60px;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #f0f0f0;
+}
+
+.empty-state i {
+    font-size: 64px;
+    color: #ccc;
+    margin-bottom: 20px;
+}
+
+.empty-state h3 {
+    font-size: 20px;
+    color: #1a1f36;
+    margin-bottom: 10px;
+}
+
+.empty-state p {
+    color: #666;
+    margin-bottom: 20px;
+}
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1500;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    padding: 25px;
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.modal-header h3 {
+    font-size: 20px;
+    color: #1a1f36;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #999;
+    transition: all 0.2s;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+}
+
+.modal-close:hover {
+    color: #666;
+    background: #f5f5f5;
+}
+
+.modal-body {
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #1a1f36;
+    font-size: 14px;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    transition: all 0.2s;
+    background: white;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-group input[readonly] {
+    background: #f9fafb;
+    cursor: not-allowed;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 15px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-secondary {
+    background: #f3f4f6;
+    color: #1a1f36;
+    border: 1px solid #e5e7eb;
+    padding: 10px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #e5e7eb;
+    transform: translateY(-1px);
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.btn-download-receipt {
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 13px;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-download-receipt:hover {
+    background: #059669;
+    transform: translateY(-1px);
+}
+
+/* compact styling */
+/* Compact Fee Details Modal Styles */
+.compact-fee-details {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.compact-section {
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.compact-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #667eea;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.compact-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+}
+
+.compact-row:last-child {
+    padding-bottom: 0;
+}
+
+.compact-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #64748b;
+}
+
+.compact-value {
+    font-size: 12px;
+    font-weight: 500;
+    color: #1e293b;
+    text-align: right;
+}
+
+.note-text {
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: left;
+    flex: 1;
+    margin-left: 10px;
+    color: #475569;
+}
+
+/* Override modal content for compact view */
+#feeDetailsModal .modal-content {
+    max-width: 450px;
+    padding: 20px;
+}
+
+#feeDetailsModal .modal-header {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+}
+
+#feeDetailsModal .modal-header h3 {
+    font-size: 16px;
+}
+
+#feeDetailsModal .modal-body {
+    margin-bottom: 12px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+#feeDetailsModal .modal-footer {
+    padding-top: 12px;
+}
+
+#feeDetailsModal .modal-footer .btn-secondary,
+#feeDetailsModal .modal-footer .btn-primary {
+    padding: 6px 16px;
+    font-size: 12px;
+}
+
+/* Scrollbar for modal body */
+#feeDetailsModal .modal-body::-webkit-scrollbar {
+    width: 4px;
+}
+
+#feeDetailsModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#feeDetailsModal .modal-body::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+#feeDetailsModal .modal-body::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .summary-cards {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .fee-tabs {
+        width: 100%;
+        overflow-x: auto;
+        justify-content: flex-start;
+    }
+    
+    .fee-tab {
+        white-space: nowrap;
+        padding: 8px 16px;
+    }
+    
+    .fee-filters {
+        flex-direction: column;
+    }
+    
+    .filter-group {
+        width: 100%;
+    }
+    
+    .filter-select {
+        width: 100%;
+    }
+    
+    .fee-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .fee-details {
+        grid-template-columns: 1fr;
+    }
+    
+    .fee-actions {
+        flex-direction: column;
+    }
+    
+    .btn-pay,
+    .btn-view {
+        width: 100%;
+        text-align: center;
+    }
+    
+    .modal-content {
+        width: 95%;
+        padding: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .page-header h1 {
+        font-size: 24px;
+    }
+    
+    .summary-card .amount {
+        font-size: 24px;
+    }
+    
+    .fee-name {
+        font-size: 16px;
+    }
+}

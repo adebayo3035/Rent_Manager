@@ -487,7 +487,7 @@ class OTPService
 
         try {
             // Store OTP
-            $query = "INSERT INTO otp_requests (user_type, user_id, email, otp, expires_at, status, ip_address) VALUES (?, ?, ?, ?, ?, 'pending', ?)";
+            $query = "INSERT INTO otp_requests (user_type, user_id, email, otp, expires_at, status, email_status, ip_address) VALUES (?, ?, ?, ?, ?, 'pending', 'email_sent', ?)";
             logActivity("{$logPrefix} Preparing OTP insert query: {$query}");
 
             $stmt = $this->conn->prepare($query);
@@ -584,7 +584,7 @@ class OTPService
         $logPrefix = "[UPDATE_OTP_STATUS] [ID:{$this->requestId}]";
 
         try {
-            $query = "UPDATE otp_requests SET status = 'email_failed' WHERE user_type = ? AND user_id = ? AND email = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1";
+            $query = "UPDATE otp_requests SET email_status = 'email_failed' WHERE user_type = ? AND user_id = ? AND email = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1";
             $stmt = $this->conn->prepare($query);
 
             if ($stmt) {

@@ -96,17 +96,17 @@
         </main>
     </div>
 
-    <!-- Force Password Change Modal (First Login) -->
+    <!-- Force Password and Secret Answer Change Modal (First Login) -->
 <div class="modal" id="forcePasswordModal">
     <div class="modal-content" style="max-width: 450px;">
         <div class="modal-header">
-            <h3>Change Your Password</h3>
+            <h3>Update Your Password and Secret Question</h3>
             <button class="modal-close" onclick="closeForcePasswordModal()">&times;</button>
         </div>
         <div class="modal-body">
             <div class="alert-warning" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-bottom: 20px; border-radius: 8px;">
                 <i class="fas fa-exclamation-triangle" style="color: #856404;"></i>
-                <span style="color: #856404; margin-left: 8px;">This is your first login. Please change your default password to continue.</span>
+                <span style="color: #856404; margin-left: 8px;">This is your first login. Please change your security details to continue.</span>
             </div>
             <form id="forcePasswordForm">
                 <div class="form-group">
@@ -119,6 +119,30 @@
                 <div class="form-group">
                     <label>Confirm New Password *</label>
                     <input type="password" id="forceConfirmPassword" required>
+                </div>
+                <div class="form-group">
+                    <label>Secret Question *</label>
+                    <select id="newSecretQuestion" required>
+                        <option value="">-- Select a Secret Question --</option>
+                        <option value="mother_maiden_name">What is your mother's maiden name?</option>
+                        <option value="first_pet">What was the name of your first pet?</option>
+                        <option value="first_school">What was the name of your first school?</option>
+                        <option value="birth_city">In which city were you born?</option>
+                        <option value="favorite_teacher">What is the name of your favorite teacher?</option>
+                        <option value="childhood_friend">What is the name of your childhood best friend?</option>
+                        <option value="first_car">What was your first car?</option>
+                        <option value="favorite_food">What is your favorite food?</option>
+                        <option value="dream_job">What was your dream job as a child?</option>
+                        <option value="favorite_place">What is your favorite place to visit?</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Secret Answer *</label>
+                    <input type="password" id="newAnswer" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Confirm Secret Answer *</label>
+                    <input type="password" id="confirmNewAnswer" required autocomplete="off">
                 </div>
                 
                 <div class="password-strength" style="margin-top: 10px;">

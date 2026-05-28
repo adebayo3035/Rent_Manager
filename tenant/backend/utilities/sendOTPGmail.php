@@ -6,7 +6,7 @@ use PHPMailer\PHPMailer\Exception;
 require_once __DIR__ . '/../../../vendor/autoload.php';
 function sendEmailWithGmailSMTP($to, $body, $subject, $attachments = []) {
     $mail = new PHPMailer(true);
-     $config = include __DIR__ . '/../secrets.php';
+     $config = include __DIR__ . '/../../../secrets.php';
     try {
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
@@ -16,7 +16,7 @@ function sendEmailWithGmailSMTP($to, $body, $subject, $attachments = []) {
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
         $mail->Port       = 465;
 
-        $mail->setFrom('rahmondebayo@gmail.com', 'Transaction Manager');
+        $mail->setFrom('rahmondebayo@gmail.com', 'Rent Pro Manager');
         $mail->addAddress($to);
 
         $mail->isHTML(true);

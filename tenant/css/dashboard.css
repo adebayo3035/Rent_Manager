@@ -382,6 +382,7 @@
 }
 
 /* Modal Styles */
+/* Modal Styles - Fixed for scrolling */
 .modal {
     display: none;
     position: fixed;
@@ -402,11 +403,36 @@
 .modal-content {
     background: white;
     border-radius: 12px;
-    max-width: 500px;
+    max-width: 550px;
     width: 90%;
-    padding: 25px;
+    max-height: 90vh;
+    /* Important: Allow scrolling */
+    overflow-y: auto;
+    overflow-x: hidden;
     animation: modalSlideIn 0.3s ease;
+    /* Remove fixed padding, let body handle it */
+    padding: 25px;
 }
+
+/* Custom scrollbar for modal content */
+.modal-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
 
 @keyframes modalSlideIn {
     from {

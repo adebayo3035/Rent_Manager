@@ -221,30 +221,191 @@ function fullUpdate($conn, $input, $client_code, $adminId, $adminRole)
 /* ============================================================
    STATUS UPDATE (delete / restore)
    ============================================================ */
+// function statusUpdate($conn, $client_code, $new_status, $adminId, $adminRole, $action)
+// {
+//     logActivity("STATUS UPDATE START ($action) for Client=$client_code by Admin=$adminId");
+
+//     if ($adminRole !== "Super Admin") {
+//         logActivity("UNAUTHORIZED $action attempt by Admin=$adminId");
+//         json_error("You do not have permission to modify status.", 403);
+//     }
+
+//     $stmt = $conn->prepare("
+//         UPDATE clients
+//         SET status = ?, last_updated_by = ?, date_updated = NOW()
+//         WHERE client_code = ?
+//         LIMIT 1
+//     ");
+
+//     $stmt->bind_param("iss", $new_status, $adminId, $client_code);
+//     $stmt->execute();
+
+//     logActivity("STATUS UPDATE SUCCESS ($action) for Client=$client_code | NewStatus=$new_status");
+
+//     return [
+//         "success" => true,
+//         "message" => "Client " . ($action === "delete" ? "deactivated" : "restored") . " successfully."
+//     ];
+// }
+
+
+/* ============================================================
+   STATUS UPDATE (delete / restore)
+   ============================================================ */
 function statusUpdate($conn, $client_code, $new_status, $adminId, $adminRole, $action)
 {
     logActivity("STATUS UPDATE START ($action) for Client=$client_code by Admin=$adminId");
+    logActivity("STATUS UPDATE DETAILS - New Status: $new_status, Action: $action");
 
+    // Validate admin permissions
     if ($adminRole !== "Super Admin") {
         logActivity("UNAUTHORIZED $action attempt by Admin=$adminId");
         json_error("You do not have permission to modify status.", 403);
     }
 
-    $stmt = $conn->prepare("
-        UPDATE clients
-        SET status = ?, last_updated_by = ?, date_updated = NOW()
-        WHERE client_code = ?
-        LIMIT 1
-    ");
+    // Start transaction for data consistency
+    $conn->begin_transaction();
 
-    $stmt->bind_param("iss", $new_status, $adminId, $client_code);
-    $stmt->execute();
+    try {
+        // First, fetch current client data to validate status
+        $fetchClient = $conn->prepare("
+            SELECT client_code, status
+            FROM clients 
+            WHERE client_code = ? 
+            LIMIT 1
+        ");
+        $fetchClient->bind_param("s", $client_code);
+        $fetchClient->execute();
+        $result = $fetchClient->get_result();
+        
+        if ($result->num_rows === 0) {
+            logActivity("CLIENT NOT FOUND: $client_code");
+            json_error("Client not found", 404);
+        }
+        
+        $clientData = $result->fetch_assoc();
+        $current_status = $clientData['status'];
+        
+        $fetchClient->close();
+        
+        logActivity("CURRENT CLIENT STATUS: $current_status");
 
-    logActivity("STATUS UPDATE SUCCESS ($action) for Client=$client_code | NewStatus=$new_status");
+        // Handle DELETE (deactivation) operation
+        if ($action === "delete") {
+            logActivity("Processing DEACTIVATION for client: $client_code");
+            
+            // Check if client is currently active (status = 1)
+            if ($current_status != 1) {
+                logActivity("DEACTIVATION BLOCKED: Client {$client_code} is not active. Current status: {$current_status}");
+                json_error("Cannot deactivate client. Client account is not currently active.", 400);
+            }
+            
+            // Validate new_status is for deactivation (should be 0 or 'inactive')
+            $allowed_deactivate_statuses = [0, '0', 'inactive', 'deactivated'];
+            if (!in_array($new_status, $allowed_deactivate_statuses)) {
+                logActivity("DEACTIVATION BLOCKED: Invalid status value '{$new_status}' for deactivation");
+                json_error("Invalid status value for deactivation.", 400);
+            }
+            
+            logActivity("DEACTIVATION VALIDATION PASSED: Client is active, proceeding with deactivation");
+        }
 
-    return [
-        "success" => true,
-        "message" => "Client " . ($action === "delete" ? "deactivated" : "restored") . " successfully."
-    ];
+        // Handle RESTORE operation
+        if ($action === "restore") {
+            logActivity("Processing RESTORATION for client: $client_code");
+            
+            // Check if client is currently inactive
+            if ($current_status == 1) {
+                logActivity("RESTORE BLOCKED: Client {$client_code} is already active. Current status: {$current_status}");
+                json_error("Cannot restore client. Client account is already active.", 400);
+            }
+           
+            // Check for pending activation request
+            $pendingRequestCheck = $conn->prepare("
+                SELECT id, status, email, user_type, created_at
+                FROM account_reactivation_requests
+                WHERE user_id = ? AND status = 'pending' AND user_type = 'client'
+                ORDER BY created_at DESC
+                LIMIT 1
+            ");
+            $pendingRequestCheck->bind_param("s", $client_code);
+            $pendingRequestCheck->execute();
+            $pendingResult = $pendingRequestCheck->get_result();
+            
+            if ($pendingResult->num_rows > 0) {
+                $pendingRequest = $pendingResult->fetch_assoc();
+                logActivity("RESTORE BLOCKED: Client {$client_code} has a pending account reactivation request (ID: {$pendingRequest['id']})");
+                json_error("Client has a pending account reactivation request. Please process or reject it first.", 400);
+            }
+            $pendingRequestCheck->close();
+            
+            // Validate new_status is for restoration (should be 1 or 'active')
+            $allowed_restore_statuses = [1, '1', 'active'];
+            if (!in_array($new_status, $allowed_restore_statuses)) {
+                logActivity("RESTORE BLOCKED: Invalid status value '{$new_status}' for restoration");
+                json_error("Invalid status value for restoration.", 400);
+            }
+            
+            logActivity("RESTORATION VALIDATION PASSED: Client is inactive, proceeding with restoration");
+        }
+
+        // Update client status ONLY - NO apartment changes
+        $stmt = $conn->prepare("
+            UPDATE clients
+            SET status = ?, 
+                last_updated_by = ?, 
+                date_updated = NOW()
+                
+            WHERE client_code = ?
+            LIMIT 1
+        ");
+
+        // Convert status to appropriate format for database
+        $db_status = null;
+        if ($action === "delete") {
+            $db_status = 0; // Inactive/Deactivated
+        } else if ($action === "restore") {
+            $db_status = 1; // Active
+        } else {
+            $db_status = $new_status;
+        }
+        
+        $stmt->bind_param("iis", $db_status, $adminId, $client_code);
+        
+        if (!$stmt->execute()) {
+            throw new Exception("Failed to update client status: " . $stmt->error);
+        }
+        
+        $affected_rows = $stmt->affected_rows;
+        $stmt->close();
+        
+        if ($affected_rows === 0) {
+            throw new Exception("No changes made. Client status may already be set to the requested value.");
+        }
+        
+        logActivity("STATUS UPDATE SUCCESS ($action) for Client=$client_code | Status changed from {$current_status} to {$db_status}");
+
+        // Commit transaction
+        $conn->commit();
+        
+        logActivity("TRANSACTION COMMITTED: Status update completed for client {$client_code}");
+        
+        return [
+            "success" => true,
+            "message" => "Client " . ($action === "delete" ? "deactivated" : "restored") . " successfully.",
+            "data" => [
+                "client_code" => $client_code,
+                "old_status" => $current_status,
+                "new_status" => $db_status,
+                "action" => $action
+            ]
+        ];
+        
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $conn->rollback();
+        logActivity("STATUS UPDATE ERROR ($action) for Client=$client_code: " . $e->getMessage());
+        json_error($e->getMessage(), 500);
+    }
 }
 

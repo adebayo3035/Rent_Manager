@@ -30,26 +30,26 @@ try {
         "revenueData" => [],
         "occupancyData" => [],
         "recentTransactions" => [],
+        "pendingTasks" => [],
         "timestamp" => date('Y-m-d H:i:s')
     ];
 
-    // 1. GET DASHBOARD STATISTICS
+    // ==================== 1. GET DASHBOARD STATISTICS ====================
     $stats = [];
 
-    // Active Tenants
-    $query = "SELECT COUNT(*) as count FROM tenants WHERE status = '1'";
+    // Active Tenants (status = 1 means active)
+    $query = "SELECT COUNT(*) as count FROM tenants WHERE tenant_status = '1' AND deleted_at IS NULL";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();
     $stats['activeTenants'] = $result->fetch_assoc()['count'] ?? 0;
     $stmt->close();
 
-    // Monthly Revenue (current month)
+    // Monthly Revenue (current month) - using rent_payment_tracker or payments table
     $currentMonth = date('Y-m');
-    $query = "SELECT SUM(amount) as total FROM payments 
+    $query = "SELECT SUM(amount_paid) as total FROM rent_payment_tracker 
               WHERE DATE_FORMAT(payment_date, '%Y-%m') = ? 
-              AND payment_status = 'completed' 
-              AND status = 1";
+              AND status IN ('paid', 'approved')";
     $stmt = $conn->prepare($query);
     $stmt->bind_param("s", $currentMonth);
     $stmt->execute();
@@ -58,7 +58,7 @@ try {
     $stmt->close();
 
     // Total Properties
-    $query = "SELECT COUNT(*) as count FROM properties WHERE status = '1'";
+    $query = "SELECT COUNT(*) as count FROM properties WHERE status = 1";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -75,13 +75,12 @@ try {
 
     // Module Counts
     $tables = [
-        'clients' => 'status = 1',
-        'agents' => 'status = 1',
-        'tenants' => 'status = 1',
-        'properties' => 'status = 1',
-        'apartments' => 'status = 1',
-        'payments' => 'status = 1',
-        'admin_tbl' => 'status = 1'
+        'clients' => "status = 1",
+        'agents' => "status = 1",
+        'tenants' => "tenant_status = '1' AND deleted_at IS NULL",
+        'properties' => "status = 1",
+        'apartments' => "status = 1",
+        'admin_tbl' => "status = 1"
     ];
 
     foreach ($tables as $table => $condition) {
@@ -93,8 +92,8 @@ try {
         $stmt->close();
     }
 
-    // Locked Accounts
-    $query = "SELECT COUNT(*) as count FROM admin_lock_history WHERE status = 'locked' ";
+    // Locked Accounts (from admin_lock_history)
+    $query = "SELECT COUNT(*) as count FROM admin_lock_history WHERE status = 'locked'";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -102,18 +101,17 @@ try {
     $stmt->close();
 
     // Vacant Apartments
-    $query = "SELECT COUNT(*) as count FROM apartments WHERE status = '1' AND (occupancy_status = 'NOT OCCUPIED' OR '')";
+    $query = "SELECT COUNT(*) as count FROM apartments WHERE status = 1 AND (occupancy_status = 'NOT OCCUPIED' OR occupancy_status = 'vacant')";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();
     $stats['vacantApartments'] = $result->fetch_assoc()['count'] ?? 0;
     $stmt->close();
 
-    // Overdue Payments
-    $query = "SELECT COUNT(*) as count FROM payments 
+    // Overdue Payments (from rent_payment_tracker)
+    $query = "SELECT COUNT(*) as count FROM rent_payments 
               WHERE due_date < CURDATE() 
-              AND payment_status IN ('pending', 'overdue') 
-              AND status = 1";
+              AND status = 'pending'";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -122,71 +120,60 @@ try {
 
     $response['stats'] = $stats;
 
-    // 2. GET RECENT ACTIVITIES
+    // ==================== 2. GET RECENT ACTIVITIES ====================
     $activities = [];
+    
+    // Fetch from activity_log table if exists, otherwise use individual queries
     $query = "
         (SELECT 'tenant_registered' as type, 
-                CONCAT('New tenant: ', firstname) as description, 
-                created_at as timestamp,
+                CONCAT('New tenant: ', t.firstname, ' ', t.lastname) as description, 
+                t.created_at as timestamp,
                 'fas fa-user-plus' as icon,
                 '#10b981' as color
-         FROM tenants 
-         WHERE status = 1 
-         ORDER BY created_at DESC 
-         LIMIT 2)
-        
-        UNION
-        
-        (SELECT 'payment_received' as type, 
-                CONCAT('Payment: $', FORMAT(amount, 2), ' from ', 
-                       (SELECT firstname FROM tenants WHERE tenants.id = payments.tenant_id)) as description,
-                payment_date as timestamp,
-                'fas fa-money-bill-wave' as icon,
-                '#3b82f6' as color
-         FROM payments 
-         WHERE payment_status = 'completed' AND status = 1
-         ORDER BY payment_date DESC 
+         FROM tenants t
+         WHERE t.deleted_at IS NULL 
+         ORDER BY t.created_at DESC 
          LIMIT 3)
         
-        UNION
+        UNION ALL
+        
+        (SELECT 'payment_received' as type, 
+                CONCAT('Payment: ₦', FORMAT(rpt.amount_paid, 2), ' from ', t.firstname, ' ', t.lastname) as description,
+                rpt.payment_date as timestamp,
+                'fas fa-money-bill-wave' as icon,
+                '#3b82f6' as color
+         FROM rent_payment_tracker rpt
+         JOIN tenants t ON rpt.tenant_code = t.tenant_code
+         WHERE rpt.status IN ('paid', 'approved')
+         ORDER BY rpt.payment_date DESC 
+         LIMIT 3)
+        
+        UNION ALL
         
         (SELECT 'maintenance_request' as type, 
-                CONCAT('Maintenance: ', description) as description,
-                created_at as timestamp,
+                CONCAT('Maintenance: ', mr.issue_type) as description,
+                mr.created_at as timestamp,
                 'fas fa-tools' as icon,
                 '#f59e0b' as color
-         FROM maintenance_requests 
-         WHERE status = 'pending' AND status = 1
-         ORDER BY created_at DESC 
-         LIMIT 2)
+         FROM maintenance_requests mr
+         WHERE mr.status = 'pending'
+         ORDER BY mr.created_at DESC 
+         LIMIT 3)
         
-        UNION
-        
-        (SELECT 'account_locked' as type, 
-                CONCAT('Account locked: ', email) as description,
-                locked_at as timestamp,
-                'fas fa-user-lock' as icon,
-                '#ef4444' as color
-         FROM users 
-         WHERE account_locked = 1 AND status = 1
-         ORDER BY locked_at DESC 
-         LIMIT 1)
-        
-        UNION
+        UNION ALL
         
         (SELECT 'account_reactivation' as type, 
-                CONCAT('Reactivation requested: ', 
-                       (SELECT email FROM users WHERE users.unique_id = account_reactivation_requests.user_id)) as description,
-                created_at as timestamp,
+                CONCAT('Reactivation requested for: ', ar.user_id) as description,
+                ar.created_at as timestamp,
                 'fas fa-user-check' as icon,
                 '#8b5cf6' as color
-         FROM account_reactivation_requests 
-         WHERE status = 'pending'
-         ORDER BY created_at DESC 
-         LIMIT 2)
+         FROM account_reactivation_requests ar
+         WHERE ar.status = 'pending'
+         ORDER BY ar.created_at DESC 
+         LIMIT 3)
         
         ORDER BY timestamp DESC 
-        LIMIT 10
+        LIMIT 12
     ";
 
     $stmt = $conn->prepare($query);
@@ -201,44 +188,43 @@ try {
     
     $response['activities'] = $activities;
 
-    // 3. GET REVENUE DATA (for chart)
+    // ==================== 3. GET REVENUE DATA (for chart) ====================
     $revenueData = [];
     $period = isset($_GET['period']) ? $_GET['period'] : 'monthly';
     
     if ($period === 'monthly') {
         $query = "
             SELECT 
-                DATE_FORMAT(payment_date, '%Y-%m') as month,
-                DATE_FORMAT(payment_date, '%b') as month_name,
-                SUM(amount) as revenue
-            FROM payments 
+                DATE_FORMAT(payment_date, '%Y-%m') as period,
+                DATE_FORMAT(payment_date, '%b %Y') as period_name,
+                SUM(amount_paid) as revenue
+            FROM rent_payment_tracker 
             WHERE payment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-                AND payment_status = 'completed'
-                AND status = 1
-            GROUP BY DATE_FORMAT(payment_date, '%Y-%m'), DATE_FORMAT(payment_date, '%b')
-            ORDER BY month
+                AND status IN ('paid', 'approved')
+            GROUP BY DATE_FORMAT(payment_date, '%Y-%m'), DATE_FORMAT(payment_date, '%b %Y')
+            ORDER BY period
         ";
     } elseif ($period === 'quarterly') {
         $query = "
             SELECT 
-                CONCAT(YEAR(payment_date), '-Q', QUARTER(payment_date)) as quarter,
-                SUM(amount) as revenue
-            FROM payments 
+                CONCAT(YEAR(payment_date), '-Q', QUARTER(payment_date)) as period,
+                CONCAT('Q', QUARTER(payment_date), ' ', YEAR(payment_date)) as period_name,
+                SUM(amount_paid) as revenue
+            FROM rent_payment_tracker 
             WHERE payment_date >= DATE_SUB(CURDATE(), INTERVAL 4 QUARTER)
-                AND payment_status = 'completed'
-                AND status = 1
+                AND status IN ('paid', 'approved')
             GROUP BY YEAR(payment_date), QUARTER(payment_date)
             ORDER BY YEAR(payment_date), QUARTER(payment_date)
         ";
     } else { // yearly
         $query = "
             SELECT 
-                YEAR(payment_date) as year,
-                SUM(amount) as revenue
-            FROM payments 
+                YEAR(payment_date) as period,
+                YEAR(payment_date) as period_name,
+                SUM(amount_paid) as revenue
+            FROM rent_payment_tracker 
             WHERE payment_date >= DATE_SUB(CURDATE(), INTERVAL 5 YEAR)
-                AND payment_status = 'completed'
-                AND status = 1
+                AND status IN ('paid', 'approved')
             GROUP BY YEAR(payment_date)
             ORDER BY YEAR(payment_date)
         ";
@@ -255,14 +241,14 @@ try {
     
     $response['revenueData'] = $revenueData;
 
-    // 4. GET OCCUPANCY DATA
+    // ==================== 4. GET OCCUPANCY DATA ====================
     $occupancyData = [];
     $query = "
         SELECT 
-            COUNT(CASE WHEN occupancy_status = 'occupied' THEN 1 END) as occupied,
-            COUNT(CASE WHEN occupancy_status = 'not occupied' THEN 1 END) as vacant,
-            COUNT(CASE WHEN occupancy_status = 'maintenance' THEN 1 END) as maintenance,
-            COUNT(CASE WHEN occupancy_status = 'reserved' THEN 1 END) as reserved
+            COUNT(CASE WHEN occupancy_status = 'OCCUPIED' THEN 1 END) as occupied,
+            COUNT(CASE WHEN occupancy_status = 'NOT OCCUPIED' THEN 1 END) as vacant,
+            COUNT(CASE WHEN occupancy_status = 'MAINTENANCE' THEN 1 END) as maintenance,
+            COUNT(CASE WHEN occupancy_status = 'RESERVED' THEN 1 END) as reserved
         FROM apartments 
         WHERE status = 1
     ";
@@ -275,33 +261,40 @@ try {
     
     // Calculate percentages
     if ($occupancyData) {
-        $total = array_sum($occupancyData);
+        $total = ($occupancyData['occupied'] ?? 0) + ($occupancyData['vacant'] ?? 0) + 
+                 ($occupancyData['maintenance'] ?? 0) + ($occupancyData['reserved'] ?? 0);
         if ($total > 0) {
             foreach ($occupancyData as $key => $value) {
                 $occupancyData[$key . '_percent'] = round(($value / $total) * 100, 1);
             }
         }
+        $occupancyData['total_units'] = $total;
+        $occupancyData['occupancy_rate'] = $total > 0 ? round(($occupancyData['occupied'] / $total) * 100, 1) : 0;
     }
     
     $response['occupancyData'] = $occupancyData;
 
-    // 5. GET RECENT TRANSACTIONS
+    // ==================== 5. GET RECENT TRANSACTIONS ====================
     $recentTransactions = [];
     $query = "
         SELECT 
-            p.id,
-            p.amount,
-            p.payment_date,
-            p.payment_status,
-            t.firstname as tenant_name,
-            pr.name,
+            rpt.tracker_id as id,
+            rpt.amount_paid as amount,
+            rpt.payment_date,
+            rpt.status as payment_status,
+            rpt.payment_method,
+            rpt.payment_reference,
+            t.firstname,
+            t.lastname,
+            CONCAT(t.firstname, ' ', t.lastname) as tenant_name,
+            p.name as property_name,
             a.apartment_number
-        FROM payments p
-        LEFT JOIN tenants t ON p.tenant_id = t.id
-        LEFT JOIN apartments a ON p.apartment_id = a.id
-        LEFT JOIN properties pr ON a.property_code = pr.property_code
-        WHERE p.status = 1
-        ORDER BY p.payment_date DESC
+        FROM rent_payment_tracker rpt
+        INNER JOIN tenants t ON rpt.tenant_code = t.tenant_code
+        INNER JOIN apartments a ON rpt.apartment_code = a.apartment_code
+        INNER JOIN properties p ON a.property_code = p.property_code
+        WHERE t.deleted_at IS NULL
+        ORDER BY rpt.payment_date DESC
         LIMIT 10
     ";
 
@@ -311,13 +304,14 @@ try {
     
     while ($row = $result->fetch_assoc()) {
         // Format amount
-        $row['amount_formatted'] = '$' . number_format($row['amount'], 2);
+        $row['amount_formatted'] = '₦' . number_format($row['amount'], 2);
         
         // Format date
         $row['payment_date_formatted'] = date('M d, Y', strtotime($row['payment_date']));
         
         // Status color
         $row['status_color'] = getPaymentStatusColor($row['payment_status']);
+        $row['status_badge'] = getPaymentStatusBadge($row['payment_status']);
         
         $recentTransactions[] = $row;
     }
@@ -325,7 +319,7 @@ try {
     
     $response['recentTransactions'] = $recentTransactions;
 
-    // 6. GET PENDING TASKS
+    // ==================== 6. GET PENDING TASKS ====================
     $pendingTasks = [];
     
     // Account reactivation requests
@@ -334,15 +328,19 @@ try {
             'account_reactivation' as type,
             COUNT(*) as count,
             'Review Account Reactivation Requests' as title,
-            'High Priority' as priority,
-            '#ef4444' as color
+            'High' as priority,
+            '#ef4444' as color,
+            '/admin/account_reactivations.php' as link
         FROM account_reactivation_requests 
         WHERE status = 'pending'
     ";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();
-    $pendingTasks[] = $result->fetch_assoc();
+    $task = $result->fetch_assoc();
+    if ($task && $task['count'] > 0) {
+        $pendingTasks[] = $task;
+    }
     $stmt->close();
 
     // Overdue payments
@@ -351,59 +349,67 @@ try {
             'overdue_payments' as type,
             COUNT(*) as count,
             'Overdue Payments to Follow Up' as title,
-            'High Priority' as priority,
-            '#dc2626' as color
-        FROM payments 
+            'High' as priority,
+            '#dc2626' as color,
+            '/admin/payments.php?filter=overdue' as link
+        FROM rent_payments 
         WHERE due_date < CURDATE() 
-            AND payment_status IN ('pending', 'overdue')
-            AND status = 1
+            AND status = 'pending'
     ";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();
-    $pendingTasks[] = $result->fetch_assoc();
+    $task = $result->fetch_assoc();
+    if ($task && $task['count'] > 0) {
+        $pendingTasks[] = $task;
+    }
     $stmt->close();
 
-    // Contract renewals (expiring in next 30 days)
-    $query = "
-        SELECT 
-            'contract_renewals' as type,
-            COUNT(*) as count,
-            'Contract Renewals Due Soon' as title,
-            'Medium Priority' as priority,
-            '#f59e0b' as color
-        FROM tenant_contracts 
-        WHERE end_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-            AND status = 'active'
-            AND status = 1
-    ";
-    $stmt = $conn->prepare($query);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $pendingTasks[] = $result->fetch_assoc();
-    $stmt->close();
-
-    // Maintenance requests
+    // Pending maintenance requests
     $query = "
         SELECT 
             'maintenance' as type,
             COUNT(*) as count,
             'Pending Maintenance Requests' as title,
-            'Medium Priority' as priority,
-            '#3b82f6' as color
+            'Medium' as priority,
+            '#f59e0b' as color,
+            '/admin/maintenance.php?status=pending' as link
         FROM maintenance_requests 
         WHERE status = 'pending'
-            AND status = 1
     ";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();
-    $pendingTasks[] = $result->fetch_assoc();
+    $task = $result->fetch_assoc();
+    if ($task && $task['count'] > 0) {
+        $pendingTasks[] = $task;
+    }
+    $stmt->close();
+
+    // Low balance/empty properties (optional)
+    $query = "
+        SELECT 
+            'vacant_properties' as type,
+            COUNT(*) as count,
+            'Vacant Apartments Ready for Rent' as title,
+            'Low' as priority,
+            '#10b981' as color,
+            '/admin/apartments.php?filter=vacant' as link
+        FROM apartments 
+        WHERE status = 1 AND occupancy_status = 'NOT OCCUPIED'
+    ";
+    $stmt = $conn->prepare($query);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $task = $result->fetch_assoc();
+    if ($task && $task['count'] > 0) {
+        $pendingTasks[] = $task;
+    }
     $stmt->close();
     
     $response['pendingTasks'] = $pendingTasks;
 
-    // 7. GET USER ROLE PERMISSIONS (for UI customization)
+    // ==================== 7. GET USER ROLE PERMISSIONS ====================
     $response['userPermissions'] = [
         'role' => $userRole,
         'canManageStaff' => in_array($userRole, ['Super Admin']),
@@ -411,6 +417,13 @@ try {
         'canViewFinancials' => true,
         'canManageProperties' => in_array($userRole, ['Super Admin', 'Admin']),
         'canApproveReactivation' => in_array($userRole, ['Super Admin'])
+    ];
+
+    // ==================== 8. ADD SYSTEM HEALTH METRICS (Optional) ====================
+    $response['systemHealth'] = [
+        'database_size' => getDatabaseSize($conn),
+        'last_backup' => getLastBackupDate(),
+        'total_users' => ($stats['admin_tbl'] ?? 0) + ($stats['agents'] ?? 0) + ($stats['clients'] ?? 0) + ($stats['tenants'] ?? 0)
     ];
 
     echo json_encode($response);
@@ -425,8 +438,11 @@ try {
     exit();
 }
 
-// Helper Functions
+// ==================== HELPER FUNCTIONS ====================
+
 function getTimeAgo($datetime) {
+    if (!$datetime) return "Unknown";
+    
     $time = strtotime($datetime);
     $time_diff = time() - $time;
     
@@ -448,11 +464,62 @@ function getTimeAgo($datetime) {
 
 function getPaymentStatusColor($status) {
     $colors = [
-        'completed' => '#10b981',
+        'paid' => '#10b981',
+        'approved' => '#10b981',
         'pending' => '#f59e0b',
-        'overdue' => '#ef4444',
-        'failed' => '#6b7280',
+        'pending_verification' => '#f59e0b',
+        'failed' => '#ef4444',
+        'rejected' => '#ef4444',
         'refunded' => '#8b5cf6'
     ];
     return $colors[$status] ?? '#6b7280';
 }
+
+function getPaymentStatusBadge($status) {
+    $badges = [
+        'paid' => 'success',
+        'approved' => 'success',
+        'pending' => 'warning',
+        'pending_verification' => 'warning',
+        'failed' => 'danger',
+        'rejected' => 'danger',
+        'refunded' => 'info'
+    ];
+    return $badges[$status] ?? 'secondary';
+}
+
+function getDatabaseSize($conn) {
+    $query = "SELECT SUM(data_length + index_length) as size 
+              FROM information_schema.tables 
+              WHERE table_schema = DATABASE()";
+    $stmt = $conn->prepare($query);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $size = $result->fetch_assoc()['size'] ?? 0;
+    $stmt->close();
+    
+    if ($size < 1024) {
+        return $size . " bytes";
+    } elseif ($size < 1048576) {
+        return round($size / 1024, 2) . " KB";
+    } elseif ($size < 1073741824) {
+        return round($size / 1048576, 2) . " MB";
+    } else {
+        return round($size / 1073741824, 2) . " GB";
+    }
+}
+
+function getLastBackupDate() {
+    // This would need a backup_logs table or file system check
+    // For now, return a placeholder
+    $backupDir = __DIR__ . '/../../backups/';
+    if (is_dir($backupDir)) {
+        $files = glob($backupDir . '*.sql');
+        if (!empty($files)) {
+            $latest = max($files);
+            return date('Y-m-d H:i:s', filemtime($latest));
+        }
+    }
+    return 'No backups found';
+}
+?>
