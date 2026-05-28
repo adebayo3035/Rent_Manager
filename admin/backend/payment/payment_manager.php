@@ -2,12 +2,14 @@
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../../../tenant/backend/utilities/notification_helper.php';
 session_start();
 
 header('Content-Type: application/json');
 
 // Helper function to get client IP and user agent for better logging
-function getRequestDetails() {
+function getRequestDetails()
+{
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'Unknown IP';
     $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown UA';
     return "IP: $ip | UA: " . substr($userAgent, 0, 100);
@@ -40,9 +42,9 @@ try {
 
     // Route to appropriate function
     logActivity("Routing to action: $action");
-    
+
     // Helper function to get client IP and user agent for better logging
-    
+
     switch ($action) {
         case 'fetch':
             fetchPayments($conn, $adminId, $userRole);
@@ -94,28 +96,29 @@ try {
         'file' => $e->getFile(),
         'line' => $e->getLine()
     ];
-    
+
     logActivity("CRITICAL ERROR in Payment API: " . json_encode($errorDetails));
-    
+
     if (isset($conn) && $conn instanceof mysqli && $conn->connect_errno == 0) {
         $conn->close();
     }
-    
+
     echo json_encode([
-        "success" => false, 
+        "success" => false,
         "message" => "An unexpected error occurred. Please try again later."
     ]);
     exit();
 }
 // ==================== FUNCTIONS ====================
 
-function fetchPayments($conn, $adminId, $userRole) {
+function fetchPayments($conn, $adminId, $userRole)
+{
     logActivity("Starting fetchPayments() - User: $adminId | Role: $userRole");
-    
-    $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
+
+    $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+    $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 10;
     $offset = ($page - 1) * $limit;
-    
+
     logActivity("Fetch parameters - Page: $page | Limit: $limit | Offset: $offset");
 
     // --- FILTERS ---
@@ -204,24 +207,24 @@ function fetchPayments($conn, $adminId, $userRole) {
                    LEFT JOIN apartments a ON p.apartment_code = a.apartment_code
                    LEFT JOIN properties pr ON a.property_code = pr.property_code
                    $whereSQL";
-    
+
     logActivity("Executing count query");
-    
+
     $countStmt = $conn->prepare($countQuery);
     if (!$countStmt) {
         logActivity("ERROR preparing count statement: " . $conn->error);
         throw new Exception("Failed to prepare count query");
     }
-    
+
     if ($params) {
         $countStmt->bind_param($types, ...$params);
     }
-    
+
     $countStmt->execute();
     $countResult = $countStmt->get_result();
     $totalPayments = $countResult->fetch_assoc()['total'] ?? 0;
     $countStmt->close();
-    
+
     logActivity("Total payments found: $totalPayments");
 
     // --- DATA FETCH ---
@@ -252,7 +255,7 @@ function fetchPayments($conn, $adminId, $userRole) {
               LIMIT ? OFFSET ?";
 
     logActivity("Executing data fetch query");
-    
+
     $stmt = $conn->prepare($query);
     if (!$stmt) {
         logActivity("ERROR preparing fetch statement: " . $conn->error);
@@ -263,7 +266,7 @@ function fetchPayments($conn, $adminId, $userRole) {
     $paramsWithPagination[] = $limit;
     $paramsWithPagination[] = $offset;
     $stmtTypes = $types . 'ii';
-    
+
     $stmt->bind_param($stmtTypes, ...$paramsWithPagination);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -293,17 +296,18 @@ function fetchPayments($conn, $adminId, $userRole) {
         ],
         "user_role" => $userRole
     ];
-    
+
     logActivity("fetchPayments() completed successfully");
     echo json_encode($response);
 }
 
-function fetchSinglePayment($conn) {
+function fetchSinglePayment($conn)
+{
     logActivity("Starting fetchSinglePayment()");
-    
-    $paymentId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+    $paymentId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
     logActivity("Fetching payment with ID: $paymentId");
-    
+
     if (!$paymentId) {
         logActivity("ERROR: Payment ID is required");
         echo json_encode(["success" => false, "message" => "Payment ID is required."]);
@@ -329,19 +333,19 @@ function fetchSinglePayment($conn) {
               LEFT JOIN properties pr ON a.property_code = pr.property_code
               LEFT JOIN admin_tbl u ON p.recorded_by = u.unique_id
               WHERE p.id = ? AND p.is_deleted = 0";
-    
+
     logActivity("Executing single payment query");
-    
+
     $stmt = $conn->prepare($query);
     if (!$stmt) {
         logActivity("ERROR preparing statement: " . $conn->error);
         throw new Exception("Failed to prepare query");
     }
-    
+
     $stmt->bind_param("i", $paymentId);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     if ($result->num_rows === 0) {
         logActivity("Payment with ID $paymentId not found");
         echo json_encode(["success" => false, "message" => "Payment not found."]);
@@ -350,10 +354,10 @@ function fetchSinglePayment($conn) {
 
     $payment = $result->fetch_assoc();
     $stmt->close();
-    
+
     $payment['amount_formatted'] = number_format($payment['amount'], 2);
     $payment['payment_date_formatted'] = date('M d, Y', strtotime($payment['payment_date']));
-    
+
     logActivity("Payment found - Receipt: " . ($payment['receipt_number'] ?? 'N/A'));
     echo json_encode([
         "success" => true,
@@ -361,25 +365,26 @@ function fetchSinglePayment($conn) {
     ]);
 }
 
-function createPayment($conn, $adminId) {
+function createPayment($conn, $adminId)
+{
     logActivity("Starting createPayment() - Admin ID: $adminId");
-    
+
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
     if (!$input) {
         $input = $_POST;
     }
-    
+
     // Validate required fields
     $required = ['tenant_code', 'apartment_code', 'amount', 'payment_date', 'payment_method'];
     $missingFields = [];
-    
+
     foreach ($required as $field) {
         if (!isset($input[$field]) || empty($input[$field])) {
             $missingFields[] = $field;
         }
     }
-    
+
     if (!empty($missingFields)) {
         logActivity("Missing required fields: " . implode(', ', $missingFields));
         echo json_encode(["success" => false, "message" => "Missing required fields: " . implode(', ', $missingFields)]);
@@ -388,17 +393,17 @@ function createPayment($conn, $adminId) {
 
     $receiptNumber = 'RCP-' . date('Ymd') . '-' . strtoupper(uniqid());
     logActivity("Generated receipt number: $receiptNumber");
-    
+
     $tenantCode = $input['tenant_code'];
     $apartmentCode = $input['apartment_code'];
-    $amount = (float)$input['amount'];
+    $amount = (float) $input['amount'];
     $paymentDate = $input['payment_date'];
     $paymentMethod = $input['payment_method'];
     $paymentStatus = $input['payment_status'] ?? 'completed';
     $referenceNumber = $input['reference_number'] ?? null;
     $description = $input['description'] ?? null;
     $dueDate = $input['due_date'] ?? null;
-    $balance = isset($input['balance']) ? (float)$input['balance'] : 0;
+    $balance = isset($input['balance']) ? (float) $input['balance'] : 0;
 
     logActivity("Payment data - Tenant: $tenantCode | Apartment: $apartmentCode | Amount: $amount");
 
@@ -412,20 +417,28 @@ function createPayment($conn, $adminId) {
                     payment_status, receipt_number, reference_number, 
                     description, recorded_by, created_at
                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
-        
+
         $stmt = $conn->prepare($query);
         if (!$stmt) {
             throw new Exception("Failed to prepare insert query: " . $conn->error);
         }
-        
+
         $stmt->bind_param(
             "ssddssssssss",
-            $tenantCode, $apartmentCode, $amount, $balance,
-            $paymentDate, $dueDate, $paymentMethod,
-            $paymentStatus, $receiptNumber, $referenceNumber,
-            $description, $adminId
+            $tenantCode,
+            $apartmentCode,
+            $amount,
+            $balance,
+            $paymentDate,
+            $dueDate,
+            $paymentMethod,
+            $paymentStatus,
+            $receiptNumber,
+            $referenceNumber,
+            $description,
+            $adminId
         );
-        
+
         $stmt->execute();
         $paymentId = $stmt->insert_id;
         $stmt->close();
@@ -448,16 +461,17 @@ function createPayment($conn, $adminId) {
     }
 }
 
-function updatePayment($conn, $adminId) {
+function updatePayment($conn, $adminId)
+{
     logActivity("Starting updatePayment() - Admin ID: $adminId");
-    
+
     $input = json_decode(file_get_contents('php://input'), true);
     if (!$input) {
         $input = $_POST;
     }
-    
-    $paymentId = isset($input['id']) ? (int)$input['id'] : 0;
-    
+
+    $paymentId = isset($input['id']) ? (int) $input['id'] : 0;
+
     if (!$paymentId) {
         echo json_encode(["success" => false, "message" => "Payment ID is required."]);
         return;
@@ -468,7 +482,7 @@ function updatePayment($conn, $adminId) {
     $checkStmt->bind_param("i", $paymentId);
     $checkStmt->execute();
     $checkResult = $checkStmt->get_result();
-    
+
     if ($checkResult->num_rows === 0) {
         echo json_encode(["success" => false, "message" => "Payment not found."]);
         return;
@@ -479,9 +493,16 @@ function updatePayment($conn, $adminId) {
     $params = [];
     $types = '';
 
-    $updatableFields = ['amount' => 'd', 'balance' => 'd', 'payment_date' => 's', 
-                        'due_date' => 's', 'payment_method' => 's', 'payment_status' => 's',
-                        'reference_number' => 's', 'description' => 's'];
+    $updatableFields = [
+        'amount' => 'd',
+        'balance' => 'd',
+        'payment_date' => 's',
+        'due_date' => 's',
+        'payment_method' => 's',
+        'payment_status' => 's',
+        'reference_number' => 's',
+        'description' => 's'
+    ];
 
     foreach ($updatableFields as $field => $type) {
         if (isset($input[$field])) {
@@ -509,16 +530,17 @@ function updatePayment($conn, $adminId) {
     echo json_encode(["success" => true, "message" => "Payment updated successfully!"]);
 }
 
-function deletePayment($conn, $adminId) {
+function deletePayment($conn, $adminId)
+{
     logActivity("Starting deletePayment() - Admin ID: $adminId");
-    
+
     $input = json_decode(file_get_contents('php://input'), true);
     if (!$input) {
         $input = $_POST;
     }
-    
-    $paymentId = isset($input['id']) ? (int)$input['id'] : 0;
-    
+
+    $paymentId = isset($input['id']) ? (int) $input['id'] : 0;
+
     if (!$paymentId) {
         echo json_encode(["success" => false, "message" => "Payment ID is required."]);
         return;
@@ -534,77 +556,299 @@ function deletePayment($conn, $adminId) {
     echo json_encode(["success" => true, "message" => "Payment deleted successfully!"]);
 }
 
-function recordPayment($conn, $adminId) {
-    logActivity("Starting recordPayment() - Admin ID: $adminId");
-    
+function recordPayment($conn, $adminId)
+{
+    // Generate unique request ID for tracking
+    $requestId = uniqid('admin_fee_payment_', true);
+    logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ========== START ==========");
+    logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Admin ID: {$adminId}");
+
     $input = json_decode(file_get_contents('php://input'), true);
     if (!$input) {
         $input = $_POST;
     }
-    
+
+    // Extract input fields
     $tenantCode = $input['tenant_code'] ?? '';
-    $amount = isset($input['amount']) ? (float)$input['amount'] : 0;
+    $tenantFeeId = $input['tenant_fee_id'] ?? 0;
+    $amount = isset($input['amount']) ? (float) $input['amount'] : 0;
     $paymentMethod = $input['payment_method'] ?? 'cash';
-    
-    if (!$tenantCode || $amount <= 0) {
-        echo json_encode(["success" => false, "message" => "Tenant code and amount are required."]);
+    $referenceNumber = $input['reference_number'] ?? null;
+    $dueDate = $input['due_date'] ?? '';
+
+    logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Data: tenant_code=$tenantCode, tenant_fee_id=$tenantFeeId, amount=$amount");
+
+    // Validate required fields
+    if (!$tenantCode) {
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Tenant code required");
+        echo json_encode(["success" => false, "message" => "Tenant code is required."]);
         return;
     }
 
-    // Get tenant's apartment
-    $tenantStmt = $conn->prepare("SELECT apartment_code FROM tenants WHERE tenant_code = ? AND status = 1");
-    $tenantStmt->bind_param("s", $tenantCode);
-    $tenantStmt->execute();
-    $tenantResult = $tenantStmt->get_result();
-    
-    if ($tenantResult->num_rows === 0) {
-        echo json_encode(["success" => false, "message" => "Tenant not found."]);
+    if (!$tenantFeeId) {
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Fee type required");
+        echo json_encode(["success" => false, "message" => "Fee type is required."]);
         return;
     }
-    
-    $tenantData = $tenantResult->fetch_assoc();
-    $apartmentCode = $tenantData['apartment_code'];
-    $tenantStmt->close();
 
-    $receiptNumber = 'QREC-' . date('Ymd') . '-' . strtoupper(uniqid());
-    
+    if ($amount <= 0) {
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Invalid amount");
+        echo json_encode(["success" => false, "message" => "Valid amount is required."]);
+        return;
+    }
+
+    if (!$dueDate) {
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Due date required");
+        echo json_encode(["success" => false, "message" => "Due date is required."]);
+        return;
+    }
+
+    $allowed_methods = ['bank_transfer', 'card', 'cash', 'cheque', 'mobile_money'];
+    if (!in_array($paymentMethod, $allowed_methods)) {
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Invalid payment method");
+        echo json_encode(["success" => false, "message" => "Invalid payment method."]);
+        return;
+    }
+
     $conn->begin_transaction();
+    logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Transaction started");
 
     try {
-        $query = "INSERT INTO payments (
-                    tenant_code, apartment_code, amount, 
-                    payment_date, payment_method, payment_status,
-                    receipt_number, recorded_by, created_at
-                  ) VALUES (?, ?, ?, CURDATE(), ?, 'completed', ?, ?, NOW())";
-        
-        $stmt = $conn->prepare($query);
-        $stmt->bind_param("ssdsss", $tenantCode, $apartmentCode, $amount, $paymentMethod, $receiptNumber, $adminId);
-        $stmt->execute();
-        $paymentId = $stmt->insert_id;
-        $stmt->close();
-        
-        logActivity("Quick payment recorded - ID: $paymentId | Receipt: $receiptNumber");
+        // ==================== STEP 1: GET FEE DETAILS ====================
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Fetching fee details");
 
+        $fee_query = "
+            SELECT tf.*, ft.fee_name, ft.fee_code, ft.is_recurring, ft.recurrence_period,
+                   a.apartment_number, a.apartment_code, a.property_code,
+                   p.name as property_name,
+                   CONCAT(t.firstname, ' ', t.lastname) as tenant_name,
+                   t.email as tenant_email,
+                   t.phone as tenant_phone
+            FROM tenant_fees tf
+            JOIN fee_types ft ON tf.fee_type_id = ft.fee_type_id
+            JOIN apartments a ON tf.apartment_code = a.apartment_code
+            JOIN properties p ON a.property_code = p.property_code
+            JOIN tenants t ON tf.tenant_code = t.tenant_code
+            WHERE tf.tenant_fee_id = ? AND tf.tenant_code = ?
+        ";
+
+        $fee_stmt = $conn->prepare($fee_query);
+        $fee_stmt->bind_param("is", $tenantFeeId, $tenantCode);
+        $fee_stmt->execute();
+        $fee_result = $fee_stmt->get_result();
+        $fee = $fee_result->fetch_assoc();
+        $fee_stmt->close();
+
+        if (!$fee) {
+            logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Fee not found");
+            throw new Exception("Fee not found or does not belong to this tenant", 404);
+        }
+
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Fee found: {$fee['fee_name']} - Status: {$fee['status']}");
+
+        if ($fee['status'] === 'paid') {
+            logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Fee already paid");
+            throw new Exception("This fee has already been paid", 400);
+        }
+
+        $paymentAmount = $amount ?: $fee['amount'];
+
+        // ==================== STEP 2: GENERATE IDENTIFIERS ====================
+        $receipt_number = 'RCT-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
+        $transaction_id = 'TXN-' . date('Ymd') . '-' . time() . '-' . rand(1000, 9999);
+
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Receipt: $receipt_number");
+
+        // ==================== STEP 3: UPDATE TENANT FEES TABLE ====================
+        $update_fee_query = "
+            UPDATE tenant_fees 
+            SET status = 'paid', 
+                payment_date = NOW(), 
+                payment_method = ?, 
+                receipt_number = ?,
+                payment_id = ?,
+                notes = CONCAT(IFNULL(notes, ''), '\nPaid on ', NOW(), ' via ', ?, ' by Admin. Receipt: ', ?)
+            WHERE tenant_fee_id = ?
+        ";
+
+        $update_stmt = $conn->prepare($update_fee_query);
+        $update_stmt->bind_param(
+            "sssssi",
+            $paymentMethod,
+            $receipt_number,
+            $transaction_id,
+            $paymentMethod,
+            $receipt_number,
+            $tenantFeeId
+        );
+
+        if (!$update_stmt->execute()) {
+            logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Failed to update tenant_fees: " . $update_stmt->error);
+            throw new Exception("Failed to update fee status", 500);
+        }
+        $update_stmt->close();
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] tenant_fees updated");
+
+        // ==================== STEP 4: BUILD NOTES (FIXED) ====================
+        $notes = "Paid on " . date('Y-m-d H:i:s') . " via " . $paymentMethod . " by Admin ID: " . $adminId . ". Receipt Number: " . $receipt_number;
+
+        // ==================== STEP 5: RECORD IN PAYMENTS TABLE ====================
+        $payment_query = "
+            INSERT INTO payments (
+                tenant_code,
+                apartment_code,
+                amount,
+                balance,
+                payment_date,
+                due_date,
+                payment_method,
+                payment_status,
+                receipt_number,
+                reference_number,
+                description,
+                recorded_by,
+                created_at,
+                payment_category,
+                notes
+            ) VALUES (?, ?, ?, ?, NOW(), ?, ?, 'completed', ?, ?, ?, ?, NOW(), 'fee', ?)
+        ";
+
+        $balance = 0;
+        $description = "Fee payment for: " . $fee['fee_name'] . " (" . $fee['fee_code'] . ") - Recorded by Admin";
+
+        $payment_stmt = $conn->prepare($payment_query);
+        $payment_stmt->bind_param(
+            "ssddsssssis",
+            $tenantCode,
+            $fee['apartment_code'],
+            $paymentAmount,
+            $balance,
+            $dueDate,
+            $paymentMethod,
+            $receipt_number,
+            $referenceNumber,
+            $description,
+            $adminId,
+            $notes
+        );
+
+        if (!$payment_stmt->execute()) {
+            logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: Failed to insert into payments: " . $payment_stmt->error);
+            throw new Exception("Failed to record payment", 500);
+        }
+
+        $payment_id = $payment_stmt->insert_id;
+        $payment_stmt->close();
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Payment record created. ID: $payment_id");
+
+        // ==================== STEP 6: GENERATE NEXT RECURRING FEE ====================
+        $next_fee_created = false;
+        $next_due_date = null;
+
+        if ($fee['is_recurring'] == 1 && $fee['recurrence_period'] !== 'one-time') {
+            logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Processing recurring fee");
+
+            switch (strtolower($fee['recurrence_period'])) {
+                case 'monthly':
+                    $next_due_date = date('Y-m-d', strtotime($fee['due_date'] . ' +1 month'));
+                    break;
+                case 'quarterly':
+                    $next_due_date = date('Y-m-d', strtotime($fee['due_date'] . ' +3 months'));
+                    break;
+                case 'semi-annually':
+                case 'semi_annually':
+                    $next_due_date = date('Y-m-d', strtotime($fee['due_date'] . ' +6 months'));
+                    break;
+                case 'annually':
+                    $next_due_date = date('Y-m-d', strtotime($fee['due_date'] . ' +1 year'));
+                    break;
+                default:
+                    $next_due_date = date('Y-m-d', strtotime($fee['due_date'] . ' +1 month'));
+            }
+
+            $check_next_query = "
+                SELECT tenant_fee_id FROM tenant_fees 
+                WHERE tenant_code = ? AND fee_type_id = ? AND due_date = ?
+            ";
+            $check_stmt = $conn->prepare($check_next_query);
+            $check_stmt->bind_param("sis", $tenantCode, $fee['fee_type_id'], $next_due_date);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+
+            if ($check_result->num_rows === 0) {
+                $next_fee_query = "
+                    INSERT INTO tenant_fees (
+                        tenant_code, 
+                        apartment_code, 
+                        fee_type_id, 
+                        amount, 
+                        due_date, 
+                        status, 
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+                ";
+                $next_stmt = $conn->prepare($next_fee_query);
+                $next_stmt->bind_param("ssids", $tenantCode, $fee['apartment_code'], $fee['fee_type_id'], $fee['amount'], $next_due_date);
+                
+                if ($next_stmt->execute()) {
+                    $next_fee_created = true;
+                    logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Next recurring fee created");
+                }
+                $next_stmt->close();
+            }
+            $check_stmt->close();
+        }
+
+        // ==================== STEP 7: CREATE NOTIFICATION ====================
+        $notification_title = "Fee Payment Received";
+        $notification_message = "Your payment of ₦" . number_format($paymentAmount, 2) .
+            " for {$fee['fee_name']} has been recorded by Admin. Receipt No: {$receipt_number}";
+
+        createNotification($conn, $tenantCode, 'payment', $notification_title, $notification_message, [
+            'fee_id' => $tenantFeeId,
+            'amount' => $paymentAmount,
+            'receipt_number' => $receipt_number,
+            'recorded_by_admin' => true
+        ], 'high');
+
+        // ==================== STEP 8: COMMIT ====================
         $conn->commit();
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Transaction committed");
 
+        // ==================== STEP 9: RETURN RESPONSE ====================
         echo json_encode([
             "success" => true,
             "message" => "Payment recorded successfully!",
-            "receipt_number" => $receiptNumber,
-            "payment_id" => $paymentId
+            "receipt_number" => $receipt_number,
+            "transaction_id" => $transaction_id,
+            "payment_id" => $payment_id,
+            "tenant_fee_id" => $tenantFeeId,
+            "amount" => $paymentAmount,
+            "fee_name" => $fee['fee_name'],
+            "fee_code" => $fee['fee_code'],
+            "tenant_name" => $fee['tenant_name'],
+            "payment_date" => date('Y-m-d H:i:s'),
+            "next_fee_created" => $next_fee_created,
+            "next_due_date" => $next_fee_created ? $next_due_date : null,
+            "receipt_url" => "../admin/backend/payments/download_receipt.php?receipt_number={$receipt_number}&type=fee"
         ]);
 
     } catch (Exception $e) {
         $conn->rollback();
-        throw $e;
+        logActivity("[ADMIN_FEE_PAYMENT] [ID:{$requestId}] ERROR: " . $e->getMessage());
+        echo json_encode([
+            "success" => false,
+            "message" => $e->getMessage(),
+            "error_code" => $e->getCode()
+        ]);
     }
 }
-
-function generateInvoice($conn, $adminId) {
+function generateInvoice($conn, $adminId)
+{
     logActivity("Starting generateInvoice() - Admin ID: $adminId");
-    
-    $paymentId = isset($_GET['payment_id']) ? (int)$_GET['payment_id'] : 0;
-    
+
+    $paymentId = isset($_GET['payment_id']) ? (int) $_GET['payment_id'] : 0;
+
     if (!$paymentId) {
         echo json_encode(["success" => false, "message" => "Payment ID is required."]);
         return;
@@ -623,12 +867,12 @@ function generateInvoice($conn, $adminId) {
               LEFT JOIN apartments a ON p.apartment_code = a.apartment_code
               LEFT JOIN properties pr ON a.property_code = pr.property_code
               WHERE p.id = ? AND p.is_deleted = 0";
-    
+
     $stmt = $conn->prepare($query);
     $stmt->bind_param("i", $paymentId);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     if ($result->num_rows === 0) {
         echo json_encode(["success" => false, "message" => "Payment not found."]);
         return;
@@ -636,9 +880,9 @@ function generateInvoice($conn, $adminId) {
 
     $invoiceData = $result->fetch_assoc();
     $stmt->close();
-    
+
     $invoiceNumber = 'INV-' . date('Ymd') . '-' . str_pad($paymentId, 6, '0', STR_PAD_LEFT);
-    
+
     echo json_encode([
         "success" => true,
         "invoice" => array_merge($invoiceData, [
@@ -649,9 +893,10 @@ function generateInvoice($conn, $adminId) {
     ]);
 }
 
-function getPaymentStatistics($conn) {
+function getPaymentStatistics($conn)
+{
     logActivity("Starting getPaymentStatistics()");
-    
+
     $statsQuery = "SELECT 
                     COUNT(*) as total_payments,
                     SUM(amount) as total_revenue,
@@ -664,7 +909,7 @@ function getPaymentStatistics($conn) {
                     SUM(CASE WHEN payment_status = 'completed' THEN amount ELSE 0 END) as completed_revenue
                    FROM payments 
                    WHERE is_deleted = 0";
-    
+
     $statsStmt = $conn->prepare($statsQuery);
     $statsStmt->execute();
     $stats = $statsStmt->get_result()->fetch_assoc();
@@ -681,11 +926,11 @@ function getPaymentStatistics($conn) {
                      AND is_deleted = 0
                    GROUP BY DATE_FORMAT(payment_date, '%Y-%m'), DATE_FORMAT(payment_date, '%b')
                    ORDER BY month";
-    
+
     $trendStmt = $conn->prepare($trendQuery);
     $trendStmt->execute();
     $trendResult = $trendStmt->get_result();
-    
+
     $revenueTrend = [];
     while ($row = $trendResult->fetch_assoc()) {
         $revenueTrend[] = $row;
@@ -700,11 +945,11 @@ function getPaymentStatistics($conn) {
                    FROM payments 
                    WHERE is_deleted = 0
                    GROUP BY payment_method";
-    
+
     $methodStmt = $conn->prepare($methodQuery);
     $methodStmt->execute();
     $methodResult = $methodStmt->get_result();
-    
+
     $methodDistribution = [];
     while ($row = $methodResult->fetch_assoc()) {
         $methodDistribution[] = $row;
@@ -721,34 +966,35 @@ function getPaymentStatistics($conn) {
     ]);
 }
 
-function updatePaymentStatus($conn, $adminId) {
+function updatePaymentStatus($conn, $adminId)
+{
     logActivity("Starting updatePaymentStatus() - Admin ID: $adminId");
-    
+
     $input = json_decode(file_get_contents('php://input'), true);
     if (!$input) {
         $input = $_POST;
     }
-    
-    $trackerId = isset($input['tracker_id']) ? (int)$input['tracker_id'] : 0;
-    $paymentId = isset($input['payment_id']) ? (int)$input['payment_id'] : 0;
+
+    $trackerId = isset($input['tracker_id']) ? (int) $input['tracker_id'] : 0;
+    $paymentId = isset($input['payment_id']) ? (int) $input['payment_id'] : 0;
     $newStatus = isset($input['status']) ? trim($input['status']) : '';
     $notes = isset($input['notes']) ? trim($input['notes']) : '';
-    
+
     // If tracker_id is provided, use it; otherwise fall back to payment_id
     if (!$trackerId && !$paymentId) {
         echo json_encode(["success" => false, "message" => "Tracker ID or Payment ID is required."]);
         return;
     }
-    
+
     $allowedStatuses = ['paid', 'failed'];
     if (!in_array($newStatus, $allowedStatuses)) {
         echo json_encode(["success" => false, "message" => "Invalid status. Allowed: " . implode(', ', $allowedStatuses)]);
         return;
     }
-    
+
     $conn->begin_transaction();
     logActivity("Transaction started for status update");
-    
+
     try {
         // 1. Get tracker record details
         if ($trackerId) {
@@ -773,21 +1019,21 @@ function updatePaymentStatus($conn, $adminId) {
             $trackerStmt->bind_param("i", $trackerId);
             $trackerStmt->execute();
             $trackerResult = $trackerStmt->get_result();
-            
+
             if ($trackerResult->num_rows === 0) {
                 throw new Exception("Tracker record not found");
             }
-            
+
             $tracker = $trackerResult->fetch_assoc();
             $trackerStmt->close();
-            
+
             logActivity("Found tracker record - Period #{$tracker['period_number']}, Current Status: {$tracker['status']}");
-            
+
             // Verify the tracker is in pending_verification status
             if ($tracker['status'] !== 'pending_verification') {
                 throw new Exception("Payment is not in pending verification status. Current status: {$tracker['status']}");
             }
-            
+
         } else {
             // Fallback: Get via payment_id from payments table
             $fallbackQuery = "
@@ -807,22 +1053,22 @@ function updatePaymentStatus($conn, $adminId) {
             $fallbackStmt->bind_param("i", $paymentId);
             $fallbackStmt->execute();
             $fallbackResult = $fallbackStmt->get_result();
-            
+
             if ($fallbackResult->num_rows === 0) {
                 throw new Exception("Payment record not found");
             }
-            
+
             $tracker = $fallbackResult->fetch_assoc();
             $fallbackStmt->close();
             $trackerId = $tracker['tracker_id'];
         }
-        
+
         $oldStatus = $tracker['status'];
-        $periodAmount = (float)$tracker['period_amount'];
+        $periodAmount = (float) $tracker['period_amount'];
         $periodEndDate = $tracker['end_date'];
-        
+
         logActivity("Processing payment - Period #{$tracker['period_number']}, Amount: {$periodAmount}, New Status: {$newStatus}");
-        
+
         // 2. Update tracker record
         if ($newStatus === 'paid') {
             // APPROVE payment
@@ -839,7 +1085,7 @@ function updatePaymentStatus($conn, $adminId) {
             $updateStmt->bind_param("ii", $adminId, $trackerId);
             $updateStmt->execute();
             $updateStmt->close();
-            
+
             // Update rent_payments balance
             $newRentBalance = $tracker['rent_payment_balance'] - $periodAmount;
             $updateRentQuery = "
@@ -853,7 +1099,7 @@ function updatePaymentStatus($conn, $adminId) {
             $updateRentStmt->bind_param("dds", $periodAmount, $newRentBalance, $tracker['rent_payment_id']);
             $updateRentStmt->execute();
             $updateRentStmt->close();
-            
+
             // Update tenant's rent_balance
             $updateTenantQuery = "
                 UPDATE tenants 
@@ -865,7 +1111,7 @@ function updatePaymentStatus($conn, $adminId) {
             $updateTenantStmt->bind_param("ds", $periodAmount, $tracker['tenant_code']);
             $updateTenantStmt->execute();
             $updateTenantStmt->close();
-            
+
             // Update temp_lease_end_date to this period's end date
             $updateLeaseQuery = "
                 UPDATE tenants 
@@ -877,9 +1123,9 @@ function updatePaymentStatus($conn, $adminId) {
             $updateLeaseStmt->execute();
             $updateLeaseStmt->close();
             logActivity("Temp lease end date updated to: {$periodEndDate} for tenant: {$tracker['tenant_code']}");
-            
+
             logActivity("Payment approved - Period #{$tracker['period_number']}, New rent balance: {$newRentBalance}");
-            
+
         } elseif ($newStatus === 'failed') {
             // REJECT payment
             $updateTrackerQuery = "
@@ -894,10 +1140,10 @@ function updatePaymentStatus($conn, $adminId) {
             $updateStmt->bind_param("ii", $adminId, $trackerId);
             $updateStmt->execute();
             $updateStmt->close();
-            
+
             logActivity("Payment rejected - Period #{$tracker['period_number']}, Reason: {$notes}");
         }
-        
+
         // 3. Update payments table
         if ($tracker['payment_id']) {
             $paymentStatus = ($newStatus === 'paid') ? 'completed' : 'failed';
@@ -913,7 +1159,7 @@ function updatePaymentStatus($conn, $adminId) {
             $updatePaymentStmt->execute();
             $updatePaymentStmt->close();
         }
-        
+
         // 4. Check if all periods are now paid
         $remainingQuery = "
             SELECT COUNT(*) as remaining_count 
@@ -927,7 +1173,7 @@ function updatePaymentStatus($conn, $adminId) {
         $remainingResult = $remainingStmt->get_result();
         $remainingData = $remainingResult->fetch_assoc();
         $remainingStmt->close();
-        
+
         if ($remainingData['remaining_count'] == 0 && $newStatus === 'paid') {
             // All periods are paid - update rent_payments status to completed
             $completeRentQuery = "
@@ -940,7 +1186,7 @@ function updatePaymentStatus($conn, $adminId) {
             $completeStmt->bind_param("s", $tracker['rent_payment_id']);
             $completeStmt->execute();
             $completeStmt->close();
-            
+
             // Update tenant payment status
             $completeTenantQuery = "
                 UPDATE tenants 
@@ -952,16 +1198,16 @@ function updatePaymentStatus($conn, $adminId) {
             $completeTenantStmt->bind_param("s", $tracker['tenant_code']);
             $completeTenantStmt->execute();
             $completeTenantStmt->close();
-            
+
             logActivity("All periods completed! Lease marked as fully paid for tenant: {$tracker['tenant_code']}");
         }
-        
+
         $conn->commit();
         logActivity("Payment verification completed successfully - Tracker ID: $trackerId, New Status: $newStatus");
-        
+
         echo json_encode([
             "success" => true,
-            "message" => $newStatus === 'paid' 
+            "message" => $newStatus === 'paid'
                 ? "Payment approved successfully! Period #{$tracker['period_number']} marked as paid."
                 : "Payment rejected. Period #{$tracker['period_number']} marked as failed.",
             "tracker_id" => $trackerId,
@@ -969,7 +1215,7 @@ function updatePaymentStatus($conn, $adminId) {
             "old_status" => $oldStatus,
             "new_status" => $newStatus
         ]);
-        
+
     } catch (Exception $e) {
         $conn->rollback();
         logActivity("ERROR in updatePaymentStatus: " . $e->getMessage());

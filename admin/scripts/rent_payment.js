@@ -341,9 +341,92 @@ let currentPage = 1;
             });
         }
 
+        function showAlertModal({
+            title = 'Alert',
+            message = '',
+            buttonText = 'OK',
+            variant = 'info'
+        }) {
+            return new Promise((resolve) => {
+                let modal = document.getElementById('customAlertModal');
+
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'customAlertModal';
+                    modal.className = 'custom-alert-overlay';
+                    modal.innerHTML = `
+                        <div class="custom-alert-dialog" role="alertdialog" aria-modal="true" aria-labelledby="customAlertTitle">
+                            <div class="custom-alert-icon">
+                                <i class="fas fa-circle-info"></i>
+                            </div>
+                            <div class="custom-alert-content">
+                                <h3 id="customAlertTitle"></h3>
+                                <p id="customAlertMessage"></p>
+                            </div>
+                            <div class="custom-alert-actions">
+                                <button type="button" class="btn custom-alert-ok">OK</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                }
+
+                const dialog = modal.querySelector('.custom-alert-dialog');
+                const icon = modal.querySelector('.custom-alert-icon i');
+                const titleElement = modal.querySelector('#customAlertTitle');
+                const messageElement = modal.querySelector('#customAlertMessage');
+                const okButton = modal.querySelector('.custom-alert-ok');
+
+                const iconMap = {
+                    success: 'fa-circle-check',
+                    info: 'fa-circle-info',
+                    warning: 'fa-circle-exclamation',
+                    danger: 'fa-triangle-exclamation',
+                    error: 'fa-triangle-exclamation'
+                };
+
+                const displayVariant = variant === 'error' ? 'danger' : variant;
+
+                dialog.dataset.variant = displayVariant;
+                icon.className = `fas ${iconMap[variant] || iconMap.info}`;
+                titleElement.textContent = title;
+                messageElement.textContent = message;
+                okButton.textContent = buttonText;
+
+                const handleKeydown = (event) => {
+                    if (event.key === 'Escape' || event.key === 'Enter') {
+                        cleanup();
+                    }
+                };
+
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    okButton.onclick = null;
+                    modal.onclick = null;
+                    document.removeEventListener('keydown', handleKeydown);
+                    resolve();
+                };
+
+                okButton.onclick = cleanup;
+                modal.onclick = (event) => {
+                    if (event.target === modal) {
+                        cleanup();
+                    }
+                };
+
+                modal.classList.add('active');
+                document.addEventListener('keydown', handleKeydown);
+                okButton.focus();
+            });
+        }
+
         async function processVerification(action) {
             if (!currentTrackerId) {
-                alert('No payment selected');
+                await showAlertModal({
+                    title: 'No Payment Selected',
+                    message: 'Please select a payment before continuing.',
+                    variant: 'warning'
+                });
                 return;
             }
             
@@ -381,17 +464,29 @@ let currentPage = 1;
                 const data = await response.json();
                 
                 if (data.success) {
-                    alert(data.message);
+                    await showAlertModal({
+                        title: 'Verification Complete',
+                        message: data.message,
+                        variant: 'success'
+                    });
                     closeVerifyModal();
                     loadStatistics();
                     loadPendingVerifications();
                     if (currentTab === 'history') loadPaymentHistory();
                 } else {
-                    alert(data.message || 'Error processing verification');
+                    await showAlertModal({
+                        title: 'Verification Failed',
+                        message: data.message || 'Error processing verification',
+                        variant: 'danger'
+                    });
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('An error occurred. Please try again.');
+                await showAlertModal({
+                    title: 'Request Error',
+                    message: 'An error occurred. Please try again.',
+                    variant: 'danger'
+                });
             } finally {
                 btn.innerHTML = originalText;
                 btn.disabled = false;

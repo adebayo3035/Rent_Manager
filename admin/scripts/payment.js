@@ -2,6 +2,7 @@
 let currentPage = 1;
 let currentLimit = 10;
 let currentFilters = {};
+let quickFeeLoadToken = 0;
 
 
 // Initialize
@@ -13,6 +14,29 @@ document.addEventListener("DOMContentLoaded", function () {
     loadQuickTenants();
     loadTenantsForModal();
     loadApartmentsForModal();
+
+    // Quick payment tenant selection controls fee choices only.
+    const tenantSelect = document.getElementById("quickTenant");
+    if (tenantSelect) {
+        tenantSelect.addEventListener("change", function() {
+            const selectedTenantCode = this.value;
+            resetQuickPaymentFeeFields();
+            loadTenantFees(selectedTenantCode);
+        });
+    }
+    
+    // 3. Set up fee selection listener
+    const feeSelect = document.getElementById("quickFeeType");
+    if (feeSelect) {
+        feeSelect.addEventListener("change", onFeeTypeChange);
+    }
+
+    const methodSelect = document.getElementById("quickMethod");
+    if (methodSelect) {
+        methodSelect.addEventListener("change", updateQuickTransactionReference);
+    }
+    
+    resetQuickPaymentFeeFields();
 });
 
 // Set today's date in date fields
@@ -361,6 +385,16 @@ function closeViewPaymentModal() {
     if (modal) modal.style.display = "none";
 }
 
+function openQuickFeePaymentModal() {
+    const modal = document.getElementById("quickFeePaymentModal");
+    if (modal) modal.style.display = "flex";
+}
+
+function closeQuickFeePaymentModal() {
+    const modal = document.getElementById("quickFeePaymentModal");
+    if (modal) modal.style.display = "none";
+}
+
 function showConfirmModal({
     title = "Confirm Action",
     message = "Are you sure you want to continue?",
@@ -443,7 +477,7 @@ function showConfirmModal({
     });
 }
 
-// Load tenants for quick payment (using tenant_code as string)
+// Load tenants for quick payment
 async function loadQuickTenants() {
     try {
         const response = await fetch("../backend/tenants/get_tenants.php?status=1&limit=100");
@@ -454,12 +488,165 @@ async function loadQuickTenants() {
             if (select) {
                 const tenants = data.data || data.tenants || [];
                 select.innerHTML = '<option value="">Select Tenant</option>' +
-                    tenants.map((t) => `<option value="${t.tenant_code}">${t.firstname} ${t.lastname}</option>`).join("");
+                    tenants.map((t) => `<option value="${t.tenant_code}">${t.firstname} ${t.lastname} (${t.tenant_code})</option>`).join("");
             }
         }
     } catch (error) {
         console.error("Error loading tenants:", error);
+        showAlert("Failed to load tenants", "error");
     }
+}
+
+// Load fee types for a specific tenant
+async function loadTenantFees(tenantCode) {
+    const feeSelect = document.getElementById("quickFeeType");
+    const requestToken = ++quickFeeLoadToken;
+
+    if (!feeSelect) return;
+
+    if (!tenantCode) {
+        resetQuickPaymentFeeFields();
+        return;
+    }
+
+    try {
+        // Show loading state
+        feeSelect.innerHTML = '<option value="">Loading fees...</option>';
+        feeSelect.disabled = true;
+        
+        // Fetch fees for this tenant with pending status
+        const response = await fetch(`../backend/fee_management/fetch_tenant_fees.php?status=pending&search=${encodeURIComponent(tenantCode)}`);
+        const data = await response.json();
+
+        if (requestToken !== quickFeeLoadToken) return;
+
+        if (data.success && data.message.fees) {
+            const fees = data.message.fees;
+            
+            if (fees.length === 0) {
+                feeSelect.innerHTML = '<option value="">No pending fees for this tenant</option>';
+                feeSelect.disabled = true;
+                resetQuickPaymentFeeFields({ keepFeeOptions: true });
+                return;
+            }
+
+            // Populate fee select with pending fees
+            feeSelect.innerHTML = '<option value="">Select Fee Type</option>' +
+                fees.map((fee) => `<option value="${fee.tenant_fee_id}" 
+                    data-amount="${fee.amount}" 
+                    data-due-date="${fee.due_date}"
+                    data-fee-name="${escapeHtml(fee.fee_name)}">
+                    ${escapeHtml(fee.fee_name)} - ₦${parseFloat(fee.amount).toLocaleString()} (Due: ${formatDate(fee.due_date)})
+                </option>`).join("");
+
+            // Enable only fee selection. Amount/due date stay empty until a fee is chosen.
+            feeSelect.disabled = false;
+            resetQuickPaymentFeeFields({ keepFeeOptions: true });
+        } else {
+            feeSelect.innerHTML = '<option value="">Error loading fees</option>';
+            feeSelect.disabled = true;
+            resetQuickPaymentFeeFields({ keepFeeOptions: true });
+            showAlert("Failed to load tenant fees", "error");
+        }
+    } catch (error) {
+        if (requestToken !== quickFeeLoadToken) return;
+        console.error("Error loading tenant fees:", error);
+        feeSelect.innerHTML = '<option value="">Error loading fees</option>';
+        feeSelect.disabled = true;
+        resetQuickPaymentFeeFields({ keepFeeOptions: true });
+        showAlert("Failed to load tenant fees", "error");
+    }
+}
+
+// Handle fee selection change
+function onFeeTypeChange() {
+    const feeSelect = document.getElementById("quickFeeType");
+    if (!feeSelect) return;
+
+    const selectedOption = feeSelect.options[feeSelect.selectedIndex];
+    
+    if (feeSelect.value && selectedOption) {
+        const amount = selectedOption.getAttribute("data-amount");
+        const dueDate = selectedOption.getAttribute("data-due-date");
+        
+        document.getElementById("quickAmount").value = amount || '';
+        document.getElementById("quickDueDate").value = dueDate || '';
+        document.getElementById("quickAmount").disabled = false;
+        document.getElementById("quickDueDate").disabled = false;
+        
+        updateQuickTransactionReference();
+    } else {
+        resetQuickPaymentFeeFields({ keepFeeOptions: true });
+    }
+}
+
+function resetQuickPaymentFeeFields({ keepFeeOptions = false } = {}) {
+    const feeSelect = document.getElementById("quickFeeType");
+    const amountInput = document.getElementById("quickAmount");
+    const dueDateInput = document.getElementById("quickDueDate");
+    const transactionReferenceInput = document.getElementById("quickTransactionReference");
+
+    if (feeSelect) {
+        feeSelect.value = "";
+        if (!keepFeeOptions) {
+            feeSelect.innerHTML = '<option value="">Select Fee Type</option>';
+            feeSelect.disabled = true;
+        }
+    }
+
+    if (amountInput) {
+        amountInput.value = "";
+        amountInput.disabled = true;
+    }
+
+    if (dueDateInput) {
+        dueDateInput.value = "";
+        dueDateInput.disabled = true;
+    }
+
+    if (transactionReferenceInput) {
+        transactionReferenceInput.value = "";
+        transactionReferenceInput.disabled = true;
+    }
+}
+
+function updateQuickTransactionReference() {
+    const feeSelect = document.getElementById("quickFeeType");
+    const methodSelect = document.getElementById("quickMethod");
+    const transactionReferenceInput = document.getElementById("quickTransactionReference");
+
+    if (!transactionReferenceInput) return;
+
+    if (!feeSelect || !feeSelect.value || !methodSelect || !methodSelect.value) {
+        transactionReferenceInput.value = "";
+        transactionReferenceInput.disabled = true;
+        return;
+    }
+
+    transactionReferenceInput.value = generateReferenceNumber(methodSelect.value);
+    transactionReferenceInput.disabled = false;
+}
+
+// Generate transaction reference
+function generateReferenceNumber(paymentMethod) {
+    const prefixes = {
+        bank_transfer: "BNK",
+        card: "CARD",
+        cash: "CSH",
+        check: "CHK",
+        cheque: "CHQ",
+        mobile_money: "MM"
+    };
+    const prefix = prefixes[paymentMethod] || "REF";
+    
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const timestamp = Date.now().toString().slice(-6);
+    
+    return `${prefix}-${year}${month}${day}-${random}-${timestamp}`;
 }
 
 async function loadTenantsForModal() {
@@ -503,18 +690,70 @@ async function quickRecordPayment(event) {
     if (event) event.preventDefault();
 
     const tenantSelect = document.getElementById("quickTenant");
+    const tenantFeeSelect = document.getElementById("quickFeeType");
     const amountInput = document.getElementById("quickAmount");
+    const transactionReference = document.getElementById("quickTransactionReference");
+    const dueDate = document.getElementById("quickDueDate");
     const methodSelect = document.getElementById("quickMethod");
 
+    // Validate selections
+    if (!tenantSelect || !tenantSelect.value) {
+        showAlert("Please select a tenant", "error");
+        return;
+    }
+    
+    if (!tenantFeeSelect || !tenantFeeSelect.value) {
+        showAlert("Please select a fee type", "error");
+        return;
+    }
+    
+    if (!amountInput || parseFloat(amountInput.value) <= 0) {
+        showAlert("Please enter a valid amount", "error");
+        return;
+    }
+    
+    if (!dueDate || !dueDate.value) {
+        showAlert("Due date is required", "error");
+        return;
+    }
+
+    updateQuickTransactionReference();
+    const selectedOption = tenantFeeSelect.options[tenantFeeSelect.selectedIndex];
+    
     const data = {
-        tenant_code: tenantSelect ? tenantSelect.value : '',
-        amount: amountInput ? parseFloat(amountInput.value) : 0,
-        payment_method: methodSelect ? methodSelect.value : 'cash'
+        tenant_code: tenantSelect.value,
+        tenant_fee_id: tenantFeeSelect.value,
+        amount: parseFloat(amountInput.value),
+        payment_method: methodSelect ? methodSelect.value : 'cash',
+        reference_number: transactionReference ? transactionReference.value : '',
+        due_date: dueDate.value
     };
 
-    if (!data.tenant_code || data.amount <= 0) {
-        showAlert("Please select a tenant and enter a valid amount", "error");
+    const confirmMsg = `Tenant: ${tenantSelect.options[tenantSelect.selectedIndex].text}\n` +
+        `Fee: ${selectedOption.text}\n` +
+        `Amount: NGN ${data.amount.toLocaleString()}\n` +
+        `Payment Method: ${formatPaymentMethod(data.payment_method)}\n` +
+        `Reference: ${data.reference_number}\n\n` +
+        `Record this payment?`;
+
+    const confirmed = await showConfirmModal({
+        title: "Confirm Quick Payment",
+        message: confirmMsg,
+        confirmText: "Record Payment",
+        cancelText: "Review Details",
+        variant: "info"
+    });
+    
+    if (!confirmed) {
         return;
+    }
+
+    // Disable submit button
+    const submitBtn = document.querySelector("#quickPaymentForm button[type='submit'], button[form='quickPaymentForm'][type='submit']");
+    const originalText = submitBtn ? submitBtn.innerHTML : 'Submit';
+    if (submitBtn) {
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recording...';
+        submitBtn.disabled = true;
     }
 
     try {
@@ -529,17 +768,48 @@ async function quickRecordPayment(event) {
         const result = await response.json();
 
         if (result.success) {
-            showAlert("Payment recorded successfully! Receipt #: " + result.receipt_number, "success");
-            if (event) event.target.reset();
-            loadPayments();
-            loadStatistics();
+            showAlert(`✓ Payment recorded successfully!\nReceipt #: ${result.receipt_number}`, "success");
+            
+            // Reset form
+            resetQuickPaymentForm();
+            closeQuickFeePaymentModal();
+            
+            // Refresh data
+            if (typeof loadPayments === 'function') loadPayments();
+            if (typeof loadStatistics === 'function') loadStatistics();
+            if (typeof loadDashboardData === 'function') loadDashboardData();
         } else {
-            showAlert(result.message, "error");
+            showAlert(result.message || "Failed to record payment", "error");
         }
     } catch (error) {
-        console.error("Error:", error);
-        showAlert("Error recording payment", "error");
+        console.error("Error recording payment:", error);
+        showAlert("Error recording payment. Please try again.", "error");
+    } finally {
+        if (submitBtn) {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
     }
+}
+
+function resetQuickPaymentForm() {
+    const tenantSelect = document.getElementById("quickTenant");
+    if (tenantSelect) {
+        tenantSelect.value = '';
+    }
+
+    const methodSelect = document.getElementById("quickMethod");
+    if (methodSelect) {
+        methodSelect.value = 'cash';
+    }
+
+    resetQuickPaymentFeeFields();
+}
+
+function generateTransactionReference() {
+    const timestamp = new Date().getTime();
+    const random = Math.floor(Math.random() * 10000);
+    return `ADMIN-${timestamp}-${random}`;
 }
 
 async function submitPaymentForm(event) {
@@ -907,6 +1177,12 @@ function showAlert(message, type = "info") {
         setTimeout(() => alert.remove(), 300);
     }, 3000);
 }
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 // Auto-refresh every 5 minutes
 setInterval(() => {
@@ -915,3 +1191,4 @@ setInterval(() => {
         loadStatistics();
     }
 }, 5 * 60 * 1000);
+

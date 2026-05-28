@@ -6,6 +6,7 @@
     <title>Payment Management | RentFlow Pro</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+     <link rel="stylesheet" href="../../styles.css">
     <link rel="stylesheet" href="../css/payment.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -16,6 +17,9 @@
         <div class="header">
             <h1><i class="fas fa-money-bill-wave"></i> Payment Management</h1>
             <div class="quick-actions">
+                <button class="btn btn-primary" onclick="openQuickFeePaymentModal()">
+                    <i class="fas fa-bolt"></i> Quick Fee Payment
+                </button>
                 <button class="btn btn-primary" onclick="openRecordPaymentModal()">
                     <i class="fas fa-plus"></i> Record Payment
                 </button>
@@ -56,7 +60,7 @@
                     <div class="table-header">
                         <h3>Recent Payments</h3>
                         <div>
-                            <select id="limitSelect" class="form-control" style="width: auto;" onchange="loadPayments()">
+                            <select id="limitSelect" class="form-control" onchange="loadPayments()">
                                 <option value="10">10 per page</option>
                                 <option value="25">25 per page</option>
                                 <option value="50">50 per page</option>
@@ -64,71 +68,89 @@
                             </select>
                         </div>
                     </div>
-                    <div class="table-wrapper">
-                        <table class="data-table" id="paymentsTable">
-                            <thead>
-                                <tr>
-                                    <th>Receipt #</th>
-                                    <th>Tenant</th>
-                                    <th>Property/Apartment</th>
-                                    <th>Amount</th>
-                                    <th>Date</th>
-                                    <th>Method</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="paymentsTableBody">
-                                <!-- Will be populated by JavaScript -->
-                            </tbody>
-                        </table>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="paymentsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Receipt #</th>
+                                        <th>Tenant</th>
+                                        <th>Property/Apartment</th>
+                                        <th>Amount</th>
+                                        <th>Date</th>
+                                        <th>Method</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="paymentsTableBody">
+                                    <!-- Will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination" id="paginationContainer">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
                     </div>
-                    <div class="pagination" id="paginationContainer">
-                        <!-- Will be populated by JavaScript -->
-                    </div>
-                </div>
-            </div>
-
-            <div class="sidebar">
-                <!-- Revenue Chart -->
-                <!-- <div class="chart-card">
-                    <h3>Revenue Overview</h3>
-                    <canvas id="revenueChart"></canvas>
-                </div> -->
-
-                <!-- Quick Record -->
-                <div class="chart-card">
-                    <h3>Quick Record Payment</h3>
-                    <form id="quickPaymentForm" onsubmit="quickRecordPayment(event)">
-                        <div class="form-group">
-                            <label>Tenant</label>
-                            <select class="form-control" id="quickTenant" required>
-                                <!-- Will be populated -->
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Amount ($)</label>
-                            <input type="number" class="form-control" id="quickAmount" step="0.01" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Payment Method</label>
-                            <select class="form-control" id="quickMethod" required>
-                                <option value="cash">Cash</option>
-                                <option value="bank_transfer">Bank Transfer</option>
-                                <option value="check">Check</option>
-                                <option value="mobile_money">Mobile Money</option>
-                            </select>
-                        </div>
-                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 15px;">
-                            <i class="fas fa-check"></i> Record Payment
-                        </button>
-                    </form>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Modals -->
+    <div id="quickFeePaymentModal" class="modal">
+        <div class="modal-content modal-content-sm">
+            <div class="modal-header">
+                <h2>Quick Fee Payment</h2>
+                <button class="action-btn" onclick="closeQuickFeePaymentModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="quickPaymentForm" onsubmit="quickRecordPayment(event)">
+                    <div class="quick-payment-grid">
+                        <div class="form-group form-group-wide">
+                            <label>Tenant</label>
+                            <select class="form-control" id="quickTenant" required>
+                                <!-- Will be populated -->
+                            </select>
+                        </div>
+                        <div class="form-group form-group-wide">
+                            <label>Fee Type</label>
+                            <select class="form-control" id="quickFeeType" required>
+                                <!-- Will be populated -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Amount (NGN)</label>
+                            <input type="number" class="form-control" id="quickAmount" step="0.01" required disabled>
+                        </div>
+                        <div class="form-group">
+                            <label>Due Date</label>
+                            <input type="date" class="form-control" id="quickDueDate" required disabled>
+                        </div>
+                        <div class="form-group">
+                            <label>Payment Method</label>
+                            <select class="form-control" id="quickMethod" required>
+                                <option value="cash">Cash</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="cheque">Cheque Book</option>
+                                <option value="mobile_money">Mobile Money</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Transaction Reference</label>
+                            <input type="text" class="form-control" id="quickTransactionReference" required disabled>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeQuickFeePaymentModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" form="quickPaymentForm">
+                    <i class="fas fa-check"></i> Record Payment
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div id="recordPaymentModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -218,6 +240,36 @@
             </div>
         </div>
     </div>
+
+    <!-- UI Framework Containers -->
+    <div id="toastContainer"></div>
+
+    <div id="alertModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="alertTitle">Alert</h3>
+            <p id="alertMessage"></p>
+            <button id="alertOkBtn">OK</button>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage"></p>
+            <div class="ui-modal-buttons">
+                <button id="confirmCancelBtn">Cancel</button>
+                <button id="confirmOkBtn">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="uiLoaderOverlay">
+        <div class="ui-loader"></div>
+    </div>
+
+     <script src="../scripts/main.js"></script>
+    <script src="../../ui.js"></script>
+    <script src="../../validator.js"></script>
     <script src = "../scripts/payment.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
