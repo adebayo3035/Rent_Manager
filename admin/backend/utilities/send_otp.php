@@ -183,7 +183,19 @@ class OTPService
         $logPrefix = "[USER_LOOKUP] [ID:{$this->requestId}]";
 
         // Check both id and status - adjust column names based on your actual schema
-        $query = "SELECT unique_id as id, status FROM {$this->userTable} WHERE email = ? ";
+        $tablesWithUniqueId = ['admin_tbl', 'users'];
+
+        if (in_array($this->userTable, $tablesWithUniqueId)) {
+            $idColumn = 'COALESCE(unique_id, client_code)';
+        } else {
+            $idColumn = 'tenant_code';
+        }
+
+        $query = "
+    SELECT {$idColumn} AS id, status
+    FROM {$this->userTable}
+    WHERE email = ?
+";
         logActivity("{$logPrefix} Preparing query: {$query} for email: {$email}");
 
         $stmt = $this->conn->prepare($query);
@@ -687,7 +699,7 @@ $title = trim($data['title'] ?? 'From Rent Manager');
 logActivity("[FIELDS_EXTRACTED] [ID:{$requestId}] Extracted - Email: {$email}, User Type: {$userType}, Title: {$title}");
 
 // Validate user type
-$validUserTypes = ['admin', 'agent', 'client'];
+$validUserTypes = ['admin', 'agent', 'client', 'tenant'];
 if (!in_array($userType, $validUserTypes)) {
     $errorMsg = "Invalid user type: {$userType}. Valid types: " . implode(', ', $validUserTypes);
     logActivity("[INVALID_USER_TYPE_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] {$errorMsg}");
@@ -707,7 +719,8 @@ logActivity("[USER_TYPE_VALID] [ID:{$requestId}] User type '{$userType}' is vali
 $userTables = [
     'admin' => 'admin_tbl',
     'agent' => 'agents',
-    'client' => 'clients'
+    'client' => 'clients',
+    'tenant' => 'tenants'
 ];
 
 logActivity("[TABLE_MAPPING] [ID:{$requestId}] Mapping user type '{$userType}' to table '{$userTables[$userType]}'");

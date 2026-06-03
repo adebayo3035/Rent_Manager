@@ -49,6 +49,9 @@ try {
         case 'fetch':
             fetchPayments($conn, $adminId, $userRole);
             break;
+        case 'export':
+            exportPayments($conn);
+            break;
         case 'fetch_single':
             fetchSinglePayment($conn);
             break;
@@ -363,6 +366,193 @@ function fetchSinglePayment($conn)
         "success" => true,
         "payment" => $payment
     ]);
+}
+
+function exportPayments($conn)
+{
+    logActivity("Starting exportPayments()");
+
+    $tenantCode = isset($_GET['tenant_code']) ? trim($_GET['tenant_code']) : null;
+    $propertyCode = isset($_GET['property_code']) ? trim($_GET['property_code']) : null;
+    $apartmentCode = isset($_GET['apartment_code']) ? trim($_GET['apartment_code']) : null;
+    $paymentStatus = isset($_GET['payment_status']) ? trim($_GET['payment_status']) : null;
+    $paymentMethod = isset($_GET['payment_method']) ? trim($_GET['payment_method']) : null;
+    $dateFrom = isset($_GET['date_from']) ? trim($_GET['date_from']) : null;
+    $dateTo = isset($_GET['date_to']) ? trim($_GET['date_to']) : null;
+    $search = isset($_GET['search']) ? trim($_GET['search']) : null;
+
+    $whereClauses = ["p.is_deleted = 0"];
+    $params = [];
+    $types = '';
+
+    if ($tenantCode) {
+        $whereClauses[] = "p.tenant_code = ?";
+        $params[] = $tenantCode;
+        $types .= 's';
+    }
+
+    if ($propertyCode) {
+        $whereClauses[] = "pr.property_code = ?";
+        $params[] = $propertyCode;
+        $types .= 's';
+    }
+
+    if ($apartmentCode) {
+        $whereClauses[] = "p.apartment_code = ?";
+        $params[] = $apartmentCode;
+        $types .= 's';
+    }
+
+    if ($paymentStatus && in_array($paymentStatus, ['pending', 'completed', 'failed', 'refunded'])) {
+        $whereClauses[] = "p.payment_status = ?";
+        $params[] = $paymentStatus;
+        $types .= 's';
+    }
+
+    if ($paymentMethod && in_array($paymentMethod, ['cash', 'bank_transfer', 'card', 'cheque', 'admin_initiated'])) {
+        $whereClauses[] = "p.payment_method = ?";
+        $params[] = $paymentMethod;
+        $types .= 's';
+    }
+
+    if ($dateFrom) {
+        $whereClauses[] = "p.payment_date >= ?";
+        $params[] = $dateFrom;
+        $types .= 's';
+    }
+
+    if ($dateTo) {
+        $whereClauses[] = "p.payment_date <= ?";
+        $params[] = $dateTo;
+        $types .= 's';
+    }
+
+    if ($search) {
+        $whereClauses[] = "(t.firstname LIKE ? OR t.lastname LIKE ? OR CONCAT(t.firstname, ' ', t.lastname) LIKE ? OR p.receipt_number LIKE ? OR p.reference_number LIKE ?)";
+        $searchTerm = "%$search%";
+        $params[] = $searchTerm;
+        $params[] = $searchTerm;
+        $params[] = $searchTerm;
+        $params[] = $searchTerm;
+        $params[] = $searchTerm;
+        $types .= 'sssss';
+    }
+
+    $whereSQL = "WHERE " . implode(" AND ", $whereClauses);
+    $query = "SELECT
+                p.receipt_number,
+                p.reference_number,
+                p.amount,
+                p.balance,
+                p.payment_date,
+                p.due_date,
+                p.payment_method,
+                p.payment_status,
+                p.description,
+                p.notes,
+                p.created_at,
+                CONCAT(t.firstname, ' ', t.lastname) as tenant_name,
+                t.email as tenant_email,
+                t.phone as tenant_phone,
+                t.tenant_code,
+                a.apartment_number,
+                pr.name as property_name,
+                pr.property_code,
+                CONCAT(u.firstname, ' ', u.lastname) as recorded_by_name
+              FROM payments p
+              LEFT JOIN tenants t ON p.tenant_code = t.tenant_code
+              LEFT JOIN apartments a ON p.apartment_code = a.apartment_code
+              LEFT JOIN properties pr ON a.property_code = pr.property_code
+              LEFT JOIN admin_tbl u ON p.recorded_by = u.unique_id
+              $whereSQL
+              ORDER BY p.payment_date DESC, p.id DESC";
+
+    $stmt = $conn->prepare($query);
+    if (!$stmt) {
+        logActivity("ERROR preparing export statement: " . $conn->error);
+        echo json_encode(["success" => false, "message" => "Failed to prepare export query"]);
+        return;
+    }
+
+    if ($params) {
+        $stmt->bind_param($types, ...$params);
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    $filename = "payments_export_" . date('Ymd_His') . ".xls";
+    header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+    header("Content-Disposition: attachment; filename=\"{$filename}\"");
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    echo "\xEF\xBB\xBF";
+    echo "<table border=\"1\">";
+    echo "<thead><tr>";
+    $headers = [
+        'Receipt #',
+        'Reference #',
+        'Tenant',
+        'Tenant Code',
+        'Email',
+        'Phone',
+        'Property',
+        'Property Code',
+        'Apartment',
+        'Amount',
+        'Balance',
+        'Payment Date',
+        'Due Date',
+        'Method',
+        'Status',
+        'Type',
+        'Recorded By',
+        'Description',
+        'Notes',
+        'Created At'
+    ];
+
+    foreach ($headers as $header) {
+        echo "<th>" . htmlspecialchars($header, ENT_QUOTES, 'UTF-8') . "</th>";
+    }
+    echo "</tr></thead><tbody>";
+
+    while ($row = $result->fetch_assoc()) {
+        echo "<tr>";
+        $values = [
+            $row['receipt_number'] ?? '',
+            $row['reference_number'] ?? '',
+            $row['tenant_name'] ?? '',
+            $row['tenant_code'] ?? '',
+            $row['tenant_email'] ?? '',
+            $row['tenant_phone'] ?? '',
+            $row['property_name'] ?? '',
+            $row['property_code'] ?? '',
+            $row['apartment_number'] ?? '',
+            number_format((float) ($row['amount'] ?? 0), 2),
+            number_format((float) ($row['balance'] ?? 0), 2),
+            $row['payment_date'] ?? '',
+            $row['due_date'] ?? '',
+            ucwords(str_replace('_', ' ', $row['payment_method'] ?? '')),
+            ucwords(str_replace('_', ' ', $row['payment_status'] ?? '')),
+            ucwords(str_replace('_', ' ', $row['payment_type'] ?? '')),
+            $row['recorded_by_name'] ?? '',
+            $row['description'] ?? '',
+            $row['notes'] ?? '',
+            $row['created_at'] ?? ''
+        ];
+
+        foreach ($values as $value) {
+            echo "<td>" . htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8') . "</td>";
+        }
+        echo "</tr>";
+    }
+
+    echo "</tbody></table>";
+    $stmt->close();
+    logActivity("exportPayments() completed successfully");
+    exit();
 }
 
 function createPayment($conn, $adminId)

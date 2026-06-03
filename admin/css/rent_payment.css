@@ -116,6 +116,10 @@
             cursor: pointer;
             border-radius: 8px;
             transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
         }
 
         .tab-btn:hover {
@@ -126,6 +130,11 @@
         .tab-btn.active {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
+        }
+
+        .tab-link {
+            border: 1px solid #e2e8f0;
+            margin-left: auto;
         }
 
         /* Table */
@@ -739,6 +748,19 @@
             .custom-alert-actions .btn {
                 width: 100%;
                 justify-content: center;
+            }
+
+            .tabs {
+                flex-wrap: wrap;
+            }
+
+            .tab-btn {
+                flex: 1 1 180px;
+                justify-content: center;
+            }
+
+            .tab-link {
+                margin-left: 0;
             }
 
             th, td {

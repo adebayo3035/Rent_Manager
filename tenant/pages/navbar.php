@@ -47,6 +47,10 @@
                     <i class="fas fa-credit-card"></i>
                     <span> Rent Payments</span>
                 </a>
+                <a href="rent_payment_history.php" class="nav-item" data-page="rent_payment_history">
+                    <i class="fas fa-history"></i>
+                    <span> Rent Payments History</span>
+                </a>
                  <a href="fees.php" class="nav-item" data-page="fees">
                     <i class="fas fa-money"></i>
                     <span>Manage Fees</span>

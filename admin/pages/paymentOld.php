@@ -20,7 +20,7 @@
                 <button class="btn btn-primary" onclick="openQuickFeePaymentModal()">
                     <i class="fas fa-bolt"></i> Quick Fee Payment
                 </button>
-                <button class="btn btn-primary" onclick="openInitiatePaymentModal()">
+                <button class="btn btn-primary" onclick="openRecordPaymentModal()">
                     <i class="fas fa-plus"></i> Record Payment
                 </button>
                 <button class="btn btn-success" onclick="openCreatePaymentModal()">
@@ -151,130 +151,77 @@
         </div>
     </div>
 
-    <!-- Initiate Rent Payment Modal -->
-<div id="initiateRentPaymentModal" class="modal">
-    <div class="modal-content" style="max-width: 550px; max-height: 90vh; display: flex; flex-direction: column;">
-        <div class="modal-header">
-            <h2><i class="fas fa-money-bill-wave"></i> Initiate Rent Payment for Tenant</h2>
-            <button class="modal-close action-btn" onclick="closeInitiatePaymentModal()">&times;</button>
-        </div>
-        
-        <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 20px;">
-            <!-- Step 1: Select Tenant -->
-            <div id="adminStep1">
-                <div class="form-section">
-                    <label class="form-label">Select Tenant *</label>
-                    <select id="adminTenantSelect" class="form-control" style="width: 100%; padding: 10px; border-radius: 8px;">
-                        <option value="">-- Select Tenant --</option>
-                    </select>
-                </div>
-                
-                <!-- Payment Summary (hidden until tenant selected) -->
-                <div id="adminPaymentSummary" style="display: none; margin-top: 20px;">
-                    <div class="payment-summary" style="background: #f8fafc; padding: 15px; border-radius: 8px;">
-                        <h4 style="margin: 0 0 10px 0; font-size: 14px;">Payment Summary</h4>
-                        <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span>Tenant:</span>
-                            <span id="adminSummaryTenant" style="font-weight: 600;">-</span>
-                        </div>
-                        <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span>Property:</span>
-                            <span id="adminSummaryProperty" style="font-weight: 600;">-</span>
-                        </div>
-                        <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span>Apartment:</span>
-                            <span id="adminSummaryApartment" style="font-weight: 600;">-</span>
-                        </div>
-                        <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span>Payment Status:</span>
-                            <span id="adminSummaryStatus" style="font-weight: 600;">-</span>
-                        </div>
-                        <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span>Payment Period:</span>
-                            <span id="adminSummaryPeriod" style="font-weight: 600;">-</span>
-                        </div>
-                        <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span>Start/End Date:</span>
-                            <span id="adminSummaryDate" style="font-weight: 600;">-</span>
-                        </div>
-                        <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span>Amount Due:</span>
-                            <span id="adminSummaryAmount" style="font-weight: 600; color: #1e3c72;">-</span>
-                        </div>
-                        <div class="summary-row" style="display: flex; justify-content: space-between;">
-                            <span>Due Date:</span>
-                            <span id="adminSummaryDueDate" style="font-weight: 600;">-</span>
-                        </div>
-                    </div>
-                </div>
+    <div id="recordPaymentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Record New Payment</h2>
+                <button class="action-btn" onclick="closeRecordPaymentModal()">&times;</button>
             </div>
-
-            <!-- Step 2: OTP Authorization -->
-            <div id="adminStep2" style="display: none; margin-top: 20px;">
-                <div class="form-section">
-                    <div class="alert-info" style="background: #dbeafe; padding: 12px; border-radius: 8px; margin-bottom: 20px;">
-                        <i class="fas fa-info-circle"></i>
-                        <span id ="OTPNotifier">Click the Button below to send an OTP to tenant's email. Please ask the tenant for the code.</span>
-                    </div>
-                    
-                    <button type="button" id="sendOtpBtn" class="btn-primary" style="width: 100%; margin-bottom: 20px;" onclick="sendPaymentOtp()">
-                        <i class="fas fa-envelope"></i> Send OTP to Tenant
-                    </button>
-                    
-                    <div id="otpSection" style="display: none;">
+            <div class="modal-body">
+                <form id="paymentForm" onsubmit="submitPaymentForm(event)">
+                    <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                         <div class="form-group">
-                            <label class="form-label">Enter OTP Code *</label>
-                            <input type="text" id="otpCode" class="form-control" placeholder="Enter 6-digit code" maxlength="6" autocomplete="off" style="width: 100%; padding: 10px; border-radius: 8px; text-align: center; font-size: 18px; letter-spacing: 4px;">
-                            <small style="color: #666; display: block; margin-top: 5px;">OTP expires in 2 minutes</small>
+                            <label>Tenant *</label>
+                            <select class="form-control" id="tenant_id" name="tenant_id" required>
+                                <!-- Populated by JS -->
+                            </select>
                         </div>
-                        
-                        <button type="button" id="verifyOtpBtn" class="btn-primary" style="width: 100%;" onclick="verifyPaymentOtp()">
-                            <i class="fas fa-check-circle"></i> Verify OTP
-                        </button>
+                        <div class="form-group">
+                            <label>Apartment</label>
+                            <select class="form-control" id="apartment_code" name="apartment_code">
+                                <!-- Auto-populated based on tenant -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Amount ($) *</label>
+                            <input type="number" class="form-control" id="amount" name="amount" step="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Payment Date *</label>
+                            <input type="date" class="form-control" id="payment_date" name="payment_date" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Payment Method *</label>
+                            <select class="form-control" id="payment_method" name="payment_method" required>
+                                <option value="cash">Cash</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="check">Check</option>
+                                <option value="credit_card">Credit Card</option>
+                                <option value="mobile_money">Mobile Money</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Payment Status</label>
+                            <select class="form-control" id="payment_status" name="payment_status">
+                                <option value="completed">Completed</option>
+                                <option value="pending">Pending</option>
+                                <option value="overdue">Overdue</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Reference Number</label>
+                            <input type="text" class="form-control" id="reference_number" name="reference_number">
+                        </div>
+                        <div class="form-group">
+                            <label>Due Date</label>
+                            <input type="date" class="form-control" id="due_date" name="due_date">
+                        </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Step 3: Process Payment -->
-            <div id="adminStep3" style="display: none; margin-top: 20px;">
-                <div class="form-section">
-                    <div class="alert-success" style="background: #d1fae5; padding: 12px; border-radius: 8px; margin-bottom: 20px;">
-                        <i class="fas fa-check-circle"></i>
-                        <span>OTP verified successfully! You can now process the payment.</span>
-                    </div>
-                    
                     <div class="form-group">
-                        <label class="form-label">Additional Notes (Optional)</label>
-                        <textarea id="adminPaymentNotes" class="form-control" rows="3" placeholder="Any notes about this payment..." style="width: 100%; padding: 10px; border-radius: 8px;"></textarea>
+                        <label>Description/Notes</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
                     </div>
-                </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeRecordPaymentModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="submitPaymentForm()">
+                    <i class="fas fa-save"></i> Save Payment
+                </button>
             </div>
         </div>
-        
-        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 15px 20px; border-top: 1px solid #eef2f7;">
-            <button class="btn-secondary" onclick="closeInitiatePaymentModal()">Cancel</button>
-            <button id="processPaymentBtn" class="btn-primary" style="display: none;" onclick="processAdminRentPayment()">
-                <i class="fas fa-check"></i> Process Payment
-            </button>
-        </div>
     </div>
-</div>
 
-<!-- Processing Modal -->
-<div id="adminProcessingModal" class="modal">
-    <div class="modal-content" style="max-width: 400px; text-align: center;">
-        <div class="modal-header">
-            <h3>Processing Payment</h3>
-        </div>
-        <div class="modal-body" style="padding: 30px;">
-            <div style="margin-bottom: 20px;">
-                <i class="fas fa-spinner fa-spin" style="font-size: 48px; color: #1e3c72;"></i>
-            </div>
-            <p id="adminProcessingMessage">Please wait while we process the payment...</p>
-            <p style="font-size: 12px; color: #666; margin-top: 15px;">Do not close this window</p>
-        </div>
-    </div>
-</div>
     <!-- View Payment Modal -->
     <div id="viewPaymentModal" class="modal">
         <div class="modal-content">

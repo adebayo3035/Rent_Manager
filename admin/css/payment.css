@@ -392,6 +392,8 @@
 
  .modal-body {
      padding: 20px;
+     display: flex;
+     flex-direction: column;
  }
 
  .modal-footer {
@@ -401,6 +403,99 @@
      justify-content: flex-end;
      flex-wrap: wrap;
      gap: 10px;
+ }
+
+ #viewPaymentModal .modal-content {
+     width: min(100%, 980px);
+     max-width: 980px;
+     display: flex;
+     flex-direction: column;
+     overflow: hidden;
+ }
+
+ #viewPaymentModal .modal-body {
+     overflow-y: auto;
+     min-height: 0;
+ }
+
+ .payment-details-grid {
+     display: grid;
+     grid-template-columns: repeat(2, minmax(0, 1fr));
+     gap: 18px;
+     margin-bottom: 20px;
+ }
+
+ .payment-detail-section,
+ .payment-detail-note {
+     min-width: 0;
+     padding: 16px;
+     border: 1px solid #e5e7eb;
+     border-radius: var(--border-radius);
+     background: #f9fafb;
+ }
+
+ .payment-detail-section h4,
+ .payment-detail-note h4 {
+     margin: 0 0 12px;
+     color: var(--dark);
+     font-size: 15px;
+     font-weight: 700;
+ }
+
+ .payment-detail-table {
+     width: 100%;
+     table-layout: fixed;
+     border-collapse: collapse;
+     background: #ffffff;
+     border-radius: 6px;
+     overflow: hidden;
+ }
+
+ .payment-detail-table tr {
+     border-bottom: 1px solid #eef2f7;
+ }
+
+ .payment-detail-table tr:last-child {
+     border-bottom: none;
+ }
+
+ .payment-detail-table td {
+     padding: 10px 12px;
+     vertical-align: top;
+     font-size: 14px;
+     line-height: 1.45;
+     overflow-wrap: anywhere;
+     word-break: break-word;
+ }
+
+ .payment-detail-table td:first-child {
+     width: 38%;
+     color: var(--gray);
+     background: #fbfdff;
+ }
+
+ .payment-detail-table td:last-child {
+     min-width: 0;
+     color: var(--dark);
+ }
+
+ .payment-status-row {
+     display: flex;
+     align-items: center;
+     gap: 10px;
+     flex-wrap: wrap;
+     min-width: 0;
+ }
+
+ .payment-detail-note {
+     margin-bottom: 16px;
+ }
+
+ .payment-detail-note p {
+     margin: 0;
+     color: #4b5563;
+     overflow-wrap: anywhere;
+     white-space: pre-wrap;
  }
 
  .quick-payment-grid {
@@ -670,8 +765,24 @@
      }
 
      .quick-payment-grid,
+     .payment-details-grid,
      .modal-body .form-row {
         grid-template-columns: 1fr !important;
+     }
+
+     .payment-detail-table td {
+        display: block;
+        width: 100%;
+        padding: 9px 12px;
+     }
+
+     .payment-detail-table td:first-child {
+        width: 100%;
+        padding-bottom: 2px;
+     }
+
+     .payment-detail-table td:last-child {
+        padding-top: 2px;
      }
 
      .table-header {

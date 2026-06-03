@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", function () {
   let isWarningShowing = false;
 
   // Configuration - Adjust these values as needed
-  const INACTIVITY_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+  const INACTIVITY_TIMEOUT_MS = 2 * 60 * 10000; // 20 minutes
   const WARNING_TIMEOUT_MS = 60 * 1000; // 1 minute warning before logout
   const TOKEN_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 

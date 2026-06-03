@@ -4,10 +4,6 @@ let currentLimit = 10;
 let currentFilters = {};
 let quickFeeLoadToken = 0;
 
-// Admin Rent Payment Global Variables
-let selectedAdminTenant = null;
-let selectedAdminPeriod = null;
-let adminCurrentStep = 1;
 
 // Initialize
 document.addEventListener("DOMContentLoaded", function () {
@@ -42,468 +38,6 @@ document.addEventListener("DOMContentLoaded", function () {
     
     resetQuickPaymentFeeFields();
 });
-
-// ==================== ADMIN INITIATED RENT PAYMENT ====================
-
-// Open modal and load tenants
-async function openInitiatePaymentModal() {
-    await loadAdminTenants();
-    openModal('initiateRentPaymentModal');
-}
-
-function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) modal.style.display = "flex";
-}
-
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) modal.style.display = "none";
-}
-
-// Load tenants for admin dropdown
-async function loadAdminTenants() {
-    try {
-        const response = await fetch("../backend/tenants/get_tenants.php?status=1&limit=200");
-        const data = await response.json();
-        
-        if (data.success) {
-            const tenants = data.data || data.tenants || [];
-            const select = document.getElementById("adminTenantSelect");
-            if (select) {
-                select.innerHTML = '<option value="">-- Select Tenant --</option>' +
-                    tenants.map(t => `<option value="${t.tenant_code}">${t.firstname} ${t.lastname} (${t.tenant_code})</option>`).join("");
-                
-                // Add change event listener
-                select.onchange = () => onAdminTenantSelect(select.value);
-            }
-        }
-    } catch (error) {
-        console.error("Error loading tenants:", error);
-        showAlert("Failed to load tenants", "error");
-    }
-}
-
-// Handle tenant selection
-async function onAdminTenantSelect(tenantCode) {
-    if (!tenantCode) {
-        document.getElementById("adminPaymentSummary").style.display = "none";
-        return;
-    }
-    
-    showAlert("Loading tenant payment information...", "info");
-    
-    try {
-        const response = await fetch(`../backend/payment/get_tenant_period.php?tenant_code=${tenantCode}`);
-        const data = await response.json();
-        
-        if (data.success && data.data) {
-            selectedAdminTenant = data.message.tenant;
-            selectedAdminPeriod = data.message.current_period;
-            
-            // Update summary
-            document.getElementById("adminSummaryTenant").textContent = `${selectedAdminTenant.firstname} ${selectedAdminTenant.lastname}`;
-            document.getElementById("adminSummaryProperty").textContent = selectedAdminTenant.property_name || 'N/A';
-            document.getElementById("adminSummaryApartment").textContent = selectedAdminTenant.apartment_number || 'N/A';
-            document.getElementById("adminSummaryStatus").textContent = ` ${selectedAdminPeriod.status}`.toUpperCase();
-            document.getElementById("adminSummaryPeriod").textContent = `Period #${selectedAdminPeriod.period_number}`;
-            document.getElementById("adminSummaryDate").textContent = `${formatDateRange(selectedAdminPeriod.start_date, selectedAdminPeriod.end_date)}`;
-            document.getElementById("adminSummaryAmount").textContent = `₦${parseFloat(selectedAdminPeriod.amount_paid || selectedAdminTenant.payment_amount_per_period).toLocaleString()}`;
-            document.getElementById("adminSummaryDueDate").textContent = formatDate(selectedAdminPeriod.end_date);
-            
-            // Show summary and move to step 2
-            document.getElementById("adminPaymentSummary").style.display = "block";
-            
-            // Reset and show step 2
-            resetAdminToStep(2);
-            
-        } else {
-            showAlert(data.message || "No available payment period found", "error");
-            document.getElementById("adminPaymentSummary").style.display = "none";
-        }
-    } catch (error) {
-        console.error("Error fetching tenant period:", error);
-        showAlert("Error fetching tenant payment information", "error");
-    }
-}
-
-// Create full page loader overlay
-function createFullPageLoader(message = "Processing...") {
-    // Check if loader already exists
-    let loader = document.getElementById("fullPageLoader");
-    if (loader) {
-        loader.remove();
-    }
-    
-    loader = document.createElement("div");
-    loader.id = "fullPageLoader";
-    loader.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 99999;
-        backdrop-filter: blur(4px);
-    `;
-    
-    loader.innerHTML = `
-        <div style="background: white; padding: 30px 40px; border-radius: 12px; text-align: center; min-width: 250px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
-            <div style="margin-bottom: 20px;">
-                <i class="fas fa-spinner fa-spin" style="font-size: 40px; color: #1e3c72;"></i>
-            </div>
-            <p style="margin: 0; font-size: 16px; color: #333;">${message}</p>
-            <p style="margin: 10px 0 0 0; font-size: 12px; color: #666;">Please do not close this window</p>
-        </div>
-    `;
-    
-    document.body.appendChild(loader);
-    return loader;
-}
-
-// Remove loader
-function removeFullPageLoader() {
-    const loader = document.getElementById("fullPageLoader");
-    if (loader) {
-        loader.remove();
-    }
-}
-
-// Enhanced sendPaymentOtp with loader and timeout
-async function sendPaymentOtp() {
-    if (!selectedAdminTenant || !selectedAdminPeriod) {
-        showAlert("Please select a tenant first", "error");
-        return;
-    }
-    
-    const sendBtn = document.getElementById("sendOtpBtn");
-    const originalText = sendBtn.innerHTML;
-    
-    // Show full page loader
-    const loader = createFullPageLoader("Sending OTP to tenant's email...");
-    
-    // Disable button and show loading state
-    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
-    sendBtn.disabled = true;
-    
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 seconds timeout
-    const OTPNotifier = document.getElementById("OTPNotifier");
-    
-    try {
-        const response = await fetch("../backend/utilities/send_otp.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                email: selectedAdminTenant.email,
-                user_type: "tenant",
-                title: "Admin: Rent Payment Authorization OTP"
-            }),
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        const data = await response.json();
-        
-        // Remove loader
-        removeFullPageLoader();
-        
-        if ((data.success) || (data.code = 500)) {
-            showAlert("✓ OTP sent to tenant's email successfully!", "success");
-            OTPNotifier.textContent = "Enter the OTP sent to Customer's Email in the Input below";
-            
-            // Show OTP input section with a small animation
-            const otpSection = document.getElementById("otpSection");
-            otpSection.style.display = "block";
-            otpSection.style.opacity = "0";
-            otpSection.style.transform = "translateY(-10px)";
-            otpSection.style.transition = "all 0.3s ease";
-            
-            setTimeout(() => {
-                otpSection.style.opacity = "1";
-                otpSection.style.transform = "translateY(0)";
-            }, 50);
-            
-            // Hide send button
-            sendBtn.style.display = "none";
-            
-            // Focus on OTP input
-            document.getElementById("otpCode").focus();
-            
-            // Start OTP resend timer (2 minutes)
-            startOtpResendTimer(120);
-        } else {
-            throw new Error(data.message);
-            OTPNotifier.textContent = "Unable to Generate OTP. Please Try Again";
-        }
-    } catch (error) {
-        clearTimeout(timeoutId);
-        removeFullPageLoader();
-        
-        console.error("Error sending OTP:", error);
-        
-        let errorMessage = error.message;
-        if (error.name === "AbortError") {
-            errorMessage = "Request timeout. Please check your internet connection and try again.";
-        }
-        
-        showAlert(errorMessage, "error");
-        sendBtn.innerHTML = originalText;
-        sendBtn.disabled = false;
-    }
-}
-
-// OTP Resend Timer
-let otpTimerInterval = null;
-
-function startOtpResendTimer(durationSeconds) {
-    const sendBtn = document.getElementById("sendOtpBtn");
-    const originalText = sendBtn.innerHTML;
-    
-    // Clear any existing timer
-    if (otpTimerInterval) {
-        clearInterval(otpTimerInterval);
-    }
-    
-    let timeLeft = durationSeconds;
-    
-    otpTimerInterval = setInterval(() => {
-        const minutes = Math.floor(timeLeft / 60);
-        const seconds = timeLeft % 60;
-        
-        sendBtn.innerHTML = `<i class="fas fa-clock"></i> Resend in ${minutes}:${seconds.toString().padStart(2, '0')}`;
-        sendBtn.disabled = true;
-        
-        if (timeLeft <= 0) {
-            clearInterval(otpTimerInterval);
-            otpTimerInterval = null;
-            sendBtn.innerHTML = '<i class="fas fa-envelope"></i> Resend OTP';
-            sendBtn.disabled = false;
-            sendBtn.style.display = "block";
-            
-            // Show that resend is available
-            showAlert("You can now request a new OTP if needed", "info");
-        }
-        
-        timeLeft--;
-    }, 1000);
-}
-
-// Cancel OTP timer (call when OTP is verified or modal closes)
-function cancelOtpTimer() {
-    if (otpTimerInterval) {
-        clearInterval(otpTimerInterval);
-        otpTimerInterval = null;
-    }
-}
-
-// Enhanced verifyPaymentOtp with loader
-async function verifyPaymentOtp() {
-    const otpCode = document.getElementById("otpCode").value.trim();
-    const OTPNotifier = document.getElementById("OTPNotifier");
-    
-    if (!otpCode || otpCode.length !== 6) {
-        showAlert("Please enter a valid 6-digit OTP code", "error");
-        return;
-    }
-    
-    
-    
-    const verifyBtn = document.getElementById("verifyOtpBtn");
-    const originalText = verifyBtn.innerHTML;
-    
-    // Show loader
-    const loader = createFullPageLoader("Verifying OTP...");
-    
-    verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
-    verifyBtn.disabled = true;
-    
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
-    
-    try {
-        const response = await fetch("../backend/payment/verify_payment_otp.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                tenant_code: selectedAdminTenant.tenant_code,
-                otp_code: otpCode
-            }),
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        const data = await response.json();
-        
-        removeFullPageLoader();
-        
-        if (data.success) {
-            showAlert("✓ OTP verified successfully!", "success");
-            OTPNotifier.textContent = "OTP Verified successfully. Now Complete Payment"
-            
-            // Cancel the resend timer since OTP is verified
-            cancelOtpTimer();
-            
-            // Move to step 3 with animation
-            resetAdminToStep(3);
-        } else {
-            OTPNotifier.textContent = "Unable to Verify OTP. Please Try Again Later"
-            throw new Error(data.message);
-        }
-    } catch (error) {
-        clearTimeout(timeoutId);
-        removeFullPageLoader();
-        
-        console.error("Error verifying OTP:", error);
-        
-        let errorMessage = error.message;
-        if (error.name === "AbortError") {
-            errorMessage = "Verification timeout. Please try again.";
-        }
-        
-        showAlert(errorMessage, "error");
-        verifyBtn.innerHTML = originalText;
-        verifyBtn.disabled = false;
-        
-        // Clear OTP input on failure
-        document.getElementById("otpCode").value = "";
-        document.getElementById("otpCode").focus();
-    }
-}
-
-// Process the payment
-async function processAdminRentPayment() {
-    const notes = document.getElementById("adminPaymentNotes").value;
-    const OTPNotifier = document.getElementById("OTPNotifier");
-    
-    
-    // Close payment modal and show processing
-    closeModal("initiateRentPaymentModal");
-    openModal("adminProcessingModal");
-    
-    const processingMsg = document.getElementById("adminProcessingMessage");
-    processingMsg.innerHTML = "Initiating payment... Please wait.";
-    
-    try {
-        const response = await fetch("../backend/payment/admin_initiate_rent_payment.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                tenant_code: selectedAdminTenant.tenant_code,
-                period_number: selectedAdminPeriod.period_number,
-                notes: notes
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            processingMsg.innerHTML = "Payment initiated successfully!<br>Waiting for verification...";
-            OTPNotifier.textContent = "Payment Initiated Successfully.Contact Admin for Verification";
-            
-            setTimeout(() => {
-                closeModal("adminProcessingModal");
-                showAlert(`Payment initiated successfully! Receipt: ${data.message.receipt_number}`, "success");
-                
-                // Reset and close
-                resetAdminPaymentState();
-                closeInitiatePaymentModal();
-                
-                // Refresh data
-                loadPayments();
-                loadStatistics();
-            }, 2000);
-        } else {
-            throw new Error(data.message);
-             OTPNotifier.textContent = "Unable to Complete Rent Payment. Please Try Again";
-        }
-    } catch (error) {
-        console.error("Error processing payment:", error);
-        closeModal("adminProcessingModal");
-        showAlert(error.message, "error");
-        resetAdminPaymentState();
-    }
-}
-
-// Helper function to reset to specific step
-// Update the resetAdminToStep function to handle timer
-function resetAdminToStep(step) {
-    adminCurrentStep = step;
-    
-    // Hide all step containers
-    document.getElementById("adminStep2").style.display = "none";
-    document.getElementById("adminStep3").style.display = "none";
-    document.getElementById("processPaymentBtn").style.display = "none";
-    
-    if (step === 2) {
-        // Reset OTP section (keep timer if active, otherwise reset)
-        const sendBtn = document.getElementById("sendOtpBtn");
-        
-        // Only reset if no active timer
-        if (!otpTimerInterval) {
-            sendBtn.style.display = "block";
-            sendBtn.disabled = false;
-            sendBtn.innerHTML = '<i class="fas fa-envelope"></i> Send OTP to Tenant';
-        }
-        
-        document.getElementById("otpSection").style.display = "none";
-        document.getElementById("otpCode").value = "";
-        document.getElementById("adminStep2").style.display = "block";
-    } else if (step === 3) {
-        // Cancel timer when moving to step 3 (OTP verified)
-        cancelOtpTimer();
-        document.getElementById("adminStep3").style.display = "block";
-        document.getElementById("processPaymentBtn").style.display = "block";
-    }
-}
-
-// Reset admin state (updated to cancel timer)
-function resetAdminPaymentState() {
-    selectedAdminTenant = null;
-    selectedAdminPeriod = null;
-    adminCurrentStep = 1;
-    
-    // Cancel OTP timer
-    cancelOtpTimer();
-    
-    const tenantSelect = document.getElementById("adminTenantSelect");
-    if (tenantSelect) tenantSelect.value = "";
-    
-    document.getElementById("adminPaymentSummary").style.display = "none";
-    document.getElementById("adminStep2").style.display = "none";
-    document.getElementById("adminStep3").style.display = "none";
-    document.getElementById("processPaymentBtn").style.display = "none";
-    
-    const sendBtn = document.getElementById("sendOtpBtn");
-    sendBtn.style.display = "block";
-    sendBtn.disabled = false;
-    sendBtn.innerHTML = '<i class="fas fa-envelope"></i> Send OTP to Tenant';
-    document.getElementById("otpSection").style.display = "none";
-    document.getElementById("otpCode").value = "";
-    document.getElementById("adminPaymentNotes").value = "";
-}
-
-// Close modal (updated to cancel timer)
-function closeInitiatePaymentModal() {
-    resetAdminPaymentState();
-    closeModal("initiateRentPaymentModal");
-}
-
-
-
-// Helper function for date range
-function formatDateRange(startDate, endDate) {
-    if (!startDate || !endDate) return "N/A";
-    return `${formatDate(startDate)} - ${formatDate(endDate)}`;
-}
-
-// ==================== END ADMIN INITIATED RENT PAYMENT ====================
 
 // Set today's date in date fields
 function setTodayDate() {
@@ -821,8 +355,12 @@ function renderStatistics(stats) {
         `
         )
         .join("");
-}
 
+    // Render revenue chart if data exists
+    // if (stats.revenue_trend && stats.revenue_trend.length > 0) {
+    //     renderRevenueChart(stats.revenue_trend);
+    // }
+}
 // Modal functions
 function openRecordPaymentModal() {
     const modal = document.getElementById("recordPaymentModal");
@@ -1281,41 +819,41 @@ function generateTransactionReference() {
     return `ADMIN-${timestamp}-${random}`;
 }
 
-// async function submitPaymentForm(event) {
-//     if (event) event.preventDefault();
+async function submitPaymentForm(event) {
+    if (event) event.preventDefault();
 
-//     const form = document.getElementById("paymentForm");
-//     const formData = new FormData(form);
-//     const data = Object.fromEntries(formData.entries());
+    const form = document.getElementById("paymentForm");
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
 
-//     // Convert numeric fields
-//     data.amount = parseFloat(data.amount) || 0;
-//     data.balance = parseFloat(data.balance) || 0;
+    // Convert numeric fields
+    data.amount = parseFloat(data.amount) || 0;
+    data.balance = parseFloat(data.balance) || 0;
 
-//     try {
-//         const response = await fetch("../backend/payment/payment_manager.php?action=create", {
-//             method: "POST",
-//             headers: {
-//                 "Content-Type": "application/json",
-//             },
-//             body: JSON.stringify(data),
-//         });
+    try {
+        const response = await fetch("../backend/payment/payment_manager.php?action=create", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+        });
 
-//         const result = await response.json();
+        const result = await response.json();
 
-//         if (result.success) {
-//             showAlert("Payment created successfully! Receipt #: " + result.message.receipt_number, "success");
-//             closeRecordPaymentModal();
-//             loadPayments();
-//             loadStatistics();
-//         } else {
-//             showAlert(result.message, "error");
-//         }
-//     } catch (error) {
-//         console.error("Error:", error);
-//         showAlert("Error creating payment", "error");
-//     }
-// }
+        if (result.success) {
+            showAlert("Payment created successfully! Receipt #: " + result.receipt_number, "success");
+            closeRecordPaymentModal();
+            loadPayments();
+            loadStatistics();
+        } else {
+            showAlert(result.message, "error");
+        }
+    } catch (error) {
+        console.error("Error:", error);
+        showAlert("Error creating payment", "error");
+    }
+}
 
 // View payment details
 async function viewPayment(paymentId) {
@@ -1354,10 +892,10 @@ function renderPaymentDetails(payment) {
     `;
 
     const detailsHTML = `
-        <div class="payment-details-grid">
-            <div class="payment-detail-section">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+            <div>
                 <h4>Payment Information</h4>
-                <table class="payment-detail-table">
+                <table class="data-table" style="width: 100%;">
                     <tr><td><strong>Receipt #:</strong></td><td>${payment.receipt_number || 'N/A'}</td></tr>
                     <tr><td><strong>Amount:</strong></td><td>₦${formatNumber(payment.amount)}</td></tr>
                     <tr><td><strong>Date:</strong></td><td>${formatDate(payment.payment_date)}</td></tr>
@@ -1365,7 +903,7 @@ function renderPaymentDetails(payment) {
                     <tr>
                         <td><strong>Status:</strong></td>
                         <td>
-                            <div class="payment-status-row">
+                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                                 <span class="status-badge status-${payment.payment_status}">
                                     ${(payment.payment_status || 'pending').toUpperCase()}
                                 </span>
@@ -1388,18 +926,17 @@ function renderPaymentDetails(payment) {
                 </table>
             </div>
             
-            <div class="payment-detail-section">
+            <div>
                 <h4>Tenant Information</h4>
-                <table class="payment-detail-table">
+                <table class="data-table" style="width: 100%;">
                     <tr><td><strong>Name:</strong></td><td>${payment.tenant_name || 'N/A'}</td></tr>
                     <tr><td><strong>Email:</strong></td><td>${payment.tenant_email || 'N/A'}</td></tr>
                     <tr><td><strong>Phone:</strong></td><td>${payment.tenant_phone || 'N/A'}</td></tr>
                     <tr><td><strong>Tenant Code:</strong></td><td>${payment.tenant_code || 'N/A'}</td></tr>
-                    
                 </table>
                 
                 <h4 style="margin-top: 20px;">Property Information</h4>
-                <table class="payment-detail-table">
+                <table class="data-table" style="width: 100%;">
                     <tr><td><strong>Property:</strong></td><td>${payment.property_name || 'N/A'}</td></tr>
                     <tr><td><strong>Apartment:</strong></td><td>${payment.apartment_number || 'N/A'}</td></tr>
                     <tr><td><strong>Property Code:</strong></td><td>${payment.property_code || 'N/A'}</td></tr>
@@ -1408,16 +945,16 @@ function renderPaymentDetails(payment) {
         </div>
         
         ${payment.description ? `
-        <div class="payment-detail-note">
+        <div style="margin-bottom: 20px;">
             <h4>Description</h4>
             <p>${payment.description}</p>
         </div>
         ` : ''}
         
         ${payment.notes ? `
-        <div class="payment-detail-note">
+        <div style="margin-bottom: 20px;">
             <h4>Notes</h4>
-            <p>${payment.notes}</p>
+            <p style="color: #666; font-style: italic;">${payment.notes}</p>
         </div>
         ` : ''}
     `;
@@ -1437,7 +974,7 @@ function openStatusUpdateModal() {
                 <div class="modal-body">
                     <div class="form-group">
                         <label>Current Status</label>
-                        <input type="text" class="form-control" value="${window.currentViewingPaymentStatus.toUpperCase()}" readonly style="background: #f5f5f5;">
+                        <input type="text" class = "form-control" value="${window.currentViewingPaymentStatus.toUpperCase()}" readonly style="background: #f5f5f5;">
                     </div>
                     <div class="form-group">
                         <label>New Status *</label>
@@ -1541,7 +1078,6 @@ async function confirmStatusUpdate() {
         confirmBtn.disabled = false;
     }
 }
-
 // Delete payment
 async function deletePayment(paymentId) {
     const confirmed = await showConfirmModal({
@@ -1587,18 +1123,7 @@ function editPayment(paymentId) {
 
 // Export payments
 function exportPayments() {
-    const params = new URLSearchParams({ action: "export" });
-
-    if (currentFilters.search) params.set("search", currentFilters.search);
-    if (currentFilters.tenant_code) params.set("tenant_code", currentFilters.tenant_code);
-    if (currentFilters.property_code) params.set("property_code", currentFilters.property_code);
-    if (currentFilters.apartment_code) params.set("apartment_code", currentFilters.apartment_code);
-    if (currentFilters.payment_status) params.set("payment_status", currentFilters.payment_status);
-    if (currentFilters.payment_method) params.set("payment_method", currentFilters.payment_method);
-    if (currentFilters.date_from) params.set("date_from", currentFilters.date_from);
-    if (currentFilters.date_to) params.set("date_to", currentFilters.date_to);
-
-    window.location.href = `../backend/payment/payment_manager.php?${params.toString()}`;
+    showAlert("Export functionality to be implemented", "info");
 }
 
 // Utility functions
@@ -1622,8 +1147,7 @@ function formatPaymentMethod(method) {
         'bank_transfer': 'Bank Transfer',
         'card': 'Card',
         'cash': 'Cash',
-        'cheque': 'Cheque',
-        'admin_initiated': 'Admin Initiated'
+        'cheque': 'Cheque'
     };
     return methods[method] || method || 'N/A';
 }
@@ -1660,7 +1184,6 @@ function showAlert(message, type = "info") {
         setTimeout(() => alert.remove(), 300);
     }, 3000);
 }
-
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -1675,3 +1198,4 @@ setInterval(() => {
         loadStatistics();
     }
 }, 5 * 60 * 1000);
+

@@ -233,7 +233,8 @@ class NotificationManager {
     }
 
     async markAllAsRead() {
-        if (!confirm('Mark all notifications as read?')) return;
+        const confirmed = await this.showMarkAllReadConfirm();
+        if (!confirmed) return;
         
         try {
             const response = await fetch(this.apiUrl, {
@@ -257,6 +258,86 @@ class NotificationManager {
             console.error('Error marking all as read:', error);
             this.showError('Failed to mark all as read');
         }
+    }
+
+    showMarkAllReadConfirm() {
+        const modal = this.getMarkAllReadConfirmModal();
+        const unreadCount = parseInt(document.getElementById('totalUnread')?.textContent, 10) || 0;
+        const countLabel = unreadCount === 1 ? '1 unread notification' : `${unreadCount} unread notifications`;
+
+        modal.querySelector('#notificationConfirmCount').textContent = countLabel;
+
+        return new Promise((resolve) => {
+            const cancelBtn = modal.querySelector('[data-confirm-cancel]');
+            const confirmBtn = modal.querySelector('[data-confirm-ok]');
+            let settled = false;
+
+            const close = (result) => {
+                if (settled) return;
+                settled = true;
+                modal.classList.remove('active');
+                modal.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('notification-confirm-open');
+                document.removeEventListener('keydown', handleEscape);
+                modal.onclick = null;
+                resolve(result);
+            };
+
+            const handleEscape = (event) => {
+                if (event.key === 'Escape') {
+                    close(false);
+                }
+            };
+
+            cancelBtn.onclick = () => close(false);
+            confirmBtn.onclick = () => close(true);
+            modal.onclick = (event) => {
+                if (event.target === modal) {
+                    close(false);
+                }
+            };
+
+            document.addEventListener('keydown', handleEscape);
+            document.body.classList.add('notification-confirm-open');
+            modal.setAttribute('aria-hidden', 'false');
+            modal.classList.add('active');
+            confirmBtn.focus();
+        });
+    }
+
+    getMarkAllReadConfirmModal() {
+        let modal = document.getElementById('markAllReadConfirmModal');
+        if (modal) return modal;
+
+        modal = document.createElement('div');
+        modal.id = 'markAllReadConfirmModal';
+        modal.className = 'notification-confirm-modal';
+        modal.setAttribute('aria-hidden', 'true');
+        modal.innerHTML = `
+            <div class="notification-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="markAllReadConfirmTitle">
+                <div class="notification-confirm-icon">
+                    <i class="fas fa-check-double"></i>
+                </div>
+                <div class="notification-confirm-content">
+                    <h2 id="markAllReadConfirmTitle">Mark all as read?</h2>
+                    <p>This will mark every unread notification in your inbox as read.</p>
+                    <div class="notification-confirm-detail">
+                        <span>Current unread</span>
+                        <strong id="notificationConfirmCount">0 unread notifications</strong>
+                    </div>
+                </div>
+                <div class="notification-confirm-actions">
+                    <button type="button" class="notification-confirm-cancel" data-confirm-cancel>Cancel</button>
+                    <button type="button" class="notification-confirm-ok" data-confirm-ok>
+                        <i class="fas fa-check"></i>
+                        Mark All Read
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        return modal;
     }
 
     async archiveNotification(notificationId, event) {

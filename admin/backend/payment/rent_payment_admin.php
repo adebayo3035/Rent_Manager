@@ -251,7 +251,50 @@ function fetchPaymentHistory($conn) {
         ]
     ]);
 }
+/**
+ * Update rent payment attempt record (when admin verifies/approves/rejects)
+ * 
+ * @param mysqli $conn Database connection
+ * @param int $tracker_id The rent_payment_tracker ID
+ * @param string $status New status (paid/failed)
+ * @param int $verified_by Admin ID who verified
+ * @param string $verification_notes Admin notes
+ * @param string $failure_reason Optional failure reason
+ * @return bool Success status
+ */
+function updateRentPaymentAttempt($conn, $tracker_id, $status, $verified_by, $verification_notes = null, $failure_reason = null)
+{
+    // Find the latest pending attempt for this tracker
+    $find_query = "SELECT id FROM rent_payment_history WHERE tracker_id = ? AND status IN ('initiated', 'pending_verification') ORDER BY id DESC LIMIT 1";
+    $find_stmt = $conn->prepare($find_query);
+    $find_stmt->bind_param("i", $tracker_id);
+    $find_stmt->execute();
+    $result = $find_stmt->get_result();
 
+    if ($result->num_rows === 0) {
+        logActivity("No pending attempt found for tracker_id: {$tracker_id}");
+        return false;
+    }
+
+    $history = $result->fetch_assoc();
+    $find_stmt->close();
+
+    $query = "UPDATE rent_payment_history 
+              SET status = ?, verified_by = ?, verified_at = NOW(), verification_notes = ?, failure_reason = ?
+              WHERE id = ?";
+
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("sissi", $status, $verified_by, $verification_notes, $failure_reason, $history['id']);
+
+    $success = $stmt->execute();
+    $stmt->close();
+
+    if ($success) {
+        logActivity("Rent payment attempt updated - History ID: {$history['id']}, New Status: {$status}");
+    }
+
+    return $success;
+}
 function verifyPayment($conn, $adminId) {
     logActivity("Starting verifyPayment() - Admin ID: $adminId");
     
@@ -312,6 +355,7 @@ function verifyPayment($conn, $adminId) {
         $periodEndDate = $tracker['end_date'];
         $receipt_number = $tracker['receipt_number'];
         $newStatus = ($action === 'approve') ? 'paid' : 'failed';
+        $actionLabel = strtoupper($action);
         
         logActivity("Processing payment - Period #{$tracker['period_number']}, Action: $action, New Status: $newStatus");
         
@@ -321,12 +365,12 @@ function verifyPayment($conn, $adminId) {
             SET status = ?,
                 verified_by = ?,
                 verified_at = NOW(),
-                admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[" . strtoupper($action) . "] ', NOW(), ' by Admin ID: {$adminId}\nNotes: {$notes}'),
+                admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[', ?, '] ', NOW(), ' by Admin ID: ', ?, '\nNotes: ', ?),
                 notes = ?
             WHERE tracker_id = ?
         ";
         $updateStmt = $conn->prepare($updateTrackerQuery);
-        $updateStmt->bind_param("sisi", $newStatus, $adminId, $notes, $trackerId);
+        $updateStmt->bind_param("sisissi", $newStatus, $adminId, $actionLabel, $adminId, $notes, $notes, $trackerId);
         $updateStmt->execute();
         $updateStmt->close();
         
@@ -386,13 +430,19 @@ function verifyPayment($conn, $adminId) {
                 
                 logActivity("All periods completed for rent_payment_id: {$tracker['rent_payment_id']}");
             }
-             createPaymentNotification($conn, $tracker['tenant_code'], $periodAmount, 'approved', $tracker['period_number'], $receipt_number);
+            // When admin approves the payment
+            if (!updateRentPaymentAttempt($conn, $trackerId, 'paid', $adminId, $notes)) {
+                throw new Exception("Failed to update rent payment history for approved payment");
+            }
+            createPaymentNotification($conn, $tracker['tenant_code'], $periodAmount, 'approved', $tracker['period_number'], $receipt_number);
         }
-        else if($action = "reject"){
+        else if ($action === "reject") {
+            // When admin rejects the payment
+            if (!updateRentPaymentAttempt($conn, $trackerId, 'failed', $adminId, $notes, $notes)) {
+                throw new Exception("Failed to update rent payment history for rejected payment");
+            }
             createPaymentNotification($conn, $tracker['tenant_code'], $periodAmount, 'rejected', $tracker['period_number'], $receipt_number);
         }
-        
-       
         
         $conn->commit();
         

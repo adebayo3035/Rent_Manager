@@ -41,33 +41,107 @@ function calculateDueDate($period_end_date, $payment_frequency)
     return $dueDate->format('Y-m-d');
 }
 
+/**
+ * Insert a new rent payment attempt record
+ * 
+ * @param mysqli $conn Database connection
+ * @param int $tracker_id The rent_payment_tracker ID
+ * @param string $tenant_code Tenant code
+ * @param string $apartment_code Apartment code
+ * @param int $period_number Period number
+ * @param float $amount Payment amount
+ * @param string $status Initial status (initiated/pending_verification)
+ * @param string $initiated_by Who initiated (tenant_code or admin_id)
+ * @param string $initiated_by_type 'tenant' or 'admin'
+ * @param array $payment_details Optional payment details (method, reference, receipt, etc.)
+ * @param string $notes Additional notes
+ * @return int|false The inserted record ID or false on failure
+ */
+function insertRentPaymentAttempt($conn, $tracker_id, $tenant_code, $apartment_code, $period_number, $amount, $status, $initiated_by, $initiated_by_type, $payment_details = [], $notes = null)
+{
+    // Calculate attempt number (count existing attempts for this tracker)
+    $attempt_query = "SELECT COUNT(*) as attempt_count FROM rent_payment_history WHERE tracker_id = ?";
+    $attempt_stmt = $conn->prepare($attempt_query);
+    $attempt_stmt->bind_param("i", $tracker_id);
+    $attempt_stmt->execute();
+    $attempt_result = $attempt_stmt->get_result();
+    $attempt_count = $attempt_result->fetch_assoc()['attempt_count'] + 1;
+    $attempt_stmt->close();
+
+    $payment_method = $payment_details['payment_method'] ?? null;
+    $reference_number = $payment_details['reference_number'] ?? null;
+    $receipt_number = $payment_details['receipt_number'] ?? null;
+    $transaction_id = $payment_details['transaction_id'] ?? null;
+
+    $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+
+    $query = "INSERT INTO rent_payment_history (
+        tracker_id, tenant_code, apartment_code, period_number, amount,
+        attempt_number, payment_method, reference_number, receipt_number, transaction_id,
+        status, initiated_by, initiated_by_type, initiated_at,
+        ip_address, user_agent, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)";
+
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param(
+        "issidissssssssss",
+        $tracker_id,
+        $tenant_code,
+        $apartment_code,
+        $period_number,
+        $amount,
+        $attempt_count,
+        $payment_method,
+        $reference_number,
+        $receipt_number,
+        $transaction_id,
+        $status,
+        $initiated_by,
+        $initiated_by_type,
+        $ip_address,
+        $user_agent,
+        $notes
+    );
+
+    if ($stmt->execute()) {
+        $history_id = $stmt->insert_id;
+        $stmt->close();
+        logActivity("Rent payment attempt inserted - History ID: {$history_id}, Tracker ID: {$tracker_id}, Attempt #{$attempt_count}");
+        return $history_id;
+    }
+
+    $stmt->close();
+    return false;
+}
+
 try {
     // Check authentication
     if (!isset($_SESSION['tenant_code']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'Tenant') {
         json_error("Unauthorized access", 403);
     }
-    
+
     $tenant_code = $_SESSION['tenant_code'];
     logActivity("Authenticated Tenant Code: {$tenant_code}");
-    
+
     // Get input data
     $input = json_decode(file_get_contents('php://input'), true);
     if (!$input) {
         json_error("Invalid input data", 400);
     }
-    
+
     $payment_method = $input['payment_method'] ?? '';
     $reference_number_input = $input['reference_number'] ?? null;
     $notes = $input['notes'] ?? '';
-    
+
     $allowed_methods = ['bank_transfer', 'card', 'cash', 'cheque'];
     if (!in_array($payment_method, $allowed_methods)) {
         json_error("Invalid payment method", 400);
     }
-    
+
     $conn->begin_transaction();
     logActivity("Transaction started");
-    
+
     try {
         // 1. Get tenant details
         $tenant_query = "
@@ -89,23 +163,23 @@ try {
             WHERE t.tenant_code = ? AND t.status = 1
             LIMIT 1
         ";
-        
+
         $tenant_stmt = $conn->prepare($tenant_query);
         $tenant_stmt->bind_param("s", $tenant_code);
         $tenant_stmt->execute();
         $tenant = $tenant_stmt->get_result()->fetch_assoc();
         $tenant_stmt->close();
-        
+
         if (!$tenant) {
             throw new Exception("Tenant information not found", 404);
         }
-        
+
         $payment_frequency = $tenant['agreed_payment_frequency'] ?? $tenant['payment_frequency'];
-        $payment_per_period = (float)($tenant['payment_amount_per_period'] ?? 0);
-        
+        $payment_per_period = (float) ($tenant['payment_amount_per_period'] ?? 0);
+
         logActivity("Tenant: {$tenant['property_name']}, Apartment: {$tenant['apartment_number']}");
         logActivity("Payment Frequency: {$payment_frequency}, Amount per period: {$payment_per_period}");
-        
+
         // 2. FIRST: Check for ANY pending_verification payment (BLOCK new payment)
         $pending_check_query = "
             SELECT tracker_id, period_number, start_date, end_date, status
@@ -115,13 +189,13 @@ try {
             AND status = 'pending_verification'
             LIMIT 1
         ";
-        
+
         $pending_stmt = $conn->prepare($pending_check_query);
         $pending_stmt->bind_param("ss", $tenant_code, $tenant['apartment_code']);
         $pending_stmt->execute();
         $pending_payment = $pending_stmt->get_result()->fetch_assoc();
         $pending_stmt->close();
-        
+
         if ($pending_payment) {
             logActivity("BLOCK: Found pending verification - Period #{$pending_payment['period_number']}");
             throw new Exception(
@@ -130,7 +204,7 @@ try {
                 400
             );
         }
-        
+
         // 3. Find the next AVAILABLE period (not pending_verification, not paid, not failed)
         $next_period_query = "
             SELECT 
@@ -150,13 +224,13 @@ try {
             ORDER BY period_number ASC
             LIMIT 1
         ";
-        
+
         $next_stmt = $conn->prepare($next_period_query);
         $next_stmt->bind_param("ss", $tenant_code, $tenant['apartment_code']);
         $next_stmt->execute();
         $next_period = $next_stmt->get_result()->fetch_assoc();
         $next_stmt->close();
-        
+
         if (!$next_period) {
             // Check for failed period that needs attention
             $failed_check = "
@@ -171,7 +245,7 @@ try {
             $failed_stmt->execute();
             $failed_period = $failed_stmt->get_result()->fetch_assoc();
             $failed_stmt->close();
-            
+
             if ($failed_period) {
                 throw new Exception(
                     "Your previous payment for Period #{$failed_period['period_number']} failed. " .
@@ -179,7 +253,7 @@ try {
                     400
                 );
             }
-            
+
             // Check if all periods are paid
             $all_paid_check = "
                 SELECT COUNT(*) as unpaid_count 
@@ -191,16 +265,16 @@ try {
             $all_paid_stmt->execute();
             $unpaid_result = $all_paid_stmt->get_result()->fetch_assoc();
             $all_paid_stmt->close();
-            
+
             if ($unpaid_result['unpaid_count'] == 0) {
                 throw new Exception("All rent payments for your lease have been completed. Your lease is fully paid.", 400);
             } else {
                 throw new Exception("No available payment periods found. Please contact support.", 400);
             }
         }
-        
+
         logActivity("Next available period found - Period #{$next_period['period_number']}: {$next_period['start_date']} to {$next_period['end_date']}");
-        
+
         // 4. Get the main rent payment record
         $rent_payment_query = "
             SELECT 
@@ -212,28 +286,28 @@ try {
             WHERE rent_payment_id = ?
             LIMIT 1
         ";
-        
+
         $rent_stmt = $conn->prepare($rent_payment_query);
         $rent_stmt->bind_param("s", $next_period['rent_payment_id']);
         $rent_stmt->execute();
         $rent_payment = $rent_stmt->get_result()->fetch_assoc();
         $rent_stmt->close();
-        
+
         if (!$rent_payment) {
             throw new Exception("Rent payment agreement not found", 404);
         }
-        
+
         // 5. Generate unique identifiers
         $receipt_number = generateReceiptNumber($tenant_code, 'rent');
         $reference_number = $reference_number_input ?: generateReferenceNumber($tenant_code, $payment_method);
         $transaction_id = 'TXN-' . date('Ymd') . '-' . time() . '-' . rand(1000, 9999);
         $payment_date = date('Y-m-d H:i:s');
         $due_date = calculateDueDate($next_period['end_date'], $payment_frequency);
-        
+
         // 6. IMPORTANT: USE THE EXISTING payment_id from onboarding, don't create a new one
         $existing_payment_id = $next_period['existing_payment_id'];
         logActivity("Using existing payment_id from onboarding: {$existing_payment_id}");
-        
+
         // 7. Update the tracker record to 'pending_verification'
         $update_tracker_query = "
             UPDATE rent_payment_tracker 
@@ -245,22 +319,43 @@ try {
             WHERE tracker_id = ?
             AND status = 'available'
         ";
-        
+
         $update_stmt = $conn->prepare($update_tracker_query);
         $update_stmt->bind_param("ssssi", $payment_date, $reference_number, $payment_method, $payment_per_period, $next_period['tracker_id']);
-        
+
         if (!$update_stmt->execute() || $update_stmt->affected_rows == 0) {
             throw new Exception("Failed to initiate payment. Period may have been already paid.", 500);
         }
         $update_stmt->close();
         logActivity("Tracker record updated to 'pending_verification' - payment_id remains: {$existing_payment_id}");
-        
+
+        // ======= INSERT RECORD INTO rent_payment_history table ========
+        // After updating the tracker record, insert into history
+        $history_id = insertRentPaymentAttempt(
+            $conn,
+            $next_period['tracker_id'],
+            $tenant_code,
+            $tenant['apartment_code'],
+            $next_period['period_number'],
+            $payment_per_period,
+            'pending_verification',  // status
+            $tenant_code,            // initiated_by
+            'tenant',                // initiated_by_type
+            [
+                'payment_method' => $payment_method,
+                'reference_number' => $reference_number,
+                'receipt_number' => $receipt_number,
+                'transaction_id' => $transaction_id
+            ],
+            $notes
+        );
+
         // Payment initiated (pending verification) Initiate Payment Notification 
         createPaymentNotification($conn, $tenant_code, $payment_per_period, 'initiated', $next_period['period_number'], $receipt_number);
 
         $conn->commit();
         logActivity("Transaction committed successfully");
-        
+
         // Prepare response
         $response_data = [
             'payment_id' => $existing_payment_id,  // Use existing payment_id
@@ -280,34 +375,43 @@ try {
             'status' => 'pending_verification',
             'message' => 'Your payment has been initiated and is pending admin verification.'
         ];
-        
+
         logActivity("========== INITIATE RENT PAYMENT - SUCCESS ==========");
         json_success($response_data, "Payment initiated successfully");
-        
+
     } catch (Exception $e) {
         $conn->rollback();
         logActivity("Transaction rolled back: " . $e->getMessage());
         throw $e;
     }
-    
+
 } catch (Exception $e) {
     logActivity("ERROR: " . $e->getMessage());
     $error_code = $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 500;
     json_error($e->getMessage(), $error_code);
 }
 
-function formatPeriodDisplay($start_date, $end_date, $frequency) {
+function formatPeriodDisplay($start_date, $end_date, $frequency)
+{
     $start = new DateTime($start_date);
-    switch($frequency) {
-        case 'Monthly': return $start->format('F Y');
-        case 'Quarterly': $quarter = ceil($start->format('n') / 3); return "Q{$quarter} {$start->format('Y')}";
-        case 'Semi-Annually': $half = $start->format('n') <= 6 ? 'H1' : 'H2'; return "{$half} {$start->format('Y')}";
-        case 'Annually': return $start->format('Y');
-        default: return $start->format('F Y');
+    switch ($frequency) {
+        case 'Monthly':
+            return $start->format('F Y');
+        case 'Quarterly':
+            $quarter = ceil($start->format('n') / 3);
+            return "Q{$quarter} {$start->format('Y')}";
+        case 'Semi-Annually':
+            $half = $start->format('n') <= 6 ? 'H1' : 'H2';
+            return "{$half} {$start->format('Y')}";
+        case 'Annually':
+            return $start->format('Y');
+        default:
+            return $start->format('F Y');
     }
 }
 
-function formatDateRange($start_date, $end_date) {
+function formatDateRange($start_date, $end_date)
+{
     $start = new DateTime($start_date);
     $end = new DateTime($end_date);
     return $start->format('M j, Y') . ' - ' . $end->format('M j, Y');

@@ -42,6 +42,9 @@
             <button class="tab-btn" onclick="switchTab('history')">
                 <i class="fas fa-history"></i> Payment History
             </button>
+            <a href="rent_payment_history.php" class="tab-btn tab-link">
+                <i class="fas fa-history"></i> Detailed Rent History
+            </a>
         </div>
 
         <!-- Pending Verifications Table -->
@@ -129,10 +132,8 @@
         </div>
     </div>
 
-    <script src = "../scripts/rent_payment.js">
+    <script src="../scripts/rent_payment.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-        
-    </script>
 </body>
 </html>

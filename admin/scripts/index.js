@@ -181,7 +181,7 @@ const startOTPResendTimer = (
   duration,
   button,
   inputElement,
-  responseMessageContainer
+  responseMessageContainer,
 ) => {
   if (otpTimerInterval) clearInterval(otpTimerInterval);
 
@@ -223,7 +223,7 @@ const resetOTPButton = (element, buttonText = "Send OTP") => {
 const resetAccountActivationModal = () => {
   const otpGenerationForm = document.getElementById("otpGenerationForm");
   const accountActivationForm = document.getElementById(
-    "accountActivationForm"
+    "accountActivationForm",
   );
 
   if (otpGenerationForm) otpGenerationForm.reset();
@@ -290,13 +290,13 @@ const handleSuccessResponse = (
   email,
   button,
   emailInput,
-  messageElement
+  messageElement,
 ) => {
   if (result.email_sent === false && result.otp_generated === true) {
     displayResponseMessage(
       messageElement,
       "We generated an OTP but couldn't send it via email. Please try again or contact support.",
-      "warning"
+      "warning",
     );
     resetOTPButton(button);
     resetOTPButton(emailInput);
@@ -306,7 +306,7 @@ const handleSuccessResponse = (
   displayResponseMessage(
     messageElement,
     result.message || "OTP sent successfully",
-    "success"
+    "success",
   );
 
   setTimeout(() => {
@@ -374,7 +374,7 @@ const handleReactivationSuccess = (result, messageElement, button) => {
 
     UI.alert(
       "Reactivation request submitted successfully! Our team will review it shortly.",
-      "success"
+      "success",
     );
   }, 3000);
 };
@@ -520,7 +520,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 secret_answer: resetSecretAnswer,
                 confirmPassword: confirmPassword,
               }),
-            }
+            },
           );
 
           const data = await response.json();
@@ -542,7 +542,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Get Secret Question Form
   const getSecretQuestionForm = document.getElementById(
-    "getSecretQuestionForm"
+    "getSecretQuestionForm",
   );
   if (getSecretQuestionForm) {
     getSecretQuestionForm.addEventListener("submit", async (e) => {
@@ -565,7 +565,7 @@ document.addEventListener("DOMContentLoaded", () => {
               headers: { "Content-Type": "application/json" },
               credentials: "include",
               body: JSON.stringify({ email, password }),
-            }
+            },
           );
 
           const data = await response.json();
@@ -609,7 +609,7 @@ document.addEventListener("DOMContentLoaded", () => {
           } else {
             UI.toast(
               data.message || "Failed to fetch secret question.",
-              "danger"
+              "danger",
             );
           }
         } catch (error) {
@@ -621,143 +621,151 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Login Form
-const loginForm = document.getElementById("loginForm");
-if (loginForm) {
+  const loginForm = document.getElementById("loginForm");
+  if (loginForm) {
     loginForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
+      e.preventDefault();
 
-        const username = loginForm.querySelector('input[name="username"]').value.trim();
-        const password = loginForm.querySelector('input[name="password"]').value;
+      const username = loginForm
+        .querySelector('input[name="username"]')
+        .value.trim();
+      const password = loginForm.querySelector('input[name="password"]').value;
 
-        if (!username || !password) {
-            displayError("Please enter both username and password.");
-            return;
+      if (!username || !password) {
+        displayError("Please enter both username and password.");
+        return;
+      }
+
+      clearError();
+
+      // Show loading state
+      const submitBtn = loginForm.querySelector('input[type="submit"]');
+      const originalBtnText = submitBtn.innerHTML;
+      submitBtn.innerHTML =
+        '<i class="fas fa-spinner fa-spin"></i> Logging in...';
+      submitBtn.disabled = true;
+
+      try {
+        const response = await fetch(
+          "../backend/authentication/admin_login3.php",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password }),
+          },
+        );
+
+        const data = await response.json();
+
+        // Handle response based on status code
+        if (response.status === 200 && data.success) {
+          // Success - 200 OK with success=true
+          disableForm(loginForm);
+
+          // Disable other buttons
+          const resetPasswordBtn = document.getElementById("resetPasswordBtn");
+          const getSecretQuestionBtn = document.getElementById(
+            "getSecretQuestionBtn",
+          );
+          if (resetPasswordBtn) {
+            resetPasswordBtn.style.cursor = "not-allowed";
+            resetPasswordBtn.style.opacity = "0.6";
+            resetPasswordBtn.disabled = true;
+          }
+          if (getSecretQuestionBtn) {
+            getSecretQuestionBtn.style.cursor = "not-allowed";
+            getSecretQuestionBtn.style.opacity = "0.6";
+            getSecretQuestionBtn.disabled = true;
+          }
+
+          UI.toast("Login successful! Redirecting...", "success");
+
+          setTimeout(() => {
+            window.location.href = "splashscreen.php";
+          }, 1500);
+        } else {
+          // Error - Check the error message
+          let errorMessage = data.message || "Login failed. Please try again.";
+
+          // Specific handling for locked accounts (423)
+          if (response.status === 423) {
+            errorMessage = data.message;
+            // You might want to show a special UI for locked accounts
+            UI.toast(errorMessage, "warning", 10000); // Longer duration
+          }
+          // Handling for blocked/deactivated (403)
+          else if (response.status === 403) {
+            errorMessage = data.message;
+            UI.toast(errorMessage, "error", 10000);
+          }
+          // Handling for invalid credentials (401)
+          else if (response.status === 401) {
+            errorMessage = data.message || "Invalid username or password.";
+            console.log(errorMessage);
+            displayError(errorMessage);
+          }
+          // Handling for validation errors (400)
+          else if (response.status === 400) {
+            errorMessage = data.message || "Please check your input.";
+            displayError(errorMessage);
+          }
+          // Server errors (500)
+          else if (response.status === 500) {
+            errorMessage = "Server error. Please try again later.";
+            console.error("Server Error:", data);
+            UI.toast(errorMessage, "error");
+          }
+          // Other errors
+          else {
+            displayError(errorMessage);
+          }
+
+          // Re-enable form on error
+          submitBtn.innerHTML = originalBtnText;
+          submitBtn.disabled = false;
         }
+      } catch (error) {
+        // Network errors or JSON parsing errors
+        displayError(
+          "Network error. Please check your connection and try again.",
+        );
+        console.error("Login Error:", error);
 
-        clearError();
-
-        // Show loading state
-        const submitBtn = loginForm.querySelector('input[type="submit"]');
-        const originalBtnText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
-        submitBtn.disabled = true;
-
-        try {
-            const response = await fetch("../backend/authentication/admin_login3.php", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password }),
-            });
-
-            const data = await response.json();
-            
-            // Handle response based on status code
-            if (response.status === 200 && data.success) {
-                // Success - 200 OK with success=true
-                disableForm(loginForm);
-
-                // Disable other buttons
-                const resetPasswordBtn = document.getElementById("resetPasswordBtn");
-                const getSecretQuestionBtn = document.getElementById("getSecretQuestionBtn");
-                if (resetPasswordBtn) {
-                    resetPasswordBtn.style.cursor = "not-allowed";
-                    resetPasswordBtn.style.opacity = "0.6";
-                    resetPasswordBtn.disabled = true;
-                }
-                if (getSecretQuestionBtn) {
-                    getSecretQuestionBtn.style.cursor = "not-allowed";
-                    getSecretQuestionBtn.style.opacity = "0.6";
-                    getSecretQuestionBtn.disabled = true;
-                }
-
-                UI.toast("Login successful! Redirecting...", "success");
-
-                setTimeout(() => {
-                    window.location.href = "splashscreen.php";
-                }, 1500);
-                
-            } else {
-                // Error - Check the error message
-                let errorMessage = data.message || "Login failed. Please try again.";
-                
-                // Specific handling for locked accounts (423)
-                if (response.status === 423) {
-                    errorMessage = data.message;
-                    // You might want to show a special UI for locked accounts
-                    UI.toast(errorMessage, "warning", 10000); // Longer duration
-                } 
-                // Handling for blocked/deactivated (403)
-                else if (response.status === 403) {
-                    errorMessage = data.message;
-                    UI.toast(errorMessage, "error", 10000);
-                }
-                // Handling for invalid credentials (401)
-                else if (response.status === 401) {
-                    errorMessage = data.message || "Invalid username or password.";
-                    console.log(errorMessage)
-                    displayError(errorMessage);
-                }
-                // Handling for validation errors (400)
-                else if (response.status === 400) {
-                    errorMessage = data.message || "Please check your input.";
-                    displayError(errorMessage);
-                }
-                // Server errors (500)
-                else if (response.status === 500) {
-                    errorMessage = "Server error. Please try again later.";
-                    console.error("Server Error:", data);
-                    UI.toast(errorMessage, "error");
-                }
-                // Other errors
-                else {
-                    displayError(errorMessage);
-                }
-                
-                // Re-enable form on error
-                submitBtn.innerHTML = originalBtnText;
-                submitBtn.disabled = false;
-            }
-            
-        } catch (error) {
-            // Network errors or JSON parsing errors
-            displayError("Network error. Please check your connection and try again.");
-            console.error("Login Error:", error);
-            
-            // Re-enable form on error
-            submitBtn.innerHTML = originalBtnText;
-            submitBtn.disabled = false;
-        }
+        // Re-enable form on error
+        submitBtn.innerHTML = originalBtnText;
+        submitBtn.disabled = false;
+      }
     });
-}
+  }
 
-// Helper functions
-function displayError(message) {
+  // Helper functions
+  function displayError(message) {
     // Your existing error display logic
     const errorElement = document.getElementById("loginError");
     if (errorElement) {
-        errorElement.textContent = message;
-        errorElement.style.display = "block";
+      errorElement.textContent = message;
+      errorElement.style.display = "block";
     } else {
-        UI.toast(message, "danger");
+      UI.toast(message, "danger");
     }
-}
+  }
 
-function clearError() {
+  function clearError() {
     const errorElement = document.getElementById("loginError");
     if (errorElement) {
-        errorElement.textContent = "";
-        errorElement.style.display = "none";
+      errorElement.textContent = "";
+      errorElement.style.display = "none";
     }
-}
+  }
 
-function disableForm(form) {
+  function disableForm(form) {
     const inputs = form.querySelectorAll("input, button, select, textarea");
-    inputs.forEach(input => {
-        input.disabled = true;
-        input.style.cursor = "not-allowed";
-        input.style.opacity = "0.6";
+    inputs.forEach((input) => {
+      input.disabled = true;
+      input.style.cursor = "not-allowed";
+      input.style.opacity = "0.6";
     });
-}
+  }
   // OTP Generation Form
   const otpGenerationForm = document.getElementById("otpGenerationForm");
   if (otpGenerationForm) {
@@ -804,14 +812,14 @@ function disableForm(form) {
             email,
             sendOTPButton,
             sendOTPEmail,
-            responseMessage
+            responseMessage,
           );
         } else {
           handleErrorResponse(
             result,
             sendOTPButton,
             sendOTPEmail,
-            responseMessage
+            responseMessage,
           );
         }
       } catch (error) {
@@ -825,7 +833,7 @@ function disableForm(form) {
 
   // Account Activation Form
   const accountActivationForm = document.getElementById(
-    "accountActivationForm"
+    "accountActivationForm",
   );
   if (accountActivationForm) {
     accountActivationForm.addEventListener("submit", async function (event) {
@@ -852,13 +860,13 @@ function disableForm(form) {
       if (!requestReason || requestReason.trim().length < 10) {
         UI.toast(
           "Please provide a detailed reason for reactivation (minimum 10 characters)",
-          "error"
+          "error",
         );
         return;
       }
 
       const loaderOverlay = createFullPageLoader(
-        "Submitting reactivation request..."
+        "Submitting reactivation request...",
       );
       document.body.appendChild(loaderOverlay);
 
@@ -883,7 +891,7 @@ function disableForm(form) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(requestData),
             signal: controller.signal,
-          }
+          },
         );
 
         clearTimeout(timeoutId);
@@ -898,7 +906,7 @@ function disableForm(form) {
         } catch (jsonError) {
           // If it's not valid JSON, handle it as an error
           throw new Error(
-            `Invalid server response: ${responseText.substring(0, 100)}...`
+            `Invalid server response: ${responseText.substring(0, 100)}...`,
           );
         }
 
@@ -907,13 +915,13 @@ function disableForm(form) {
           // If we have a result object with a message, use it
           if (result && result.message) {
             throw new Error(
-              `Server Error (${response.status}): ${result.message}`
+              `Server Error (${response.status}): ${result.message}`,
             );
           } else {
             throw new Error(
               `Server Error (${response.status}): ${
                 response.statusText || "Unknown error"
-              }`
+              }`,
             );
           }
         }
