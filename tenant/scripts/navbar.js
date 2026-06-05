@@ -7,7 +7,7 @@ let isWarningShowing = false;
 let navbarUserPromise = null;
 
 // Configuration
-const INACTIVITY_TIMEOUT = 2 * 60 * 10000; // 20 minutes
+const INACTIVITY_TIMEOUT = 2 * 60 * 1000; // 20 minutes
 const WARNING_TIMEOUT = 2 * 60 * 1000; // 2 minutes warning
 
 // ==================== NOTIFICATION BADGE VARIABLES ====================

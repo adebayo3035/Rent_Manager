@@ -249,7 +249,11 @@ try {
     $last_payment_date = null;
     $last_payment_period = null;
     $has_pending_verification = false;
+    $has_failed_payment = false;
     $pending_verification_period = null;
+    $pending_verification_tracker = [];
+    $failed_payment = [];
+    $failed_payment_count = 0;
 
     foreach ($trackerRecords as $tracker) {
         if ($tracker['status'] === 'paid') {
@@ -292,6 +296,31 @@ try {
                 'amount_due' => (float) $tracker['amount_paid'],
                 'status' => $tracker['status']
             ];
+
+             $pending_verification_tracker[] = [
+                'period_number' => $tracker['period_number'],
+                'period' => formatPeriod($period_start, $payment_frequency),
+                'start_date' => $tracker['start_date'],
+                'end_date' => $tracker['end_date'],
+                'amount_paid' => (float) $tracker['amount_paid'],
+                'payment_date' => $tracker['payment_date'],
+                'remaining_balance' => (float) $tracker['remaining_balance']
+            ];
+        }
+        elseif ($tracker['status'] === 'failed') {
+            $has_failed_payment = true;
+            $failed_payment_count++;
+            $period_start = new DateTime($tracker['start_date']);
+            $failed_payment = [
+                'period_number' => $tracker['period_number'],
+                'period' => formatPeriod($period_start, $payment_frequency),
+                'start_date' => $tracker['start_date'],
+                'end_date' => $tracker['end_date'],
+                'amount_due' => (float) $tracker['amount_paid'],
+                'status' => $tracker['status']
+            ];
+
+            
         }
     }
 
@@ -491,7 +520,7 @@ try {
     // Check if lease is fully paid (no available or failed periods left)
     $remaining_unpaid = 0;
     foreach ($trackerRecords as $tracker) {
-        if ($tracker['status'] === 'available' || $tracker['status'] === 'failed') {
+        if ($tracker['status'] === 'available' || $tracker['status'] === 'failed' || $tracker['status'] === 'pending_verification') {
             $remaining_unpaid++;
         }
     }
@@ -663,8 +692,16 @@ if ($existingCount > 0) {
         'paid_periods' => $paid_periods,
         'pending_periods' => $pending_trackers, // Only available and failed statuses
         // Pending verification info
+        'pending_verification_tracker' => $pending_verification_tracker,
+        'pending_verification_count' => count($pending_verification_tracker),
         'has_pending_payment' => $has_pending_verification,
         'pending_payment_period' => $pending_verification_period,
+
+        //failed payment
+        'failed_payment_tracker' => $failed_payment,
+        'failed_payment_count' => $failed_payment_count,
+        'has_failed_payment' => $has_failed_payment,
+        
         // Last completed payment
         'last_payment' => $last_completed_payment,
         'last_paid_end_date' => $last_paid_end_date,

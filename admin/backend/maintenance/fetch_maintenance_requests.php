@@ -1,4 +1,6 @@
 <?php
+// client/backend/maintenance/fetch_maintenance_requests.php
+
 header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
@@ -7,21 +9,39 @@ require_once __DIR__ . '/../utilities/utils.php';
 session_start();
 
 try {
-    // Check authentication
-    if (!isset($_SESSION['tenant_code'])) {
-        json_error("Not logged in", 401);
+    // Check authentication - Client role
+    if (!isset($_SESSION['client_logged_in']) || !isset($_SESSION['client_code'])) {
+        json_error("Unauthorized", 401);
     }
 
-    // Check if user is a tenant
-    if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'Tenant') {
-        json_error("Unauthorized access", 403);
+    $client_code = $_SESSION['client_code'];
+    
+    // Get client's properties first
+    $propertyQuery = "SELECT property_code FROM properties WHERE client_code = ? AND status = 1";
+    $propertyStmt = $conn->prepare($propertyQuery);
+    $propertyStmt->bind_param("s", $client_code);
+    $propertyStmt->execute();
+    $propertyResult = $propertyStmt->get_result();
+    
+    $propertyCodes = [];
+    while ($row = $propertyResult->fetch_assoc()) {
+        $propertyCodes[] = $row['property_code'];
     }
-
-    $tenant_code = $_SESSION['tenant_code'] ?? null;
-    if (!$tenant_code) {
-        json_error("Tenant code not found", 400);
+    $propertyStmt->close();
+    
+    if (empty($propertyCodes)) {
+        json_success([
+            'requests' => [],
+            'summary' => [],
+            'pagination' => []
+        ], "No properties found for this client");
+        return;
     }
-
+    
+    // Create placeholders for IN clause
+    $placeholders = implode(',', array_fill(0, count($propertyCodes), '?'));
+    $typess = str_repeat('s', count($propertyCodes));
+    
     // Pagination parameters
     $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
     $limit = isset($_GET['limit']) ? max(1, (int)$_GET['limit']) : 10;
@@ -30,42 +50,54 @@ try {
     // Filter parameters
     $status = isset($_GET['status']) ? htmlspecialchars(trim($_GET['status'])) : null;
     $priority = isset($_GET['priority']) ? htmlspecialchars(trim($_GET['priority'])) : null;
+    $property = isset($_GET['property_code']) ? htmlspecialchars(trim($_GET['property_code'])) : null;
     $date_from = isset($_GET['date_from']) ? htmlspecialchars(trim($_GET['date_from'])) : null;
     $date_to = isset($_GET['date_to']) ? htmlspecialchars(trim($_GET['date_to'])) : null;
 
-    // Build WHERE clause - IMPORTANT: Use table alias 'mr' for maintenance_requests
-    $where_clauses = ["mr.tenant_code = ?"];
-    $params = [$tenant_code];
-    $types = "s";
-
+    // Build WHERE clause
+    $where_clauses = ["a.property_code IN ($placeholders)"];
+    $params = $propertyCodes;
+    $types = $typess;
+    
     if ($status && in_array($status, ['pending', 'in_progress', 'resolved', 'cancelled'])) {
         $where_clauses[] = "mr.status = ?";
         $params[] = $status;
         $types .= "s";
     }
-
+    
     if ($priority && in_array($priority, ['low', 'medium', 'high', 'emergency'])) {
         $where_clauses[] = "mr.priority = ?";
         $params[] = $priority;
         $types .= "s";
     }
-
+    
+    if ($property) {
+        $where_clauses[] = "a.property_code = ?";
+        $params[] = $property;
+        $types .= "s";
+    }
+    
     if ($date_from) {
         $where_clauses[] = "DATE(mr.created_at) >= ?";
         $params[] = $date_from;
         $types .= "s";
     }
-
+    
     if ($date_to) {
         $where_clauses[] = "DATE(mr.created_at) <= ?";
         $params[] = $date_to;
         $types .= "s";
     }
-
+    
     $where_sql = "WHERE " . implode(" AND ", $where_clauses);
-
+    
     // Get total count
-    $count_query = "SELECT COUNT(*) as total FROM maintenance_requests mr $where_sql";
+    $count_query = "
+        SELECT COUNT(*) as total 
+        FROM maintenance_requests mr
+        JOIN apartments a ON mr.apartment_code = a.apartment_code
+        $where_sql
+    ";
     $count_stmt = $conn->prepare($count_query);
     
     if (!$count_stmt) {
@@ -79,7 +111,7 @@ try {
     $count_result = $count_stmt->get_result();
     $total = $count_result->fetch_assoc()['total'];
     $count_stmt->close();
-
+    
     // Get maintenance requests with pagination
     $query = "
         SELECT 
@@ -95,6 +127,12 @@ try {
             mr.images,
             a.apartment_number,
             a.apartment_code,
+            a.property_code,
+            p.name as property_name,
+            CONCAT(t.firstname, ' ', t.lastname) as tenant_name,
+            t.email as tenant_email,
+            t.phone as tenant_phone,
+            t.tenant_code,
             CONCAT(ad.firstname, ' ', ad.lastname) as assigned_to_name,
             mr.assigned_to,
             CASE 
@@ -111,17 +149,18 @@ try {
             END as status_color,
             DATEDIFF(NOW(), mr.created_at) as days_pending
         FROM maintenance_requests mr
-        LEFT JOIN apartments a ON mr.apartment_code = a.apartment_code
+        JOIN apartments a ON mr.apartment_code = a.apartment_code
+        JOIN properties p ON a.property_code = p.property_code
+        JOIN tenants t ON mr.tenant_code = t.tenant_code
         LEFT JOIN admin_tbl ad ON mr.assigned_to = ad.unique_id
         $where_sql
         ORDER BY 
-            created_at DESC,
             FIELD(mr.priority, 'emergency', 'high', 'medium', 'low'),
             FIELD(mr.status, 'pending', 'in_progress', 'resolved', 'cancelled'),
             mr.created_at DESC
         LIMIT ? OFFSET ?
     ";
-
+    
     $stmt = $conn->prepare($query);
     if (!$stmt) {
         throw new Exception("Prepare failed for main query: " . $conn->error);
@@ -140,7 +179,7 @@ try {
     $requests = [];
     while ($row = $result->fetch_assoc()) {
         // Calculate estimated resolution time based on priority
-        $estimated_days = 7; // default
+        $estimated_days = 7;
         switch($row['priority']) {
             case 'emergency':
                 $estimated_days = 1;
@@ -176,17 +215,41 @@ try {
             'images' => $row['images'] ? json_decode($row['images'], true) : [],
             'assigned_to' => $row['assigned_to'],
             'assigned_to_name' => $row['assigned_to_name'] ?? 'Not assigned yet',
-            'apartment_info' => [
+            'tenant_info' => [
+                'tenant_code' => $row['tenant_code'],
+                'tenant_name' => $row['tenant_name'],
+                'email' => $row['tenant_email'],
+                'phone' => $row['tenant_phone']
+            ],
+            'property_info' => [
+                'property_code' => $row['property_code'],
+                'property_name' => $row['property_name'],
                 'apartment_code' => $row['apartment_code'],
                 'apartment_number' => $row['apartment_number']
-            ],
-            'can_cancel' => in_array($row['status'], ['pending']),
-            'can_escalate' => in_array($row['status'], ['pending', 'in_progress']) && $row['days_pending'] > $estimated_days
+            ]
         ];
     }
     $stmt->close();
-
-    // Get summary statistics - IMPORTANT: Use table alias 'mr'
+    
+    // Get property list for filter dropdown
+    $propertyListQuery = "
+        SELECT property_code, name 
+        FROM properties 
+        WHERE client_code = ? AND status = 1
+        ORDER BY name ASC
+    ";
+    $propertyListStmt = $conn->prepare($propertyListQuery);
+    $propertyListStmt->bind_param("s", $client_code);
+    $propertyListStmt->execute();
+    $propertyListResult = $propertyListStmt->get_result();
+    
+    $propertyList = [];
+    while ($row = $propertyListResult->fetch_assoc()) {
+        $propertyList[] = $row;
+    }
+    $propertyListStmt->close();
+    
+    // Get summary statistics
     $summary_query = "
         SELECT 
             COUNT(*) as total_requests,
@@ -200,24 +263,23 @@ try {
             SUM(CASE WHEN mr.priority = 'low' THEN 1 ELSE 0 END) as low_count,
             AVG(CASE WHEN mr.status = 'resolved' THEN DATEDIFF(mr.resolved_at, mr.created_at) ELSE NULL END) as avg_resolution_days
         FROM maintenance_requests mr
-        $where_sql
+        JOIN apartments a ON mr.apartment_code = a.apartment_code
+        WHERE a.property_code IN ($placeholders)
     ";
-    $summary_stmt = $conn->prepare($summary_query);
     
+    $summary_stmt = $conn->prepare($summary_query);
     if (!$summary_stmt) {
         throw new Exception("Prepare failed for summary: " . $conn->error);
     }
     
-    if (!empty($params)) {
-        $summary_stmt->bind_param($types, ...$params);
-    }
+    $summary_stmt->bind_param($types, ...$propertyCodes);
     $summary_stmt->execute();
     $summary_result = $summary_stmt->get_result();
     $summary = $summary_result->fetch_assoc();
     $summary_stmt->close();
-
+    
     $conn->close();
-
+    
     $response_data = [
         'requests' => $requests,
         'summary' => [
@@ -234,11 +296,13 @@ try {
             ],
             'avg_resolution_days' => round($summary['avg_resolution_days'] ?? 0, 1)
         ],
+        'properties' => $propertyList,
         'filters' => [
             'available_statuses' => ['pending', 'in_progress', 'resolved', 'cancelled'],
             'available_priorities' => ['low', 'medium', 'high', 'emergency'],
             'current_status' => $status,
-            'current_priority' => $priority
+            'current_priority' => $priority,
+            'current_property' => $property
         ],
         'pagination' => [
             'current_page' => $page,
@@ -249,11 +313,11 @@ try {
             'has_previous_page' => $page > 1
         ]
     ];
-
+    
     json_success($response_data, "Maintenance requests retrieved successfully");
-
+    
 } catch (Exception $e) {
-    logActivity("Error in fetch_maintenance_requests: " . $e->getMessage());
+    logActivity("Error in fetch_maintenance_requests (client): " . $e->getMessage());
     json_error("Failed to fetch maintenance requests: " . $e->getMessage(), 500);
 }
 ?>

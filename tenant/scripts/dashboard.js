@@ -131,12 +131,47 @@ function renderDashboard() {
     return;
   }
 
+  const tenantName = `${currentUser.firstname || "Tenant"} ${currentUser.lastname || ""}`.trim();
+  const annualRent = Number(dashboardData.annual_rent || 0);
+  const totalPaid = Number(dashboardData.total_paid || 0);
+  const rentBalance = Number(dashboardData.rent_balance || 0);
+  const rentProgress = annualRent > 0 ? Math.min(100, Math.max(0, Math.round((totalPaid / annualRent) * 100))) : 0;
+  const leaseTone = dashboardData.is_lease_fully_paid ? "Settled" : dashboardData.has_pending_payment ? "Pending Review" : dashboardData.has_overdue_payments ? "Overdue" : "Active";
+  const nextPaymentLabel = dashboardData.next_payment
+    ? `NGN ${formatNumber(dashboardData.next_payment.amount || 0)}`
+    : dashboardData.is_lease_fully_paid
+      ? "Fully Paid"
+      : "Not Scheduled";
+
   const html = `
         <div class="dashboard-container">
             <!-- Welcome Section -->
             <div class="welcome-section">
-                <h1>Welcome back, ${escapeHtml(currentUser.firstname || "Tenant")} ${escapeHtml(currentUser.lastname || "")}!</h1>
-                <p>Here's what's happening with your apartment today.</p>
+                <div class="welcome-copy">
+                    <span class="eyebrow">Tenant Dashboard</span>
+                    <h1>Welcome back, ${escapeHtml(tenantName)}!</h1>
+                    <p>${escapeHtml(dashboardData.property_name || "Your property")} · Apartment ${escapeHtml(dashboardData.apartment_number || "N/A")}</p>
+                    <div class="hero-actions">
+                        <button class="btn-primary" onclick="makePayment()" ${dashboardData.is_lease_fully_paid ? "disabled" : ""}>
+                            <i class="fas fa-credit-card"></i>
+                            ${dashboardData.is_lease_fully_paid ? "Lease Fully Paid" : "Make Payment"}
+                        </button>
+                        <button class="btn-secondary" onclick="openMaintenanceModal()">
+                            <i class="fas fa-tools"></i>
+                            Report Issue
+                        </button>
+                    </div>
+                </div>
+                <div class="lease-overview-card">
+                    <div class="lease-progress" style="--progress: ${rentProgress}%;">
+                        <span>${rentProgress}%</span>
+                    </div>
+                    <div class="lease-overview-meta">
+                        <span class="status-pill status-${leaseTone.toLowerCase().replace(/\s+/g, "-")}">${leaseTone}</span>
+                        <h3>${dashboardData.days_remaining || 0} days left</h3>
+                        <p>Next payment: ${nextPaymentLabel}</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Stats Grid -->
@@ -186,7 +221,7 @@ function renderDashboard() {
             <div class="payment-section">
                 <div class="section-header">
                     <h2>Current Rent Information</h2>
-                    <span class="btn-link" onclick="navigateToPage('apartment')">View More →</span>
+                    <span class="btn-link" onclick="navigateToPage('apartment')">View More <i class="fas fa-arrow-right"></i></span>
                 </div>
                 <div class="payment-card">
                     <div class="payment-details">
@@ -261,7 +296,7 @@ function renderDashboard() {
             <div class="payment-section">
                 <div class="section-header">
                     <h2>Next Payment</h2>
-                    <span class="btn-link" onclick="navigateToPage('payments')">View All Payments →</span>
+                    <span class="btn-link" onclick="navigateToPage('payments')">View All Payments <i class="fas fa-arrow-right"></i></span>
                 </div>
                 ${
                   dashboardData.next_payment
@@ -379,6 +414,14 @@ function renderDashboard() {
                         <div class="payment-amount">
                             <label>Pending Periods</label>
                             <span class="amount warning">${dashboardData.pending_periods_count || 0}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Pending Verification</label>
+                            <span class="amount warning">${dashboardData.pending_verification_count || 0}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Failed Payment</label>
+                            <span class="amount warning">${dashboardData.failed_payment_count || 0}</span>
                         </div>
                     </div>
                     
@@ -543,7 +586,7 @@ function renderDashboard() {
             <div class="recent-requests">
                 <div class="section-header">
                     <h2>Recent Maintenance Requests</h2>
-                    <span class="btn-link" onclick="navigateToPage('maintenance')">View All →</span>
+                    <span class="btn-link" onclick="navigateToPage('maintenance')">View All <i class="fas fa-arrow-right"></i></span>
                 </div>
                 ${renderRecentRequests(dashboardData.recent_requests || [])}
             </div>

@@ -56,6 +56,26 @@
         </div>
     </div>
 
+    <!-- Custom Confirm Modal -->
+<div id="customConfirmModal" class="custom-modal">
+    <div class="custom-modal-content">
+        <div class="custom-modal-header">
+            <div class="custom-modal-icon" id="confirmModalIcon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3 id="confirmModalTitle">Confirm Action</h3>
+            <button class="custom-modal-close" onclick="closeConfirmModal()">&times;</button>
+        </div>
+        <div class="custom-modal-body">
+            <p id="confirmModalMessage">Are you sure you want to proceed?</p>
+        </div>
+        <div class="custom-modal-footer">
+            <button class="custom-btn-cancel" id="confirmModalCancelBtn">Cancel</button>
+            <button class="custom-btn-confirm" id="confirmModalConfirmBtn">Confirm</button>
+        </div>
+    </div>
+</div>
+
     <script src="../scripts/maintenance.js"></script>
 </body>
 </html>

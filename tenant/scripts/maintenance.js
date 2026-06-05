@@ -447,10 +447,120 @@ function closeRequestDetailsModal() {
     }
 }
 
-// ==================== CANCEL REQUEST ====================
+
+// Custom Confirm Modal Promise
+function showConfirmModal(options) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('customConfirmModal');
+        const titleEl = document.getElementById('confirmModalTitle');
+        const messageEl = document.getElementById('confirmModalMessage');
+        const iconDiv = document.getElementById('confirmModalIcon');
+        const confirmBtn = document.getElementById('confirmModalConfirmBtn');
+        const cancelBtn = document.getElementById('confirmModalCancelBtn');
+        
+        // Set content
+        titleEl.textContent = options.title || 'Confirm Action';
+        messageEl.textContent = options.message || 'Are you sure you want to proceed?';
+        
+        // Set icon style
+        iconDiv.className = 'custom-modal-icon';
+        const iconType = options.type || 'warning';
+        if (iconType === 'warning') {
+            iconDiv.classList.add('warning');
+            iconDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+            confirmBtn.className = 'custom-btn-confirm';
+        } else if (iconType === 'danger') {
+            iconDiv.classList.add('warning');
+            iconDiv.innerHTML = '<i class="fas fa-trash-alt"></i>';
+            confirmBtn.className = 'custom-btn-confirm';
+        } else if (iconType === 'success') {
+            iconDiv.classList.add('success');
+            iconDiv.innerHTML = '<i class="fas fa-check-circle"></i>';
+            confirmBtn.className = 'custom-btn-confirm success';
+        } else if (iconType === 'info') {
+            iconDiv.classList.add('info');
+            iconDiv.innerHTML = '<i class="fas fa-info-circle"></i>';
+            confirmBtn.className = 'custom-btn-confirm';
+        }
+        
+        // Set confirm button text
+        confirmBtn.textContent = options.confirmText || 'Confirm';
+        cancelBtn.textContent = options.cancelText || 'Cancel';
+        
+        // Show modal
+        modal.classList.add('show');
+        
+        // Handle confirm
+        const onConfirm = () => {
+            cleanup();
+            resolve(true);
+        };
+        
+        // Handle cancel
+        const onCancel = () => {
+            cleanup();
+            resolve(false);
+        };
+        
+        // Handle close button
+        const onClose = () => {
+            cleanup();
+            resolve(false);
+        };
+        
+        // Handle click outside
+        const onOutsideClick = (e) => {
+            if (e.target === modal) {
+                cleanup();
+                resolve(false);
+            }
+        };
+        
+        // Cleanup function
+        const cleanup = () => {
+            confirmBtn.removeEventListener('click', onConfirm);
+            cancelBtn.removeEventListener('click', onCancel);
+            modal.querySelector('.custom-modal-close').removeEventListener('click', onClose);
+            modal.removeEventListener('click', onOutsideClick);
+            modal.classList.remove('show');
+        };
+        
+        // Attach events
+        confirmBtn.addEventListener('click', onConfirm);
+        cancelBtn.addEventListener('click', onCancel);
+        modal.querySelector('.custom-modal-close').addEventListener('click', onClose);
+        modal.addEventListener('click', onOutsideClick);
+    });
+}
+
+// Close modal (fallback)
+function closeConfirmModal() {
+    const modal = document.getElementById('customConfirmModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+}
+
+// Updated cancelRequest function
 async function cancelRequest(requestId) {
-    if (!confirm('Are you sure you want to cancel this maintenance request? This action cannot be undone.')) {
+    const confirmed = await showConfirmModal({
+        title: 'Cancel Maintenance Request',
+        message: 'Are you sure you want to cancel this maintenance request? This action cannot be undone.',
+        confirmText: 'Yes, Cancel',
+        cancelText: 'No, Go Back',
+        type: 'danger'
+    });
+    
+    if (!confirmed) {
         return;
+    }
+    
+    // Show loading state on button
+    const cancelBtn = document.querySelector(`button[onclick="cancelRequest(${requestId})"]`);
+    const originalText = cancelBtn ? cancelBtn.innerHTML : 'Cancel';
+    if (cancelBtn) {
+        cancelBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cancelling...';
+        cancelBtn.disabled = true;
     }
     
     try {
@@ -465,6 +575,14 @@ async function cancelRequest(requestId) {
         const data = await response.json();
         
         if (data.success) {
+            // Show success confirmation
+            await showConfirmModal({
+                title: 'Request Cancelled',
+                message: 'Maintenance request has been cancelled successfully.',
+                confirmText: 'OK',
+                type: 'success'
+            });
+            
             if (window.showToast) {
                 window.showToast('Maintenance request cancelled successfully', 'success');
             }
@@ -477,12 +595,25 @@ async function cancelRequest(requestId) {
         }
     } catch (error) {
         console.error('Error cancelling request:', error);
+        
+        // Show error confirmation
+        await showConfirmModal({
+            title: 'Error',
+            message: error.message || 'Failed to cancel maintenance request. Please try again.',
+            confirmText: 'OK',
+            type: 'info'
+        });
+        
         if (window.showToast) {
             window.showToast(error.message, 'error');
         }
+    } finally {
+        if (cancelBtn) {
+            cancelBtn.innerHTML = originalText;
+            cancelBtn.disabled = false;
+        }
     }
 }
-
 async function cancelRequestFromModal(requestId) {
     closeRequestDetailsModal();
     await cancelRequest(requestId);
