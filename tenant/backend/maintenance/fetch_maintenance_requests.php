@@ -96,7 +96,7 @@ try {
             a.apartment_number,
             a.apartment_code,
             CONCAT(ad.firstname, ' ', ad.lastname) as assigned_to_name,
-            mr.assigned_to,
+            mr.assigned_admin_id,
             CASE 
                 WHEN mr.priority = 'emergency' THEN 'danger'
                 WHEN mr.priority = 'high' THEN 'warning'
@@ -112,7 +112,7 @@ try {
             DATEDIFF(NOW(), mr.created_at) as days_pending
         FROM maintenance_requests mr
         LEFT JOIN apartments a ON mr.apartment_code = a.apartment_code
-        LEFT JOIN admin_tbl ad ON mr.assigned_to = ad.unique_id
+        LEFT JOIN admin_tbl ad ON mr.assigned_admin_id = ad.unique_id
         $where_sql
         ORDER BY 
             created_at DESC,
@@ -174,7 +174,7 @@ try {
             'estimated_resolution_days' => $estimated_days,
             'resolution_notes' => $row['resolution_notes'],
             'images' => $row['images'] ? json_decode($row['images'], true) : [],
-            'assigned_to' => $row['assigned_to'],
+            'assigned_to' => $row['assigned_admin_id'],
             'assigned_to_name' => $row['assigned_to_name'] ?? 'Not assigned yet',
             'apartment_info' => [
                 'apartment_code' => $row['apartment_code'],

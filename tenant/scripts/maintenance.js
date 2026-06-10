@@ -249,7 +249,7 @@ function showRequestDetailsModal(details) {
                 <div class="modal-body" id="requestDetailsBody">
                     <!-- Content will be populated here -->
                 </div>
-                <div class="modal-footer">
+                <div class="modal-footer" id="modalFooterButtons">
                     <button class="btn-secondary" onclick="closeRequestDetailsModal()">Close</button>
                     ${request.can_cancel ? `<button class="btn-danger" onclick="cancelRequestFromModal(${request.request_id})">Cancel Request</button>` : ''}
                 </div>
@@ -257,9 +257,9 @@ function showRequestDetailsModal(details) {
         `;
         document.body.appendChild(modal);
         
-        // Add styles for timeline
-        const timelineStyle = document.createElement('style');
-        timelineStyle.textContent = `
+        // Add styles for timeline and rating
+        const modalStyle = document.createElement('style');
+        modalStyle.textContent = `
             .timeline {
                 margin: 20px 0;
                 position: relative;
@@ -312,6 +312,30 @@ function showRequestDetailsModal(details) {
             .btn-danger:hover {
                 background: #fecaca;
             }
+            .btn-success {
+                background: #d1fae5;
+                color: #10b981;
+                border: 1px solid #a7f3d0;
+                padding: 8px 16px;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .btn-success:hover {
+                background: #a7f3d0;
+            }
+            .btn-warning {
+                background: #fed7aa;
+                color: #f59e0b;
+                border: 1px solid #fde68a;
+                padding: 8px 16px;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .btn-warning:hover {
+                background: #fde68a;
+            }
             .detail-section {
                 margin-bottom: 20px;
             }
@@ -340,13 +364,31 @@ function showRequestDetailsModal(details) {
             .detail-value {
                 color: #1a1f36;
             }
+            /* Rating Stars */
+            .rating-stars {
+                display: flex;
+                gap: 8px;
+                justify-content: center;
+                margin: 15px 0;
+            }
+            .rating-stars i {
+                font-size: 32px;
+                cursor: pointer;
+                transition: all 0.2s;
+                color: #d1d5db;
+            }
+            .rating-stars i.active,
+            .rating-stars i.hover {
+                color: #fbbf24;
+                transform: scale(1.1);
+            }
             @media (max-width: 768px) {
                 .detail-grid {
                     grid-template-columns: 1fr;
                 }
             }
         `;
-        document.head.appendChild(timelineStyle);
+        document.head.appendChild(modalStyle);
     }
     
     // Populate modal content
@@ -395,12 +437,6 @@ function showRequestDetailsModal(details) {
                     <span class="detail-value">${formatDateTime(request.resolved_at)}</span>
                 </div>
                 ` : ''}
-                ${request.resolution_days ? `
-                <div class="detail-item">
-                    <span class="detail-label">Resolution Time:</span>
-                    <span class="detail-value">${request.resolution_days} days</span>
-                </div>
-                ` : ''}
             </div>
         </div>
         
@@ -433,7 +469,31 @@ function showRequestDetailsModal(details) {
         ` : ''}
     `;
     
-    // Store request ID in modal for cancel action
+    // Update footer buttons based on status
+    const footer = document.getElementById('modalFooterButtons');
+    if (footer) {
+        let buttons = '<button class="btn-secondary" onclick="closeRequestDetailsModal()">Close</button>';
+        
+        if (request.can_cancel) {
+            buttons += `<button class="btn-danger" onclick="cancelRequestFromModal(${request.request_id})">Cancel Request</button>`;
+        }
+        
+        // If status is 'resolved' and not yet confirmed, show confirmation buttons
+        if (request.status === 'resolved' && !request.tenant_confirmed) {
+            buttons += `
+                <button class="btn-success" onclick="openConfirmModal(${request.request_id})">
+                    <i class="fas fa-check-circle"></i> Confirm & Rate
+                </button>
+                <button class="btn-warning" onclick="openEscalateModal(${request.request_id})">
+                    <i class="fas fa-flag"></i> Re-open / Escalate
+                </button>
+            `;
+        }
+        
+        footer.innerHTML = buttons;
+    }
+    
+    // Store request ID in modal for actions
     modal.dataset.requestId = request.request_id;
     modal.dataset.canCancel = request.can_cancel;
     
@@ -445,6 +505,241 @@ function closeRequestDetailsModal() {
     if (modal) {
         modal.classList.remove('active');
     }
+}
+
+// ==================== CONFIRM RESOLUTION ====================
+function openConfirmModal(requestId) {
+    // Create rating modal
+    let modal = document.getElementById('confirmResolutionModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'confirmResolutionModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 450px;">
+                <div class="modal-header">
+                    <h3>Confirm Resolution</h3>
+                    <button class="modal-close" onclick="closeConfirmResolutionModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Please rate the quality of the maintenance service:</p>
+                    <div class="rating-stars" id="ratingStars">
+                        <i class="fas fa-star" data-rating="1"></i>
+                        <i class="fas fa-star" data-rating="2"></i>
+                        <i class="fas fa-star" data-rating="3"></i>
+                        <i class="fas fa-star" data-rating="4"></i>
+                        <i class="fas fa-star" data-rating="5"></i>
+                    </div>
+                    <div class="form-group" style="margin-top: 15px;">
+                        <label>Your Feedback (Optional)</label>
+                        <textarea id="feedbackText" class="form-textarea" rows="3" placeholder="Share your experience..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeConfirmResolutionModal()">Cancel</button>
+                    <button class="btn-primary" onclick="submitConfirmation(${requestId})">Submit</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // Add rating star event listeners
+        const stars = modal.querySelectorAll('#ratingStars i');
+        stars.forEach(star => {
+            star.addEventListener('mouseover', function() {
+                const rating = parseInt(this.dataset.rating);
+                highlightStars(rating);
+            });
+            star.addEventListener('mouseout', function() {
+                const currentRating = parseInt(modal.dataset.selectedRating || 0);
+                highlightStars(currentRating);
+            });
+            star.addEventListener('click', function() {
+                const rating = parseInt(this.dataset.rating);
+                modal.dataset.selectedRating = rating;
+                highlightStars(rating);
+            });
+        });
+    }
+    
+    modal.dataset.selectedRating = 0;
+    highlightStars(0);
+    document.getElementById('feedbackText').value = '';
+    modal.classList.add('active');
+}
+
+function highlightStars(rating) {
+    const stars = document.querySelectorAll('#ratingStars i');
+    stars.forEach((star, index) => {
+        if (index < rating) {
+            star.classList.add('active');
+        } else {
+            star.classList.remove('active');
+        }
+    });
+}
+
+function closeConfirmResolutionModal() {
+    const modal = document.getElementById('confirmResolutionModal');
+    if (modal) modal.classList.remove('active');
+}
+
+async function submitConfirmation(requestId) {
+    const modal = document.getElementById('confirmResolutionModal');
+    const rating = parseInt(modal.dataset.selectedRating || 0);
+    const feedback = document.getElementById('feedbackText')?.value || '';
+    
+    if (rating === 0) {
+        if (window.showToast) window.showToast('Please select a rating', 'error');
+        return;
+    }
+    
+    const loader = createFullPageLoader('Submitting confirmation...');
+    
+    try {
+        const response = await fetch('../backend/maintenance/confirm_resolution.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                request_id: requestId,
+                rating: rating,
+                feedback: feedback,
+                satisfied: true
+            })
+        });
+        const data = await response.json();
+        
+        removeFullPageLoader();
+        closeConfirmResolutionModal();
+        closeRequestDetailsModal();
+        
+        if (data.success) {
+            if (window.showToast) window.showToast('Thank you for your feedback!', 'success');
+            await fetchMaintenanceRequests();
+        } else {
+            throw new Error(data.message || 'Failed to submit confirmation');
+        }
+    } catch (error) {
+        removeFullPageLoader();
+        console.error('Error submitting confirmation:', error);
+        if (window.showToast) window.showToast(error.message, 'error');
+    }
+}
+
+// ==================== ESCALATE / RE-OPEN ====================
+function openEscalateModal(requestId) {
+    let modal = document.getElementById('escalateModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'escalateModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 450px;">
+                <div class="modal-header">
+                    <h3>Re-open / Escalate Issue</h3>
+                    <button class="modal-close" onclick="closeEscalateModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Please explain why you are not satisfied with the resolution:</p>
+                    <div class="form-group">
+                        <textarea id="escalateReason" class="form-textarea" rows="4" placeholder="Describe what still needs to be fixed..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeEscalateModal()">Cancel</button>
+                    <button class="btn-warning" onclick="submitEscalation(${requestId})">Submit Escalation</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    document.getElementById('escalateReason').value = '';
+    modal.classList.add('active');
+}
+
+function closeEscalateModal() {
+    const modal = document.getElementById('escalateModal');
+    if (modal) modal.classList.remove('active');
+}
+
+async function submitEscalation(requestId) {
+    const reason = document.getElementById('escalateReason')?.value.trim();
+    
+    if (!reason) {
+        if (window.showToast) window.showToast('Please provide a reason for escalation', 'error');
+        return;
+    }
+    
+    const loader = createFullPageLoader('Submitting escalation...');
+    
+    try {
+        const response = await fetch('../backend/maintenance/confirm_resolution.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                request_id: requestId,
+                satisfied: false,
+                escalation_reason: reason
+            })
+        });
+        const data = await response.json();
+        
+        removeFullPageLoader();
+        closeEscalateModal();
+        closeRequestDetailsModal();
+        
+        if (data.success) {
+            if (window.showToast) window.showToast('Escalation submitted. Admin will review.', 'success');
+            await fetchMaintenanceRequests();
+        } else {
+            throw new Error(data.message || 'Failed to submit escalation');
+        }
+    } catch (error) {
+        removeFullPageLoader();
+        console.error('Error submitting escalation:', error);
+        if (window.showToast) window.showToast(error.message, 'error');
+    }
+}
+
+// ==================== FULL PAGE LOADER ====================
+function createFullPageLoader(message = "Processing...") {
+    let loader = document.getElementById('fullPageLoader');
+    if (loader) loader.remove();
+    
+    loader = document.createElement('div');
+    loader.id = 'fullPageLoader';
+    loader.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        backdrop-filter: blur(4px);
+    `;
+    
+    loader.innerHTML = `
+        <div style="background: white; padding: 30px 40px; border-radius: 12px; text-align: center; min-width: 250px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div style="margin-bottom: 20px;">
+                <i class="fas fa-spinner fa-spin" style="font-size: 40px; color: #1e3c72;"></i>
+            </div>
+            <p style="margin: 0; font-size: 16px; color: #333;">${message}</p>
+            <p style="margin: 10px 0 0 0; font-size: 12px; color: #666;">Please do not close this window</p>
+        </div>
+    `;
+    
+    document.body.appendChild(loader);
+    return loader;
+}
+
+function removeFullPageLoader() {
+    const loader = document.getElementById('fullPageLoader');
+    if (loader) loader.remove();
 }
 
 

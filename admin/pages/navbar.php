@@ -53,6 +53,9 @@
                             <a href="apartment_type.php" class="dropdown-item">
                                 <i class="fas fa-layer-group"></i> Apartment Types
                             </a>
+                            <a href="maintenance.php" class="dropdown-item">
+                                <i class="fas fa-wrench"></i> Maintenance Requests
+                            </a>
                         </div>
                         
                         <div class="dropdown-column">
@@ -200,6 +203,9 @@
                                 </a>
                                 <a href="apartment_type.php" class="mobile-nav-link sub">
                                     <i class="fas fa-layer-group"></i> Apartment Types
+                                </a>
+                                <a href="maintenance.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-wrench"></i> Maintenance Requests
                                 </a>
                             </div>
 

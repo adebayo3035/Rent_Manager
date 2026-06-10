@@ -29,16 +29,16 @@ if ($loggedInUserRole !== 'Super Admin') {
 
 // ---------- Accept & sanitize inputs ----------
 $inputs = [
-    'firstname' => $_POST['add_firstname'] ?? '',
-    'lastname' => $_POST['add_lastname'] ?? '',
-    'email' => $_POST['add_email'] ?? '',
-    'phone' => $_POST['add_phone_number'] ?? '',
-    'gender' => $_POST['add_gender'] ?? '',
-    'address' => $_POST['add_address'] ?? '',
-    'password' => $_POST['add_password'] ?? '',
-    'secret_question' => $_POST['add_secret_question'] ?? '',
-    'secret_answer' => $_POST['add_secret_answer'] ?? '',
-    'role' => $_POST['add_role'] ?? ''
+    'firstname' => $_POST['staff_firstname'] ?? '',
+    'lastname' => $_POST['staff_lastname'] ?? '',
+    'email' => $_POST['staff_email'] ?? '',
+    'phone' => $_POST['staff_phone_number'] ?? '',
+    'gender' => $_POST['staff_gender'] ?? '',
+    'address' => $_POST['staff_address'] ?? '',
+    'password' => $_POST['staff_password'] ?? '',
+    'secret_question' => $_POST['staff_secret_question'] ?? '',
+    'secret_answer' => $_POST['staff_secret_answer'] ?? '',
+    'role' => $_POST['staff_role'] ?? ''
 ];
 
 $inputs = sanitize_inputs($inputs);
@@ -49,8 +49,13 @@ unset($logCopy['password'], $logCopy['secret_answer']);
 logActivity('Inputs received: ' . json_encode($logCopy));
 
 // ---------- Basic validations ----------
-foreach ($logCopy as $k => $v) {
-    if ($v === '') json_error('Please fill all input fields.');
+// List of required fields (all except photo)
+$required_fields = ['firstname', 'lastname', 'email', 'phone', 'gender', 'address', 'password', 'secret_question', 'secret_answer', 'role'];
+
+foreach ($required_fields as $field) {
+    if (empty($inputs[$field])) {
+        json_error("Please fill all input fields. Missing: {$field}");
+    }
 }
 
 if (!validate_phone($inputs['phone'])) json_error('Please input a valid Phone Number.');
@@ -69,9 +74,9 @@ if (strlen($password) < $minLength
 }
 
 // ---------- Validate file upload ----------
-if (!isset($_FILES['photo'])) json_error('Please upload a profile photo.');
+if (!isset($_FILES['staff_photo'])) json_error('Please upload a profile photo.');
 
-$photo = $_FILES['photo'];
+$photo = $_FILES['staff_photo'];
 if ($photo['error'] !== UPLOAD_ERR_OK) {
     logActivity('File upload error: ' . $photo['error']);
     json_error('Upload error.');

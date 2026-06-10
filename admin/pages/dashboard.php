@@ -14,24 +14,6 @@
 <body>
      <?php include('navbar.php'); ?>
     <div class="dashboard-container">
-        <!-- Header -->
-        <!-- <header class="dashboard-header">
-            <div class="header-left">
-                <h1><i class="fas fa-home"></i> RentFlow Pro Dashboard</h1>
-                <p class="subtitle">Complete Rent Management System</p>
-            </div>
-            <div class="header-right">
-                <div class="date-time" id="currentDateTime"></div>
-                <div class="user-profile">
-                    <img src="https://ui-avatars.com/api/?name=Admin&background=2563eb&color=fff" alt="Admin">
-                    <div class="user-info">
-                        <span class="user-name">Super Admin</span>
-                        <span class="user-role">System Administrator</span>
-                    </div>
-                    <i class="fas fa-chevron-down"></i>
-                </div>
-            </div>
-        </header> -->
 
         <!-- Quick Stats -->
         <div class="quick-stats">
