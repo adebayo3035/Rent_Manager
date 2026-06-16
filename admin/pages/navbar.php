@@ -238,7 +238,7 @@
                                 <span class="mobile-group-title">Administration</span>
                                 
                                 <a href="staff.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-user-shield"></i> New Staff Portal
+                                    <i class="fas fa-user-shield"></i> Staff Portal
                                 </a>
                                 <a href="agent.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-tie"></i> Agents

@@ -267,10 +267,10 @@ class DataManager {
               if (photoPreview) {
                 photoPreview.innerHTML = `<span style="font-size:12px;color:#777;">No image</span>`;
               }
-              this.showSuccessMessage(
-                messageDiv,
-                `New ${this.config.itemName} has been successfully added!`
-              );
+              // this.showSuccessMessage(
+              //   messageDiv,
+              //   `New ${this.config.itemName} has been successfully added!`
+              // );
 
               // Close modal
               document.getElementById(this.config.addModalId).style.display =

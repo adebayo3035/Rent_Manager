@@ -73,6 +73,51 @@ function validate_phone(string $phone) : bool {
     return (bool) preg_match('/^\d{11}$/', $phone);
 }
 
+// utilities/utils.php
+
+/**
+ * Generate a unique admin ID that doesn't already exist in the database
+ * 
+ * @param mysqli $conn Database connection
+ * @param int $min Minimum value (default: 100)
+ * @param int $max Maximum value (default: 999999)
+ * @param int $maxAttempts Maximum attempts to find unique ID
+ * @return int|null Unique ID or null if failed
+ */
+function generateUniqueAdminId($conn, $min = 100, $max = 999999, $maxAttempts = 10) {
+    $attempts = 0;
+    
+    while ($attempts < $maxAttempts) {
+        // Generate a random ID
+        $id = random_int($min, $max);
+        
+        // Check if ID exists in admin_tbl
+        $checkStmt = $conn->prepare("SELECT unique_id FROM admin_tbl WHERE unique_id = ? LIMIT 1");
+        if (!$checkStmt) {
+            logActivity("ERROR: Failed to prepare unique_id check: " . $conn->error);
+            return null;
+        }
+        
+        $checkStmt->bind_param("i", $id);
+        $checkStmt->execute();
+        $result = $checkStmt->get_result();
+        
+        if ($result->num_rows === 0) {
+            $checkStmt->close();
+            logActivity("Generated unique admin ID: {$id} (attempt: " . ($attempts + 1) . ")");
+            return $id;
+        }
+        
+        $checkStmt->close();
+        $attempts++;
+        logActivity("ID {$id} already exists, retrying... (attempt {$attempts}/{$maxAttempts})");
+    }
+    
+    logActivity("ERROR: Failed to generate unique admin ID after {$maxAttempts} attempts");
+    return null;
+}
+
+
 function random_unique_id() {
     // 16 hex chars (8 bytes) - enough for uniqueness
      return strtoupper(bin2hex(random_bytes(2)));

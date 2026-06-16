@@ -199,6 +199,39 @@ function renderMaintenanceRequests(requests, pagination, summary, properties) {
     `;
     
     contentArea.innerHTML = html;
+    
+    // ====== FIX: Restore filter values after rendering ======
+    // This ensures the select dropdowns show the current filter value
+    
+    // Set property filter
+    const propertyFilter = document.getElementById('propertyFilter');
+    if (propertyFilter) {
+        propertyFilter.value = currentProperty || '';
+    }
+    
+    // Set status filter
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) {
+        statusFilter.value = currentStatus || '';
+    }
+    
+    // Set priority filter
+    const priorityFilter = document.getElementById('priorityFilter');
+    if (priorityFilter) {
+        priorityFilter.value = currentPriority || '';
+    }
+    
+    // Set search input
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.value = currentSearch || '';
+    }
+    
+    // Set assigned to me toggle
+    const assignedToggle = document.getElementById('assignedToMeToggle');
+    if (assignedToggle) {
+        assignedToggle.checked = showOnlyAssignedToMe || false;
+    }
 }
 
 function renderPagination(pagination) {

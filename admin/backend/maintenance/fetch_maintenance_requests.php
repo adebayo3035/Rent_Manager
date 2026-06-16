@@ -16,7 +16,7 @@ logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Request Time: " . date('Y-m-d H:
 try {
     // ==================== STEP 1: CHECK AUTHENTICATION ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 1: Checking authentication");
-    
+
     if (!isset($_SESSION['unique_id']) || !isset($_SESSION['role'])) {
         logActivity("[FETCH_REQUESTS] [ID:{$requestId}] ERROR: Unauthorized - No session");
         json_error("Unauthorized", 401);
@@ -25,21 +25,21 @@ try {
     $admin_id = $_SESSION['unique_id'];
     $admin_role = $_SESSION['role'];
     $is_super_admin = ($admin_role === 'Super Admin');
-    
+
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Admin ID: {$admin_id}, Role: {$admin_role}, Is Super Admin: " . ($is_super_admin ? 'Yes' : 'No'));
 
     // ==================== STEP 2: GET PAGINATION PARAMETERS ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 2: Getting pagination parameters");
-    
+
     $page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
     $limit = isset($_GET['limit']) ? max(1, (int) $_GET['limit']) : 10;
     $offset = ($page - 1) * $limit;
-    
+
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Pagination - Page: {$page}, Limit: {$limit}, Offset: {$offset}");
 
     // ==================== STEP 3: GET FILTER PARAMETERS ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 3: Getting filter parameters");
-    
+
     $status = isset($_GET['status']) ? htmlspecialchars(trim($_GET['status'])) : null;
     $priority = isset($_GET['priority']) ? htmlspecialchars(trim($_GET['priority'])) : null;
     $property = isset($_GET['property_code']) ? htmlspecialchars(trim($_GET['property_code'])) : null;
@@ -47,14 +47,14 @@ try {
     $date_to = isset($_GET['date_to']) ? htmlspecialchars(trim($_GET['date_to'])) : null;
     $assigned_to_me = isset($_GET['assigned_to_me']) ? filter_var($_GET['assigned_to_me'], FILTER_VALIDATE_BOOLEAN) : false;
     $search = isset($_GET['search']) ? htmlspecialchars(trim($_GET['search'])) : null;
-    
+
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Filters - Status: {$status}, Priority: {$priority}, Property: {$property}");
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Filters - Date From: {$date_from}, Date To: {$date_to}, Assigned To Me: " . ($assigned_to_me ? 'Yes' : 'No'));
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Search term: " . ($search ?? 'None'));
 
     // ==================== STEP 4: BUILD WHERE CLAUSE ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 4: Building WHERE clause");
-    
+
     $where_clauses = [];
     $params = [];
     $types = "";
@@ -134,15 +134,16 @@ try {
 
     // ==================== STEP 5: GET TOTAL COUNT ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 5: Getting total count");
-    
+
     $count_query = "
-        SELECT COUNT(*) as total 
-        FROM maintenance_requests mr
-        JOIN apartments a ON mr.apartment_code = a.apartment_code
-        JOIN properties p ON a.property_code = p.property_code
-        $where_sql
-    ";
-    
+    SELECT COUNT(*) as total 
+    FROM maintenance_requests mr
+    JOIN apartments a ON mr.apartment_code = a.apartment_code
+    JOIN properties p ON a.property_code = p.property_code
+    JOIN tenants t ON mr.tenant_code = t.tenant_code
+    $where_sql
+";
+
     $count_stmt = $conn->prepare($count_query);
     if (!$count_stmt) {
         logActivity("[FETCH_REQUESTS] [ID:{$requestId}] ERROR: Prepare failed for count: " . $conn->error);
@@ -152,17 +153,17 @@ try {
     if (!empty($params)) {
         $count_stmt->bind_param($types, ...$params);
     }
-    
+
     $count_stmt->execute();
     $count_result = $count_stmt->get_result();
     $total = $count_result->fetch_assoc()['total'];
     $count_stmt->close();
-    
+
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Total records found: {$total}");
 
     // ==================== STEP 6: GET MAINTENANCE REQUESTS ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 6: Fetching maintenance requests with pagination");
-    
+
     $query = "
         SELECT 
             mr.request_id,
@@ -242,18 +243,18 @@ try {
     $stmt->bind_param($query_types, ...$query_params);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Main query executed successfully");
 
     // ==================== STEP 7: PROCESS RESULTS ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 7: Processing results");
-    
+
     $requests = [];
     $row_count = 0;
-    
+
     while ($row = $result->fetch_assoc()) {
         $row_count++;
-        
+
         // Calculate estimated resolution time based on priority
         $estimated_days = 7;
         switch ($row['priority']) {
@@ -323,12 +324,12 @@ try {
         ];
     }
     $stmt->close();
-    
+
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Retrieved {$row_count} requests for page {$page}");
 
     // ==================== STEP 8: GET PROPERTY LIST ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 8: Getting property list for filters");
-    
+
     $propertyListQuery = "
         SELECT DISTINCT p.property_code, p.name 
         FROM properties p
@@ -345,12 +346,12 @@ try {
         $propertyList[] = $row;
     }
     $propertyListStmt->close();
-    
+
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Retrieved " . count($propertyList) . " properties for filter dropdown");
 
     // ==================== STEP 9: GET SUMMARY STATISTICS ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 9: Calculating summary statistics");
-    
+
     $summary_query = "
         SELECT 
             COUNT(*) as total_requests,
@@ -365,96 +366,98 @@ try {
             SUM(CASE WHEN mr.priority = 'low' THEN 1 ELSE 0 END) as low_count,
             AVG(CASE WHEN mr.status IN ('resolved', 'closed') THEN DATEDIFF(mr.resolved_at, mr.created_at) ELSE NULL END) as avg_resolution_days
     ";
-    
+
     // Add assigned_to_me count
     $summary_query .= " , SUM(CASE WHEN mr.assigned_admin_id = ? THEN 1 ELSE 0 END) as assigned_to_me_count";
-    
+
     $summary_query .= " FROM maintenance_requests mr
-        JOIN apartments a ON mr.apartment_code = a.apartment_code
-        JOIN properties p ON a.property_code = p.property_code";
-    
+    JOIN apartments a ON mr.apartment_code = a.apartment_code
+    JOIN properties p ON a.property_code = p.property_code
+    JOIN tenants t ON mr.tenant_code = t.tenant_code";
+
     // Build WHERE clause for summary
     $summary_where_clauses = [];
     $summary_params = [];
     $summary_types = "";
-    
+
     // Role-based filtering for summary
     if (!$is_super_admin) {
         $summary_where_clauses[] = "(mr.assigned_admin_id = ? OR mr.assigned_agent_code IN (SELECT agent_code FROM properties WHERE agent_code IS NOT NULL))";
         $summary_params[] = $admin_id;
         $summary_types .= "i";
     }
-    
+
     // Apply assigned_to_me filter if active
     if ($assigned_to_me && !$is_super_admin) {
         $summary_where_clauses[] = "mr.assigned_admin_id = ?";
         $summary_params[] = $admin_id;
         $summary_types .= "i";
     }
-    
+
     // Add other filters
     if ($status && in_array($status, $allowed_statuses)) {
         $summary_where_clauses[] = "mr.status = ?";
         $summary_params[] = $status;
         $summary_types .= "s";
     }
-    
+
     if ($priority && in_array($priority, $allowed_priorities)) {
         $summary_where_clauses[] = "mr.priority = ?";
         $summary_params[] = $priority;
         $summary_types .= "s";
     }
-    
+
     if ($property) {
         $summary_where_clauses[] = "a.property_code = ?";
         $summary_params[] = $property;
         $summary_types .= "s";
     }
-    
+
     if ($search) {
         $searchTerm = "%{$search}%";
         $summary_where_clauses[] = "(mr.issue_type LIKE ? OR mr.description LIKE ? OR CONCAT(t.firstname, ' ', t.lastname) LIKE ?)";
+        // $summary_where_clauses[] = "(mr.issue_type LIKE ? OR mr.description LIKE ? OR t.firstname LIKE ? OR t.lastname LIKE ?)";
         $summary_params[] = $searchTerm;
         $summary_params[] = $searchTerm;
         $summary_params[] = $searchTerm;
         $summary_types .= "sss";
     }
-    
+
     if ($date_from) {
         $summary_where_clauses[] = "DATE(mr.created_at) >= ?";
         $summary_params[] = $date_from;
         $summary_types .= "s";
     }
-    
+
     if ($date_to) {
         $summary_where_clauses[] = "DATE(mr.created_at) <= ?";
         $summary_params[] = $date_to;
         $summary_types .= "s";
     }
-    
+
     if (!empty($summary_where_clauses)) {
         $summary_query .= " WHERE " . implode(" AND ", $summary_where_clauses);
     }
-    
+
     $summary_stmt = $conn->prepare($summary_query);
-    
+
     // Build parameters array for summary
     $summary_all_params = array_merge([$admin_id], $summary_params);
     $summary_all_types = "i" . $summary_types;
-    
+
     $summary_stmt->bind_param($summary_all_types, ...$summary_all_params);
     $summary_stmt->execute();
     $summary_result = $summary_stmt->get_result();
     $summary = $summary_result->fetch_assoc();
     $summary_stmt->close();
-    
+
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Summary - Total: {$summary['total_requests']}, Pending: {$summary['pending_count']}, Assigned to me: {$summary['assigned_to_me_count']}");
 
     // ==================== STEP 10: BUILD RESPONSE ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 10: Building response");
-    
+
     $total_pages = ceil($total / $limit);
-    
+
     $response_data = [
         'requests' => $requests,
         'summary' => [
@@ -502,7 +505,7 @@ try {
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Error Code: " . $e->getCode());
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Error File: " . $e->getFile());
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Error Line: " . $e->getLine());
-    
+
     json_error("Failed to fetch maintenance requests: " . $e->getMessage(), 500);
 }
 ?>

@@ -1,33 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fee Management | Admin Panel</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../../styles.css">
     <link rel="stylesheet" href="../css/fee_management.css">
-    
+
 </head>
 <?php include('navbar.php'); ?>
+
 <body>
-     
+
     <div class="admin-wrapper">
-       
-        
+
+
         <main class="admin-main">
             <div class="fee-management-container">
                 <div class="page-header">
                     <h1>Fee Management</h1>
                     <p>Configure fee types and property-specific fees</p>
                 </div>
-                
+
                 <div class="tabs">
                     <button class="tab-btn active" data-tab="fee-types">Fee Types</button>
                     <button class="tab-btn" data-tab="property-fees">Property Fees</button>
                     <button class="tab-btn" data-tab="tenant-fees">Tenant Fees</button>
                 </div>
-                
+
                 <!-- Fee Types Tab -->
                 <div id="fee-types-tab" class="tab-content active">
                     <div class="section-header">
@@ -37,10 +41,12 @@
                         </button>
                     </div>
                     <div id="feeTypesGrid" class="fee-types-grid">
-                        <div class="loading-spinner"><div class="spinner"></div></div>
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
                     </div>
                 </div>
-                
+
                 <!-- Property Fees Tab -->
                 <div id="property-fees-tab" class="tab-content">
                     <div class="property-selector">
@@ -50,10 +56,12 @@
                         </select>
                     </div>
                     <div id="propertyFeesContent">
-                        <div class="loading-spinner"><div class="spinner"></div></div>
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
                     </div>
                 </div>
-                
+
                 <!-- Tenant Fees Tab -->
                 <div id="tenant-fees-tab" class="tab-content">
                     <div class="filters">
@@ -68,13 +76,15 @@
                         <button class="btn-primary" onclick="searchTenantFees()">Search</button>
                     </div>
                     <div id="tenantFeesContent">
-                        <div class="loading-spinner"><div class="spinner"></div></div>
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
                     </div>
                 </div>
             </div>
         </main>
     </div>
-    
+
     <!-- Fee Type Modal -->
     <div class="modal" id="feeTypeModal">
         <div class="modal-content">
@@ -142,45 +152,75 @@
     </div>
 
     <!-- View Tenant Fee Modal -->
-<div id="viewTenantFeeModal" class="modal" onclick="closeModalOnOutsideClick(event, 'viewTenantFeeModal')">
-    <div class="modal-content" onclick="event.stopPropagation()">
-        <div class="modal-header">
-            <h3><i class="fas fa-receipt"></i> Fee Details</h3>
-            <button class="modal-close" onclick="closeViewTenantFeeModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <div id="tenantFeeDetails"></div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn-secondary" onclick="closeViewTenantFeeModal()">Close</button>
-            <button class="btn-primary" id="markPaidBtn" onclick="markFeeAsPaidFromModal()" style="display: none;">
-                <i class="fas fa-check-circle"></i> Mark as Paid
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Custom Confirmation Modal -->
-<div id="customConfirmModal" class="modal" style="display: none;">
-    <div class="modal-content" style="max-width: 450px;">
-        <div class="modal-header">
-            <div class="confirm-icon" id="confirmIcon">
-                <i class="fas fa-exclamation-triangle"></i>
+    <div id="viewTenantFeeModal" class="modal" onclick="closeModalOnOutsideClick(event, 'viewTenantFeeModal')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-receipt"></i> Fee Details</h3>
+                <button class="modal-close" onclick="closeViewTenantFeeModal()">&times;</button>
             </div>
-            <h3 id="confirmTitle">Confirm Action</h3>
-            <button class="modal-close" onclick="closeCustomConfirmModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <p id="confirmMessage">Are you sure you want to proceed?</p>
-            <div id="confirmDetails" class="confirm-details" style="display: none;"></div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn-secondary" id="confirmCancelBtn">Cancel</button>
-            <button class="btn-primary" id="confirmOkBtn">Confirm</button>
+            <div class="modal-body">
+                <div id="tenantFeeDetails"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeViewTenantFeeModal()">Close</button>
+                <button class="btn-primary" id="markPaidBtn" onclick="markFeeAsPaidFromModal()" style="display: none;">
+                    <i class="fas fa-check-circle"></i> Mark as Paid
+                </button>
+            </div>
         </div>
     </div>
-</div>
-    
-    <script src = "../scripts/fee_management.js"> </script>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="customConfirmModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header">
+                <div class="confirm-icon" id="confirmIcon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <h3 id="confirmTitle">Confirm Action</h3>
+                <button class="modal-close" onclick="closeCustomConfirmModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage">Are you sure you want to proceed?</p>
+                <div id="confirmDetails" class="confirm-details" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="confirmCancelBtn">Cancel</button>
+                <button class="btn-primary" id="confirmOkBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI Library -->
+    <div id="toastContainer"></div>
+
+    <div id="alertModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="alertTitle">Alert</h3>
+            <p id="alertMessage"></p>
+            <button id="alertOkBtn">OK</button>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage"></p>
+            <div class="ui-modal-buttons">
+                <button id="confirmCancelBtn">Cancel</button>
+                <button id="confirmOkBtn">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="uiLoaderOverlay">
+        <div class="ui-loader"></div>
+    </div>
+    <script src="../scripts/main.js"></script>
+    <script src="../../ui.js"></script>
+    <script src="../../validator.js"></script>
+
+    <script src="../scripts/fee_management.js"> </script>
 </body>
+
 </html>

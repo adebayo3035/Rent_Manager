@@ -6,7 +6,7 @@
     <title>Maintenance Requests | Admin Portal</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../css/navbar.css">
+   <link rel="stylesheet" href="../../styles.css">
     <link rel="stylesheet" href="../css/maintenance.css">
 </head>
 <body>
@@ -16,6 +16,32 @@
         <div class="content-area" id="contentArea">
             <!-- Content will be rendered by JavaScript -->
         </div>
+    </div>
+
+   <!-- UI Framework Containers -->
+    <div id="toastContainer"></div>
+
+    <div id="alertModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="alertTitle">Alert</h3>
+            <p id="alertMessage"></p>
+            <button id="alertOkBtn">OK</button>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage"></p>
+            <div class="ui-modal-buttons">
+                <button id="confirmCancelBtn">Cancel</button>
+                <button id="confirmOkBtn">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="uiLoaderOverlay">
+        <div class="ui-loader"></div>
     </div>
 
     <!-- Custom Confirm Modal -->
@@ -34,6 +60,7 @@
             </div>
         </div>
     </div>
+      <script src="../scripts/main.js"></script>
     <script src="../../ui.js"></script>
     <script src="../../validator.js"></script>
     <script src="../scripts/maintenance.js"></script>
