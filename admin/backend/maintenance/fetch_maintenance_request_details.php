@@ -108,6 +108,7 @@ try {
             mr.is_escalated,
             mr.escalated_at,
             mr.escalated_reason,
+            mr.sla_breached,
             a.apartment_number,
             a.apartment_code,
             a.property_code,
@@ -298,6 +299,13 @@ try {
         ];
         logActivity("[FETCH_REQUEST_DETAILS] [ID:{$requestId}] Added timeline event: Request Escalated");
     }
+    // $sla_breached = "";
+    // if($row['sla_breached'] == 1){
+    //     $sla_breached = "Yes";
+    // }
+    // else{
+    //     $sla_breached = "No";
+    // }
     
     logActivity("[FETCH_REQUEST_DETAILS] [ID:{$requestId}] Timeline built with " . count($timeline) . " events");
 
@@ -345,6 +353,7 @@ try {
             'is_escalated' => (bool)$row['is_escalated'],
             'escalated_at' => $row['escalated_at'],
             'escalated_reason' => $row['escalated_reason'],
+            'sla_breached' =>  $row['sla_breached'],
             'tenant_info' => [
                 'tenant_code' => $row['tenant_code'],
                 'tenant_name' => $row['tenant_name'],

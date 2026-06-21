@@ -43,12 +43,13 @@ try {
     $status = isset($_GET['status']) ? htmlspecialchars(trim($_GET['status'])) : null;
     $priority = isset($_GET['priority']) ? htmlspecialchars(trim($_GET['priority'])) : null;
     $property = isset($_GET['property_code']) ? htmlspecialchars(trim($_GET['property_code'])) : null;
+    $assigned_admin = isset($_GET['assigned_admin']) ? htmlspecialchars(trim($_GET['assigned_admin'])) : null; // NEW: Filter by assigned admin ID
     $date_from = isset($_GET['date_from']) ? htmlspecialchars(trim($_GET['date_from'])) : null;
     $date_to = isset($_GET['date_to']) ? htmlspecialchars(trim($_GET['date_to'])) : null;
     $assigned_to_me = isset($_GET['assigned_to_me']) ? filter_var($_GET['assigned_to_me'], FILTER_VALIDATE_BOOLEAN) : false;
     $search = isset($_GET['search']) ? htmlspecialchars(trim($_GET['search'])) : null;
 
-    logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Filters - Status: {$status}, Priority: {$priority}, Property: {$property}");
+    logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Filters - Status: {$status}, Priority: {$priority}, Property: {$property}, Assigned Admin: {$assigned_admin}");
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Filters - Date From: {$date_from}, Date To: {$date_to}, Assigned To Me: " . ($assigned_to_me ? 'Yes' : 'No'));
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Search term: " . ($search ?? 'None'));
 
@@ -106,6 +107,15 @@ try {
         logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Added property filter: {$property}");
     }
 
+    // ==================== NEW: Assigned Admin Filter ====================
+    // Only Super Admin can filter by specific admin
+    if ($assigned_admin && $is_super_admin) {
+        $where_clauses[] = "mr.assigned_admin_id = ?";
+        $params[] = $assigned_admin;
+        $types .= "i";
+        logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Added assigned admin filter: {$assigned_admin}");
+    }
+
     // Date filters
     if ($date_from) {
         $where_clauses[] = "DATE(mr.created_at) >= ?";
@@ -136,13 +146,13 @@ try {
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 5: Getting total count");
 
     $count_query = "
-    SELECT COUNT(*) as total 
-    FROM maintenance_requests mr
-    JOIN apartments a ON mr.apartment_code = a.apartment_code
-    JOIN properties p ON a.property_code = p.property_code
-    JOIN tenants t ON mr.tenant_code = t.tenant_code
-    $where_sql
-";
+        SELECT COUNT(*) as total 
+        FROM maintenance_requests mr
+        JOIN apartments a ON mr.apartment_code = a.apartment_code
+        JOIN properties p ON a.property_code = p.property_code
+        JOIN tenants t ON mr.tenant_code = t.tenant_code
+        $where_sql
+    ";
 
     $count_stmt = $conn->prepare($count_query);
     if (!$count_stmt) {
@@ -349,6 +359,30 @@ try {
 
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Retrieved " . count($propertyList) . " properties for filter dropdown");
 
+    // ==================== STEP 8.5: GET ADMIN LIST FOR FILTER ====================
+    logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 8.5: Getting admin list for filter");
+
+    // Only Super Admin needs admin filter list
+    $adminList = [];
+    if ($is_super_admin) {
+        $adminListQuery = "
+            SELECT unique_id, CONCAT(firstname, ' ', lastname) as name
+            FROM admin_tbl
+            WHERE status = '1'
+            ORDER BY firstname ASC
+        ";
+        $adminListStmt = $conn->prepare($adminListQuery);
+        $adminListStmt->execute();
+        $adminListResult = $adminListStmt->get_result();
+
+        while ($row = $adminListResult->fetch_assoc()) {
+            $adminList[] = $row;
+        }
+        $adminListStmt->close();
+
+        logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Retrieved " . count($adminList) . " admins for filter dropdown");
+    }
+
     // ==================== STEP 9: GET SUMMARY STATISTICS ====================
     logActivity("[FETCH_REQUESTS] [ID:{$requestId}] Step 9: Calculating summary statistics");
 
@@ -371,9 +405,9 @@ try {
     $summary_query .= " , SUM(CASE WHEN mr.assigned_admin_id = ? THEN 1 ELSE 0 END) as assigned_to_me_count";
 
     $summary_query .= " FROM maintenance_requests mr
-    JOIN apartments a ON mr.apartment_code = a.apartment_code
-    JOIN properties p ON a.property_code = p.property_code
-    JOIN tenants t ON mr.tenant_code = t.tenant_code";
+        JOIN apartments a ON mr.apartment_code = a.apartment_code
+        JOIN properties p ON a.property_code = p.property_code
+        JOIN tenants t ON mr.tenant_code = t.tenant_code";
 
     // Build WHERE clause for summary
     $summary_where_clauses = [];
@@ -413,10 +447,16 @@ try {
         $summary_types .= "s";
     }
 
+    // NEW: Assigned admin filter for summary
+    if ($assigned_admin && $is_super_admin) {
+        $summary_where_clauses[] = "mr.assigned_admin_id = ?";
+        $summary_params[] = $assigned_admin;
+        $summary_types .= "i";
+    }
+
     if ($search) {
         $searchTerm = "%{$search}%";
         $summary_where_clauses[] = "(mr.issue_type LIKE ? OR mr.description LIKE ? OR CONCAT(t.firstname, ' ', t.lastname) LIKE ?)";
-        // $summary_where_clauses[] = "(mr.issue_type LIKE ? OR mr.description LIKE ? OR t.firstname LIKE ? OR t.lastname LIKE ?)";
         $summary_params[] = $searchTerm;
         $summary_params[] = $searchTerm;
         $summary_params[] = $searchTerm;
@@ -477,6 +517,7 @@ try {
             'avg_resolution_days' => round($summary['avg_resolution_days'] ?? 0, 1)
         ],
         'properties' => $propertyList,
+        'admins' => $adminList, // NEW: List of admins for filter dropdown
         'user_role' => $admin_role,
         'is_super_admin' => $is_super_admin,
         'filters' => [
@@ -484,7 +525,8 @@ try {
             'available_priorities' => ['low', 'medium', 'high', 'emergency'],
             'current_status' => $status,
             'current_priority' => $priority,
-            'current_property' => $property
+            'current_property' => $property,
+            'current_assigned_admin' => $assigned_admin // NEW: Current admin filter value
         ],
         'pagination' => [
             'current_page' => $page,
