@@ -71,6 +71,22 @@
         </div>
     </div>
 
+    <!-- Applicable Fees Modal -->
+<div class="modal" id="applicableFeesModal">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; display: flex; flex-direction: column;">
+        <div class="modal-header">
+            <h3><i class="fas fa-list"></i> Applicable Fees</h3>
+            <button class="modal-close" onclick="closeModal('applicableFeesModal')">&times;</button>
+        </div>
+        <div class="modal-body" id="applicableFeesBody" style="flex: 1; overflow-y: auto; padding: 20px;">
+            <!-- Content will be populated by JavaScript -->
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('applicableFeesModal')">Close</button>
+        </div>
+    </div>
+</div>
+
     <script src="../scripts/fees.js"></script>
 </body>
 </html>

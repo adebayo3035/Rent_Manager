@@ -1,9 +1,10 @@
 // tenant-fees.js
-// let currentUser = null;
+let currentUser = null;
 let tenantFees = [];
 let currentFilter = 'all'; // all, pending, paid, overdue
 let currentTab = 'all'; // all, recurring, one-time
 let feeTypes = [];
+let applicableFees = [];
 
 document.addEventListener('DOMContentLoaded', function() {
     initializeFees();
@@ -13,23 +14,164 @@ async function initializeFees() {
     if (window.currentUser) {
         currentUser = window.currentUser;
         await loadFeeTypes();
+        await loadApplicableFees();
         await loadTenantFees();
     } else {
         window.addEventListener('userDataLoaded', async function(e) {
             currentUser = e.detail;
             await loadFeeTypes();
+            await loadApplicableFees();
             await loadTenantFees();
         });
         
         setTimeout(async () => {
             if (!window.currentUser && !currentUser) {
                 await loadFeeTypes();
+                await loadApplicableFees();
                 await loadTenantFees();
             }
         }, 1000);
     }
 }
 
+// ==================== LOAD APPLICABLE FEES ====================
+async function loadApplicableFees() {
+    try {
+        const response = await fetch('../backend/fees/fetch_applicable_fees.php');
+        const data = await response.json();
+        
+        if (data.success) {
+            applicableFees = data.data?.applicable_fees || data.message?.applicable_fees || [];
+            console.log('Applicable fees loaded:', applicableFees);
+        }
+    } catch (error) {
+        console.error('Error loading applicable fees:', error);
+    }
+}
+
+// ==================== OPEN APPLICABLE FEES MODAL ====================
+function openApplicableFeesModal() {
+    const modalBody = document.getElementById('applicableFeesBody');
+    if (!modalBody) return;
+    
+    if (applicableFees.length === 0) {
+        modalBody.innerHTML = `
+            <div class="empty-state" style="padding: 40px; text-align: center;">
+                <i class="fas fa-check-circle" style="font-size: 48px; color: #10b981; margin-bottom: 15px;"></i>
+                <h4>No Applicable Fees</h4>
+                <p style="color: #666;">There are currently no fees applicable to your apartment.</p>
+            </div>
+        `;
+    } else {
+        // Group fees by type
+        const mandatoryFees = applicableFees.filter(f => f.is_mandatory === true);
+        const optionalFees = applicableFees.filter(f => f.is_mandatory === false);
+        
+        let html = '';
+        
+        // Summary section
+        html += `
+            <div class="applicable-fees-summary" style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #1a1f36;">${applicableFees.length}</div>
+                        <div style="font-size: 12px; color: #666;">Total Fees</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #dc2626;">${mandatoryFees.length}</div>
+                        <div style="font-size: 12px; color: #666;">Mandatory</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #3b82f6;">${optionalFees.length}</div>
+                        <div style="font-size: 12px; color: #666;">Optional</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Mandatory Fees
+        if (mandatoryFees.length > 0) {
+            html += `
+                <div class="fee-type-section" style="margin-bottom: 20px;">
+                    <h4 style="color: #dc2626; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-exclamation-circle"></i> Mandatory Fees
+                        <span style="font-size: 12px; font-weight: normal; color: #666; margin-left: 8px;">(${mandatoryFees.length})</span>
+                    </h4>
+                    ${mandatoryFees.map(fee => `
+                        <div class="applicable-fee-item" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <div style="font-weight: 600; color: #1a1f36;">${escapeHtml(fee.fee_name)}</div>
+                                    <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                                        <span>${escapeHtml(fee.fee_code || '')}</span>
+                                        ${fee.is_recurring ? `<span style="margin-left: 10px; background: #dbeafe; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #3b82f6;">${escapeHtml(fee.recurrence_period || 'Recurring')}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-weight: 700; color: #dc2626;">₦${formatNumber(fee.amount || 0)}</div>
+                                    ${fee.description ? `<div style="font-size: 11px; color: #666;">${escapeHtml(fee.description.substring(0, 50))}${fee.description.length > 50 ? '...' : ''}</div>` : ''}
+                                </div>
+                            </div>
+                            ${fee.description && fee.description.length > 50 ? `
+                                <div style="font-size: 12px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #fecaca;">
+                                    ${escapeHtml(fee.description)}
+                                </div>
+                            ` : ''}
+                            <div style="margin-top: 8px; display: flex; gap: 10px; font-size: 12px; color: #6b7280; flex-wrap: wrap;">
+                                <span><i class="fas fa-calculator"></i> Calculation: ${escapeHtml(fee.calculation_type || 'Fixed')}</span>
+                                ${fee.recurrence_period ? `<span><i class="fas fa-clock"></i> ${escapeHtml(fee.recurrence_period)}</span>` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        // Optional Fees
+        if (optionalFees.length > 0) {
+            html += `
+                <div class="fee-type-section" style="margin-bottom: 20px;">
+                    <h4 style="color: #3b82f6; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-info-circle"></i> Optional Fees
+                        <span style="font-size: 12px; font-weight: normal; color: #666; margin-left: 8px;">(${optionalFees.length})</span>
+                    </h4>
+                    ${optionalFees.map(fee => `
+                        <div class="applicable-fee-item" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <div style="font-weight: 600; color: #1a1f36;">${escapeHtml(fee.fee_name)}</div>
+                                    <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                                        <span>${escapeHtml(fee.fee_code || '')}</span>
+                                        ${fee.is_recurring ? `<span style="margin-left: 10px; background: #dbeafe; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #3b82f6;">${escapeHtml(fee.recurrence_period || 'Recurring')}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-weight: 700; color: #3b82f6;">₦${formatNumber(fee.amount || 0)}</div>
+                                    ${fee.description ? `<div style="font-size: 11px; color: #666;">${escapeHtml(fee.description.substring(0, 50))}${fee.description.length > 50 ? '...' : ''}</div>` : ''}
+                                </div>
+                            </div>
+                            ${fee.description && fee.description.length > 50 ? `
+                                <div style="font-size: 12px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #bfdbfe;">
+                                    ${escapeHtml(fee.description)}
+                                </div>
+                            ` : ''}
+                            <div style="margin-top: 8px; display: flex; gap: 10px; font-size: 12px; color: #6b7280; flex-wrap: wrap;">
+                                <span><i class="fas fa-calculator"></i> Calculation: ${escapeHtml(fee.calculation_type || 'Fixed')}</span>
+                                ${fee.recurrence_period ? `<span><i class="fas fa-clock"></i> ${escapeHtml(fee.recurrence_period)}</span>` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        modalBody.innerHTML = html;
+    }
+    
+    openModal('applicableFeesModal');
+}
+
+// ==================== LOAD FEE TYPES ====================
 async function loadFeeTypes() {
     try {
         const response = await fetch('../backend/fees/fetch_fee_types.php');
@@ -43,6 +185,7 @@ async function loadFeeTypes() {
     }
 }
 
+// ==================== LOAD TENANT FEES ====================
 async function loadTenantFees() {
     try {
         const response = await fetch(`../backend/fees/fetch_tenant_fees.php?status=${currentFilter}`);
@@ -65,6 +208,7 @@ async function loadTenantFees() {
     }
 }
 
+// ==================== RENDER FEES PAGE ====================
 function renderFeesPage() {
     const contentArea = document.getElementById('contentArea');
     if (!contentArea) return;
@@ -90,8 +234,13 @@ function renderFeesPage() {
     const html = `
         <div class="fees-container">
             <div class="page-header">
-                <h1>My Fees</h1>
-                <p>View and manage your apartment fees</p>
+                <div>
+                    <h1>My Fees</h1>
+                    <p>View and manage your apartment fees</p>
+                </div>
+                <button class="btn-primary" onclick="openApplicableFeesModal()" style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-list"></i> View Applicable Fees
+                </button>
             </div>
             
             <div class="summary-cards">
@@ -194,6 +343,8 @@ function renderFeesPage() {
     
     contentArea.innerHTML = html;
 }
+
+// ==================== SHOW EMPTY STATE ====================
 function showEmptyState() {
     const contentArea = document.getElementById('contentArea');
     if (!contentArea) return;
@@ -201,8 +352,13 @@ function showEmptyState() {
     contentArea.innerHTML = `
         <div class="fees-container">
             <div class="page-header">
-                <h1>My Fees</h1>
-                <p>View and manage your apartment fees</p>
+                <div>
+                    <h1>My Fees</h1>
+                    <p>View and manage your apartment fees</p>
+                </div>
+                <button class="btn-primary" onclick="openApplicableFeesModal()" style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-list"></i> View Applicable Fees
+                </button>
             </div>
             <div class="empty-state">
                 <i class="fas fa-receipt"></i>
@@ -213,10 +369,9 @@ function showEmptyState() {
     `;
 }
 
-// Download receipt by tenant_fee_id (for paid fees)
+// ==================== DOWNLOAD RECEIPT ====================
 async function downloadReceiptByFeeId(tenantFeeId) {
     try {
-        // First, get the payment details for this fee
         const response = await fetch(`../backend/fees/get_payment_by_fee_id.php?tenant_fee_id=${tenantFeeId}`);
         const data = await response.json();
         
@@ -233,11 +388,13 @@ async function downloadReceiptByFeeId(tenantFeeId) {
     }
 }
 
+// ==================== SWITCH FEE TAB ====================
 function switchFeeTab(tab) {
     currentTab = tab;
     renderFeesPage();
 }
 
+// ==================== FILTER BY STATUS ====================
 function filterByStatus() {
     const statusFilter = document.getElementById('statusFilter');
     if (statusFilter) {
@@ -246,6 +403,7 @@ function filterByStatus() {
     }
 }
 
+// ==================== VIEW FEE DETAILS ====================
 async function viewFeeDetails(feeId) {
     const fee = tenantFees.find(f => f.tenant_fee_id === feeId);
     if (!fee) return;
@@ -319,6 +477,7 @@ async function viewFeeDetails(feeId) {
     openModal('feeDetailsModal');
 }
 
+// ==================== PAYMENT MODAL ====================
 let currentPaymentFeeId = null;
 
 function openPaymentModal(feeId) {
@@ -340,7 +499,7 @@ function openPaymentModal(feeId) {
         if (this.value) {
             const refNumber = generateReferenceNumber(this.value);
             referenceInput.value = refNumber;
-            referenceInput.readOnly = true; // Make it read-only to prevent changes
+            referenceInput.readOnly = true;
             referenceInput.style.background = '#f0f0f0';
         } else {
             referenceInput.value = '';
@@ -349,14 +508,14 @@ function openPaymentModal(feeId) {
         }
     };
     
-    // Clear previous values
     referenceInput.value = '';
     referenceInput.readOnly = true;
     referenceInput.style.background = 'white';
     
     openModal('paymentModal');
 }
-// Generate reference number based on payment method
+
+// ==================== GENERATE REFERENCE NUMBER ====================
 function generateReferenceNumber(paymentMethod) {
     const prefix = paymentMethod === 'card' ? 'CARD' : 
                    paymentMethod === 'bank_transfer' ? 'BNK' : 
@@ -372,7 +531,7 @@ function generateReferenceNumber(paymentMethod) {
     return `${prefix}-${year}${month}${day}-${random}-${timestamp}`;
 }
 
-
+// ==================== PROCESS FEE PAYMENT ====================
 async function processFeePayment() {
     const paymentMethod = document.getElementById('paymentMethod')?.value;
     const referenceNumber = document.getElementById('referenceNumber')?.value;
@@ -384,7 +543,6 @@ async function processFeePayment() {
         return;
     }
     
-    // Show loading state
     const payBtn = document.querySelector('#paymentModal .btn-primary');
     const originalText = payBtn.innerHTML;
     payBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
@@ -404,19 +562,13 @@ async function processFeePayment() {
         const data = await response.json();
         
         if (data.success) {
-            // Show success message
             if (window.showToast) {
                 window.showToast('Payment successful!', 'success');
             }
             
-            // Show receipt info
             const paymentData = data.data;
             showPaymentSuccessModal(paymentData);
-            
-            // Close payment modal
             closeModal('paymentModal');
-            
-            // Refresh fees list
             await loadTenantFees();
         } else {
             throw new Error(data.message || 'Payment failed');
@@ -432,7 +584,7 @@ async function processFeePayment() {
     }
 }
 
-// Show payment success modal with receipt
+// ==================== SHOW PAYMENT SUCCESS MODAL ====================
 function showPaymentSuccessModal(paymentData) {
     const modalHtml = `
         <div class="modal active" id="paymentSuccessModal">
@@ -480,20 +632,45 @@ function showPaymentSuccessModal(paymentData) {
         </div>
     `;
     
-    // Remove existing modal if any
     const existingModal = document.getElementById('paymentSuccessModal');
     if (existingModal) existingModal.remove();
-    
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
-// Download receipt function
+// ==================== DOWNLOAD RECEIPT ====================
 async function downloadReceipt(receiptNumber, paymentId) {
     try {
         window.open(`../backend/fees/download_fee_receipt.php?payment_id=${paymentId}`, '_blank');
     } catch (error) {
         console.error('Error downloading receipt:', error);
         showToast('Failed to download receipt', 'error');
+    }
+}
+
+// ==================== MODAL CONTROLS ====================
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.add('active');
+}
+
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.remove('active');
+}
+
+// ==================== UTILITY FUNCTIONS ====================
+function formatNumber(value) {
+    if (!value || value === '0') return '0.00';
+    return new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch (e) {
+        return dateString;
     }
 }
 
@@ -508,31 +685,6 @@ function formatDateTime(dateString) {
             hour: '2-digit',
             minute: '2-digit'
         });
-    } catch (e) {
-        return dateString;
-    }
-}
-
-function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) modal.classList.add('active');
-}
-
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) modal.classList.remove('active');
-}
-
-function formatNumber(value) {
-    if (!value || value === '0') return '0.00';
-    return new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
-}
-
-function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     } catch (e) {
         return dateString;
     }

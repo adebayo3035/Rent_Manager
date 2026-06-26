@@ -3,7 +3,9 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
-session_start();
+
+rateLimit("fetch_tenant_fees", 10, 60); 
+// session_start();
 try {
     if (!isset($_SESSION['unique_id'])) {
         json_error("Not logged in", 401);

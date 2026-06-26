@@ -238,7 +238,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadDashboardData();
     
     // Refresh data every 30 seconds
-    setInterval(loadDashboardData, 30000);
+    // setInterval(loadDashboardData, 30000);
     
     // Handle time filter change
     document.getElementById('timeFilter').addEventListener('change', function(e) {

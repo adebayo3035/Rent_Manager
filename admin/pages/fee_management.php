@@ -30,6 +30,7 @@
                     <button class="tab-btn active" data-tab="fee-types">Fee Types</button>
                     <button class="tab-btn" data-tab="property-fees">Property Fees</button>
                     <button class="tab-btn" data-tab="tenant-fees">Tenant Fees</button>
+                    <button class="tab-btn" data-tab="deactivated-fees">Deactivated Fees</button>
                 </div>
 
                 <!-- Fee Types Tab -->
@@ -73,9 +74,21 @@
                             <option value="waived">Waived</option>
                         </select>
                         <input type="text" id="tenantSearch" placeholder="Search tenant..." class="filter-select">
-                        <button class="btn-primary" onclick="searchTenantFees()">Search</button>
+                        <button class="btn-primary searchBtn" onclick="searchTenantFees()">Search</button>
                     </div>
                     <div id="tenantFeesContent">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deactivated Fee Types Tab - MOVED INSIDE -->
+                <div id="deactivated-fees-tab" class="tab-content">
+                    <div class="section-header">
+                        <h2>Deactivated Fee Types</h2>
+                    </div>
+                    <div id="deactivatedFeeTypesGrid" class="fee-types-grid">
                         <div class="loading-spinner">
                             <div class="spinner"></div>
                         </div>
@@ -86,67 +99,93 @@
     </div>
 
     <!-- Fee Type Modal -->
+    <!-- Fee Type Modal -->
     <div class="modal" id="feeTypeModal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 550px;">
             <div class="modal-header">
                 <h3 id="feeTypeModalTitle">Add Fee Type</h3>
                 <button class="modal-close" onclick="closeFeeTypeModal()">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="feeTypeForm">
-                    <input type="hidden" id="editFeeTypeId">
+                    <input type="hidden" id="editFeeTypeId" value="">
+
                     <div class="form-group">
                         <label>Fee Code *</label>
-                        <input type="text" id="feeCode" required placeholder="e.g., SERVICE_CHARGE">
+                        <input type="text" id="feeCode" class="form-control" placeholder="e.g., SERVICE_CHARGE"
+                            required>
+                        <small>Unique identifier for this fee type</small>
                     </div>
+
                     <div class="form-group">
                         <label>Fee Name *</label>
-                        <input type="text" id="feeName" required placeholder="e.g., Service Charge">
+                        <input type="text" id="feeName" class="form-control" placeholder="e.g., Service Charge"
+                            required>
                     </div>
+
                     <div class="form-group">
                         <label>Description</label>
-                        <textarea id="feeDescription" rows="3" placeholder="Optional description"></textarea>
+                        <textarea id="feeDescription" class="form-control" rows="2"
+                            placeholder="Brief description of this fee"></textarea>
                     </div>
-                    <div class="form-group">
-                        <label>Is Mandatory?</label>
-                        <select id="isMandatory">
-                            <option value="1">Yes</option>
-                            <option value="0">No</option>
-                        </select>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Fee Type *</label>
+                            <select id="isMandatory" class="form-control">
+                                <option value="1">Mandatory</option>
+                                <option value="0">Optional</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Calculation Type</label>
+                            <select id="calculationType" class="form-control">
+                                <option value="fixed">Fixed Amount</option>
+                                <option value="percentage">Percentage</option>
+                                <option value="per_unit">Per Unit</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Calculation Type</label>
-                        <select id="calculationType">
-                            <option value="fixed">Fixed Amount</option>
-                            <option value="percentage">Percentage</option>
-                            <option value="per_unit">Per Unit</option>
-                        </select>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Recurring</label>
+                            <select id="isRecurring" class="form-control" onchange="toggleRecurrenceFields(this.value)">
+                                <option value="0">No (One-time)</option>
+                                <option value="1">Yes (Recurring)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Recurrence Period</label>
+                            <select id="recurrencePeriod" class="form-control">
+                                <option value="monthly">Monthly</option>
+                                <option value="quarterly">Quarterly</option>
+                                <option value="semi_annually">Semi-Annually</option>
+                                <option value="annually">Annually</option>
+                                <option value="one-time">One-time</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Is Recurring?</label>
-                        <select id="isRecurring">
-                            <option value="1">Yes</option>
-                            <option value="0">No</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Recurrence Period</label>
-                        <select id="recurrencePeriod">
-                            <option value="one-time">One Time</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="quarterly">Quarterly</option>
-                            <option value="annually">Annually</option>
-                        </select>
-                    </div>
+
                     <div class="form-group">
                         <label>Display Order</label>
-                        <input type="number" id="displayOrder" value="0">
+                        <input type="number" id="displayOrder" class="form-control" value="0" min="0">
+                        <small>Lower numbers appear first</small>
+                    </div>
+
+                    <!-- Status field for edit mode -->
+                    <div class="form-group" id="statusFieldGroup" style="display: none;">
+                        <label>Status</label>
+                        <select id="feeStatus" class="form-control">
+                            <option value="1">Active</option>
+                            <option value="0">Inactive</option>
+                        </select>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="closeFeeTypeModal()">Cancel</button>
-                <button class="btn-primary" onclick="saveFeeType()">Save</button>
+                <button class="btn-primary" onclick="saveFeeType()">Save Fee Type</button>
             </div>
         </div>
     </div>
