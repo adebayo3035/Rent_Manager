@@ -4,6 +4,9 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notifications.php';
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
 // ==================== CONSTANTS & CONFIGURATION ====================
 const MAX_LOGIN_ATTEMPTS = 3;

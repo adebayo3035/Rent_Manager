@@ -6,7 +6,10 @@ require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 
 // Rate limiting
-rateLimit("fetch_agent_property_type", 10, 60);
+// rateLimit("fetch_agent_property_type", 10, 60);
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
 try {
 

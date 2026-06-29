@@ -8,7 +8,9 @@ require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/logMaintenanceHistory.php';
 
-session_start();
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
 // Generate unique request ID for tracking
 $requestId = uniqid('update_status_', true);

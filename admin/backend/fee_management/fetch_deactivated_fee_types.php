@@ -5,7 +5,9 @@ require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 
 // Optional: rate limiting (same style as onboarding)
-rateLimit("fetch_fee_types", 10, 60); 
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 // 10 requests per 60 seconds for safety
 
 

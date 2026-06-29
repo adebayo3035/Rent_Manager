@@ -5,7 +5,9 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php'; // json_success, json_error, sanitize_inputs, logActivity
-session_start();
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 define('MAX_FILE_SIZE', 500000); // 500KB
 define('MAX_FIELD_LENGTH', 255);
 define('RATE_LIMIT_COUNT', 10);

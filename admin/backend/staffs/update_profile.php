@@ -10,7 +10,9 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
 // Start session
-session_start();
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 $requestId = uniqid('edit_staff_', true);
 $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $userId = $_SESSION['unique_id'] ?? null;

@@ -4,8 +4,9 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 
-rateLimit("fetch_tenant_fees", 10, 60); 
-// session_start();
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 try {
     if (!isset($_SESSION['unique_id'])) {
         json_error("Not logged in", 401);
