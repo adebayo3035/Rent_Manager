@@ -12,7 +12,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-    
 </head>
 <body>
     <div class="tenant-wrapper">
@@ -24,7 +23,7 @@
                 </button>
             </div>
             <div class="tenant-info" id="tenantInfo">
-                <div class="tenant-avatar" id = "photoElement">
+                <div class="tenant-avatar" id="photoElement">
                     <!-- <i class="fas fa-user-circle"></i> -->
                 </div>
                 <div class="tenant-name" id="tenantName">Loading...</div>
@@ -45,13 +44,13 @@
                 </a>
                 <a href="payments.php" class="nav-item" data-page="payments">
                     <i class="fas fa-credit-card"></i>
-                    <span> Rent Payments</span>
+                    <span>Rent Payments</span>
                 </a>
                 <a href="rent_payment_history.php" class="nav-item" data-page="rent_payment_history">
                     <i class="fas fa-history"></i>
-                    <span> Rent Payments History</span>
+                    <span>Rent Payments History</span>
                 </a>
-                 <a href="fees.php" class="nav-item" data-page="fees">
+                <a href="fees.php" class="nav-item" data-page="fees">
                     <i class="fas fa-money"></i>
                     <span>Manage Fees</span>
                 </a>
@@ -100,115 +99,6 @@
         </main>
     </div>
 
-    <!-- Force Password and Secret Answer Change Modal (First Login) -->
-<div class="modal" id="forcePasswordModal">
-    <div class="modal-content" style="max-width: 450px;">
-        <div class="modal-header">
-            <h3>Update Your Password and Secret Question</h3>
-            <button class="modal-close" onclick="closeForcePasswordModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <div class="alert-warning" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-bottom: 20px; border-radius: 8px;">
-                <i class="fas fa-exclamation-triangle" style="color: #856404;"></i>
-                <span style="color: #856404; margin-left: 8px;">This is your first login. Please change your security details to continue.</span>
-            </div>
-            <form id="forcePasswordForm">
-                <div class="form-group">
-                    <label>New Password *</label>
-                    <input type="password" id="forceNewPassword" required>
-                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
-                        Password must be at least 8 characters, contain uppercase, lowercase, and numbers
-                    </small>
-                </div>
-                <div class="form-group">
-                    <label>Confirm New Password *</label>
-                    <input type="password" id="forceConfirmPassword" required>
-                </div>
-                <div class="form-group">
-                    <label>Secret Question *</label>
-                    <select id="newSecretQuestion" required>
-                        <option value="">-- Select a Secret Question --</option>
-                        <option value="mother_maiden_name">What is your mother's maiden name?</option>
-                        <option value="first_pet">What was the name of your first pet?</option>
-                        <option value="first_school">What was the name of your first school?</option>
-                        <option value="birth_city">In which city were you born?</option>
-                        <option value="favorite_teacher">What is the name of your favorite teacher?</option>
-                        <option value="childhood_friend">What is the name of your childhood best friend?</option>
-                        <option value="first_car">What was your first car?</option>
-                        <option value="favorite_food">What is your favorite food?</option>
-                        <option value="dream_job">What was your dream job as a child?</option>
-                        <option value="favorite_place">What is your favorite place to visit?</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Secret Answer *</label>
-                    <input type="password" id="newAnswer" required autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>Confirm Secret Answer *</label>
-                    <input type="password" id="confirmNewAnswer" required autocomplete="off">
-                </div>
-                
-                <div class="password-strength" style="margin-top: 10px;">
-                    <div class="strength-meter" style="height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden;">
-                        <div id="strengthBar" style="width: 0%; height: 100%; transition: width 0.3s; background: #dc2626;"></div>
-                    </div>
-                    <div id="strengthText" style="font-size: 12px; margin-top: 5px; color: #666;">Password strength: Weak</div>
-                </div>
-                
-                <div class="password-requirements" style="background: #f9fafb; padding: 12px; border-radius: 8px; margin-top: 15px; font-size: 12px;">
-                    <strong>Requirements:</strong>
-                    <ul style="margin-top: 8px; margin-left: 20px; list-style: none; padding-left: 0;">
-                        <li id="req-length" style="margin: 5px 0; color: #666;">✗ At least 8 characters</li>
-                        <li id="req-upper" style="margin: 5px 0; color: #666;">✗ At least one uppercase letter</li>
-                        <li id="req-lower" style="margin: 5px 0; color: #666;">✗ At least one lowercase letter</li>
-                        <li id="req-number" style="margin: 5px 0; color: #666;">✗ At least one number</li>
-                    </ul>
-                </div>
-            </form>
-        </div>
-        <div class="modal-footer">
-            <button class="btn-primary" onclick="submitForcePasswordChange()" style="width: 100%;">
-                <i class="fas fa-key"></i> Change Password & Continue
-            </button>
-        </div>
-    </div>
-</div>
-
-<style>
-    .password-requirements li.valid {
-        color: #10b981 !important;
-    }
-    .password-requirements li.valid::before {
-        content: "✓ ";
-        font-weight: bold;
-    }
-    .password-requirements li::before {
-        content: "✗ ";
-        font-weight: bold;
-    }
-    #forcePasswordModal{
-        display: none;
-    }
-    .modal .modal-close {
-        background: none;
-        border: none;
-        font-size: 24px;
-        cursor: pointer;
-        color: #999;
-        padding: 0;
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .modal .modal-close:hover {
-        background: #f0f0f0;
-        color: #666;
-    }
-</style>
-<script src = "../scripts/navbar.js"></script>
+    <script src="../scripts/navbar.js"></script>
 </body>
 </html>

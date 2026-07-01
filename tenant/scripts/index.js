@@ -541,52 +541,56 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Get Secret Question Form
-const getSecretQuestionForm = document.getElementById("getSecretQuestionForm");
-if (getSecretQuestionForm) {
-  getSecretQuestionForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  const getSecretQuestionForm = document.getElementById(
+    "getSecretQuestionForm",
+  );
+  if (getSecretQuestionForm) {
+    getSecretQuestionForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
 
-    const identifier = document.getElementById("emailSecretQuestion").value.trim();
-    const password = document.getElementById("passwordSecretQuestion").value;
+      const identifier = document
+        .getElementById("emailSecretQuestion")
+        .value.trim();
+      const password = document.getElementById("passwordSecretQuestion").value;
 
-    if (!identifier || !password) {
-      UI.toast("Email/Phone and password are required.", "danger");
-      return;
-    }
+      if (!identifier || !password) {
+        UI.toast("Email/Phone and password are required.", "danger");
+        return;
+      }
 
-    // Show loading state on button
-    const submitBtn = getSecretQuestionForm.querySelector('.button');
-    const originalText = submitBtn.value;
-    submitBtn.value = 'Processing...';
-    submitBtn.disabled = true;
+      // Show loading state on button
+      const submitBtn = getSecretQuestionForm.querySelector(".button");
+      const originalText = submitBtn.value;
+      submitBtn.value = "Processing...";
+      submitBtn.disabled = true;
 
-    UI.confirm("Proceed to retrieve your secret question?", async () => {
-      try {
-        const response = await fetch(
-          "../backend/authentication/get_secret_question.php",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ 
-              identifier: identifier,  // Changed from 'email' to 'identifier'
-              password: password 
-            }),
-          }
-        );
+      UI.confirm("Proceed to retrieve your secret question?", async () => {
+        try {
+          const response = await fetch(
+            "../backend/authentication/get_secret_question.php",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                identifier: identifier, // Changed from 'email' to 'identifier'
+                password: password,
+              }),
+            },
+          );
 
-        const data = await response.json();
+          const data = await response.json();
 
-        if (data.success) {
-          UI.toast("Secret question retrieved successfully.", "success");
-          getSecretQuestionForm.reset();
+          if (data.success) {
+            UI.toast("Secret question retrieved successfully.", "success");
+            getSecretQuestionForm.reset();
 
-          const displayElement = document.getElementById("displayQuestion");
-          if (displayElement) {
-            const secretQuestion = data.secret_question;
-            let timeLeft = 15; // Increased to 15 seconds for better readability
+            const displayElement = document.getElementById("displayQuestion");
+            if (displayElement) {
+              const secretQuestion = data.secret_question;
+              let timeLeft = 15; // Increased to 15 seconds for better readability
 
-            displayElement.innerHTML = `
+              displayElement.innerHTML = `
               <div style="color: #155724; font-weight: 500; padding: 15px; 
                         background-color: #d4edda; border-left: 4px solid #28a745; 
                         border-radius: 4px; margin-top: 15px;">
@@ -598,207 +602,523 @@ if (getSecretQuestionForm) {
               </div>
             `;
 
-            const countdown = setInterval(() => {
-              timeLeft--;
-              const timerElement = document.getElementById("countdownTimer");
-              if (timerElement) {
-                timerElement.textContent = `This message will clear in ${timeLeft} second${timeLeft !== 1 ? "s" : ""} for security purposes.`;
-              }
+              const countdown = setInterval(() => {
+                timeLeft--;
+                const timerElement = document.getElementById("countdownTimer");
+                if (timerElement) {
+                  timerElement.textContent = `This message will clear in ${timeLeft} second${timeLeft !== 1 ? "s" : ""} for security purposes.`;
+                }
 
-              if (timeLeft <= 0) {
-                clearInterval(countdown);
-                displayElement.innerHTML = "";
-                UI.toast("Secret question cleared for security.", "info");
-              }
-            }, 1000);
+                if (timeLeft <= 0) {
+                  clearInterval(countdown);
+                  displayElement.innerHTML = "";
+                  UI.toast("Secret question cleared for security.", "info");
+                }
+              }, 1000);
+            }
+          } else {
+            // Handle specific error messages
+            let errorMessage =
+              data.message || "Failed to fetch secret question.";
+
+            // Check for account lock message
+            if (data.message && data.message.includes("locked")) {
+              errorMessage = data.message;
+            }
+
+            UI.toast(errorMessage, "danger");
+
+            // If account is locked, disable the form temporarily
+            if (data.message && data.message.includes("locked")) {
+              getSecretQuestionForm
+                .querySelectorAll("input, .button")
+                .forEach((el) => {
+                  el.disabled = true;
+                });
+
+              // Re-enable after lockout period (assuming 15 minutes)
+              setTimeout(
+                () => {
+                  getSecretQuestionForm
+                    .querySelectorAll("input, .button")
+                    .forEach((el) => {
+                      el.disabled = false;
+                    });
+                  UI.toast("You can now try again.", "info");
+                },
+                15 * 60 * 1000,
+              );
+            }
           }
-        } else {
-          // Handle specific error messages
-          let errorMessage = data.message || "Failed to fetch secret question.";
-          
-          // Check for account lock message
-          if (data.message && data.message.includes("locked")) {
-            errorMessage = data.message;
-          }
-          
-          UI.toast(errorMessage, "danger");
-          
-          // If account is locked, disable the form temporarily
-          if (data.message && data.message.includes("locked")) {
-            getSecretQuestionForm.querySelectorAll('input, .button').forEach(el => {
-              el.disabled = true;
-            });
-            
-            // Re-enable after lockout period (assuming 15 minutes)
-            setTimeout(() => {
-              getSecretQuestionForm.querySelectorAll('input, .button').forEach(el => {
-                el.disabled = false;
-              });
-              UI.toast("You can now try again.", "info");
-            }, 15 * 60 * 1000);
-          }
+        } catch (error) {
+          console.error("Secret Question Error:", error);
+          UI.toast("An unexpected error occurred. Please try again.", "danger");
+        } finally {
+          // Reset button state
+          submitBtn.value = originalText;
+          submitBtn.disabled = false;
         }
-      } catch (error) {
-        console.error("Secret Question Error:", error);
-        UI.toast("An unexpected error occurred. Please try again.", "danger");
-      } finally {
-        // Reset button state
-        submitBtn.value = originalText;
-        submitBtn.disabled = false;
-      }
+      });
     });
-  });
-}
+  }
 
-// Helper function to escape HTML
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+  // Helper function to escape HTML
+  function escapeHtml(text) {
+    if (!text) return "";
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
   // Login Form
   const loginForm = document.getElementById("loginForm");
   if (loginForm) {
-    loginForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
+    loginForm.addEventListener("submit", handleLogin);
+  }
 
-      const username = loginForm
-        .querySelector('input[name="username"]')
-        .value.trim();
-      const password = loginForm.querySelector('input[name="password"]').value;
+  // Initialize force password form
+  const forcePasswordForm = document.getElementById("forcePasswordForm");
+  if (forcePasswordForm) {
+    document
+      .getElementById("forceNewPassword")
+      ?.addEventListener("input", validateForcePassword);
+    document
+      .getElementById("forceConfirmPassword")
+      ?.addEventListener("input", validateForcePasswordMatch);
+  }
 
-      if (!username || !password) {
-        displayError("Please enter both username and password.");
-        return;
-      }
+  let tempUserId = null;
+  let tempAuthToken = null;
 
-      clearError();
+  async function handleLogin(e) {
+    e.preventDefault();
 
-      // Show loading state
-      const submitBtn = loginForm.querySelector('input[type="submit"]');
-      const originalBtnText = submitBtn.innerHTML;
+    const loginForm = e.target;
+    const username =
+      loginForm.querySelector('input[name="username"]')?.value?.trim() || "";
+    const password =
+      loginForm.querySelector('input[name="password"]')?.value || "";
+
+    if (!username || !password) {
+      displayError("Please enter both username and password.");
+      return;
+    }
+
+    clearError();
+
+    const submitBtn = loginForm.querySelector('input[type="submit"]');
+    const originalText = submitBtn?.value || submitBtn?.innerHTML || "Login";
+    if (submitBtn) {
       submitBtn.innerHTML =
         '<i class="fas fa-spinner fa-spin"></i> Logging in...';
       submitBtn.disabled = true;
+    }
 
-      try {
-        const response = await fetch("../backend/authentication/login.php", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
-        });
+    try {
+      console.log("Attempting login...");
+      const response = await fetch("../backend/authentication/login.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
 
-        const data = await response.json();
+      const data = await response.json();
+      console.log("Login response:", data);
 
-        // Handle response based on status code
-        if (response.status === 200 && data.success) {
-          // Success - 200 OK with success=true
-          disableForm(loginForm);
-          if (data.data && data.data.needs_password_change === true) {
-            // Store flag in sessionStorage
-            sessionStorage.setItem("needs_password_change", "true");
-            sessionStorage.setItem("temp_user_id", data.data.user_id);
-            // Disable other buttons
-            const resetPasswordBtn =
-              document.getElementById("resetPasswordBtn");
-            const getSecretQuestionBtn = document.getElementById(
-              "getSecretQuestionBtn",
-            );
-            if (resetPasswordBtn) {
-              resetPasswordBtn.style.cursor = "not-allowed";
-              resetPasswordBtn.style.opacity = "0.6";
-              resetPasswordBtn.disabled = true;
-            }
-            if (getSecretQuestionBtn) {
-              getSecretQuestionBtn.style.cursor = "not-allowed";
-              getSecretQuestionBtn.style.opacity = "0.6";
-              getSecretQuestionBtn.disabled = true;
-            }
+      if (response.status === 200 && data.success) {
+        console.log(
+          "Login successful, checking for password change requirement...",
+        );
 
-            UI.toast("Login successful! Redirecting...", "success");
+        // Check if password change is required
+        if (
+          data.data &&
+          (data.data.requires_action === true ||
+            data.data.needs_password_change === true)
+        ) {
+          console.log("Password change required, showing modal...");
+          tempUserId = data.data.user_id;
+          tempAuthToken = data.data.temp_token;
 
-            setTimeout(() => {
-              window.location.href = "splashscreen.php";
-            }, 1500);
-          } else {
-            // Disable other buttons
-            const resetPasswordBtn =
-              document.getElementById("resetPasswordBtn");
-            const getSecretQuestionBtn = document.getElementById(
-              "getSecretQuestionBtn",
-            );
-            if (resetPasswordBtn) {
-              resetPasswordBtn.style.cursor = "not-allowed";
-              resetPasswordBtn.style.opacity = "0.6";
-              resetPasswordBtn.disabled = true;
-            }
-            if (getSecretQuestionBtn) {
-              getSecretQuestionBtn.style.cursor = "not-allowed";
-              getSecretQuestionBtn.style.opacity = "0.6";
-              getSecretQuestionBtn.disabled = true;
-            }
+          // Show the force password modal
+          showForcePasswordModal(data.data);
+          return;
+        }
 
-            UI.toast("Login successful! Redirecting...", "success");
-
-            setTimeout(() => {
-              window.location.href = "splashscreen.php";
-            }, 1500);
-          }
-        } else {
-          // Error - Check the error message
-          let errorMessage = data.message || "Login failed. Please try again.";
-
-          // Specific handling for locked accounts (423)
-          if (response.status === 423) {
-            errorMessage = data.message;
-            // You might want to show a special UI for locked accounts
-            UI.toast(errorMessage, "warning", 10000); // Longer duration
-          }
-          // Handling for blocked/deactivated (403)
-          else if (response.status === 403) {
-            errorMessage = data.message;
-            UI.toast(errorMessage, "error", 10000);
-          }
-          // Handling for invalid credentials (401)
-          else if (response.status === 401) {
-            errorMessage = data.message || "Invalid username or password.";
-            console.log(errorMessage);
-            displayError(errorMessage);
-          }
-          // Handling for validation errors (400)
-          else if (response.status === 400) {
-            errorMessage = data.message || "Please check your input.";
-            displayError(errorMessage);
-          }
-          // Server errors (500)
-          else if (response.status === 500) {
-            errorMessage = "Server error. Please try again later.";
-            console.error("Server Error:", data);
-            UI.toast(errorMessage, "error");
-          }
-          // Other errors
-          else {
-            displayError(errorMessage);
-          }
-
-          // Re-enable form on error
-          submitBtn.innerHTML = originalBtnText;
+        // Normal login flow - redirect to dashboard
+        console.log("Normal login, redirecting...");
+        UI.toast("Login successful! Redirecting...", "success");
+        setTimeout(() => {
+          window.location.href = "splashscreen.php";
+        }, 1500);
+      } else {
+        // Handle errors
+        handleLoginError(response, data);
+        if (submitBtn) {
+          submitBtn.innerHTML = originalText;
           submitBtn.disabled = false;
         }
-      } catch (error) {
-        // Network errors or JSON parsing errors
-        displayError(
-          "Network error. Please check your connection and try again.",
-        );
-        console.error("Login Error:", error);
-
-        // Re-enable form on error
-        submitBtn.innerHTML = originalBtnText;
+      }
+    } catch (error) {
+      console.error("Login Error:", error);
+      displayError(
+        "Network error. Please check your connection and try again.",
+      );
+      if (submitBtn) {
+        submitBtn.innerHTML = originalText;
         submitBtn.disabled = false;
       }
-    });
+    }
   }
+
+  function showForcePasswordModal(userData) {
+    console.log("Showing force password modal for user:", userData);
+
+    // Store temp user data
+    tempUserId = userData.user_id;
+    tempAuthToken = userData.temp_token;
+
+    // Show the modal
+    const modal = document.getElementById("forcePasswordModal");
+    if (modal) {
+      console.log("Modal found, displaying...");
+      modal.style.display = "flex";
+      modal.classList.add("active");
+      document.body.style.overflow = "hidden";
+    } else {
+      console.error("Modal not found in DOM!");
+      alert("Security update required. Please contact support.");
+      return;
+    }
+
+    // Disable login form
+    const loginForm = document.getElementById("loginForm");
+    if (loginForm) {
+      loginForm
+        .querySelectorAll("input")
+        .forEach((input) => (input.disabled = true));
+      const submitBtn = loginForm.querySelector('input[type="submit"]');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.style.cursor = "not-allowed";
+        submitBtn.style.opacity = "0.6";
+      }
+    }
+
+    // Pre-fill name if available
+    if (userData.firstname) {
+      const welcomeMsg = document.querySelector(
+        "#forcePasswordModal .modal-header h3",
+      );
+      if (welcomeMsg) {
+        welcomeMsg.textContent = `Update Your Security Details, ${userData.firstname}`;
+      }
+    }
+  }
+
+  function closeForcePasswordModal() {
+    const modal = document.getElementById("forcePasswordModal");
+    if (modal) {
+      modal.style.display = "none";
+      modal.classList.remove("active");
+      document.body.style.overflow = "";
+    }
+
+    // Re-enable login form
+    const loginForm = document.getElementById("loginForm");
+    if (loginForm) {
+      loginForm
+        .querySelectorAll("input")
+        .forEach((input) => (input.disabled = false));
+      const submitBtn = loginForm.querySelector('input[type="submit"]');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.cursor = "pointer";
+        submitBtn.style.opacity = "1";
+      }
+    }
+  }
+
+  async function submitForcePasswordChange() {
+    const newPassword =
+      document.getElementById("forceNewPassword")?.value || "";
+    const confirmPassword =
+      document.getElementById("forceConfirmPassword")?.value || "";
+    const secretQuestion =
+      document.getElementById("newSecretQuestion")?.value || "";
+    const secretAnswer = document.getElementById("newAnswer")?.value || "";
+    const confirmSecretAnswer =
+      document.getElementById("confirmNewAnswer")?.value || "";
+
+    // Validate
+    if (
+      !newPassword ||
+      !confirmPassword ||
+      !secretQuestion ||
+      !secretAnswer ||
+      !confirmSecretAnswer
+    ) {
+      showToast("Please fill in all fields", "error");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      showToast("Passwords do not match", "error");
+      return;
+    }
+
+    if (secretAnswer !== confirmSecretAnswer) {
+      showToast("Secret answers do not match", "error");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      showToast("Password must be at least 8 characters", "error");
+      return;
+    }
+
+    if (!/[A-Z]/.test(newPassword)) {
+      showToast("Password must contain at least one uppercase letter", "error");
+      return;
+    }
+
+    if (!/[a-z]/.test(newPassword)) {
+      showToast("Password must contain at least one lowercase letter", "error");
+      return;
+    }
+
+    if (!/[0-9]/.test(newPassword)) {
+      showToast("Password must contain at least one number", "error");
+      return;
+    }
+
+    if (secretAnswer.length < 8) {
+      showToast("Secret answer must be at least 8 characters", "error");
+      return;
+    }
+
+    const submitBtn = document.querySelector(
+      "#forcePasswordModal .btn-primary",
+    );
+    const originalText = submitBtn?.innerHTML || "Update";
+    if (submitBtn) {
+      submitBtn.innerHTML =
+        '<i class="fas fa-spinner fa-spin"></i> Updating...';
+      submitBtn.disabled = true;
+    }
+
+    try {
+      console.log("Submitting password change for user:", tempUserId);
+
+      const response = await fetch(
+        "../backend/authentication/change_default_password.php",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: tempUserId,
+            temp_token: tempAuthToken,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+            secret_question: secretQuestion,
+            secret_answer: secretAnswer,
+            confirm_answer: confirmSecretAnswer,
+          }),
+        },
+      );
+
+      const data = await response.json();
+      console.log("Password change response:", data);
+
+      if (data.success) {
+        showToast(
+          "Password and security details updated successfully! Please log in again.",
+          "success",
+        );
+
+        // Close modal
+        closeForcePasswordModal();
+
+        // Reset form
+        const form = document.getElementById("forcePasswordForm");
+        if (form) form.reset();
+
+        // Logout and redirect to login
+        setTimeout(() => {
+          performLogout();
+        }, 2000);
+      } else {
+        throw new Error(data.message || "Failed to update security details");
+      }
+    } catch (error) {
+      console.error("Error updating password:", error);
+      showToast(error.message, "error");
+      if (submitBtn) {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+      }
+    }
+  }
+
+  async function performLogout() {
+    try {
+      const response = await fetch("../backend/authentication/logout.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: tempUserId }),
+      });
+
+      await response.json();
+
+      // Clear temp data
+      tempUserId = null;
+      tempAuthToken = null;
+
+      // Redirect to login page with message
+      window.location.href = "index.php?message=password_updated";
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Force redirect anyway
+      window.location.href = "index.php?message=password_updated";
+    }
+  }
+
+  function validateForcePassword() {
+    const password = document.getElementById("forceNewPassword")?.value || "";
+    const requirements = [
+      {
+        id: "req-length",
+        check: password.length >= 8,
+        text: "At least 8 characters",
+      },
+      {
+        id: "req-upper",
+        check: /[A-Z]/.test(password),
+        text: "At least one uppercase letter",
+      },
+      {
+        id: "req-lower",
+        check: /[a-z]/.test(password),
+        text: "At least one lowercase letter",
+      },
+      {
+        id: "req-number",
+        check: /[0-9]/.test(password),
+        text: "At least one number",
+      },
+    ];
+
+    requirements.forEach((req) => {
+      const element = document.getElementById(req.id);
+      if (element) {
+        if (req.check) {
+          element.classList.add("valid");
+          element.textContent = "✓ " + req.text;
+        } else {
+          element.classList.remove("valid");
+          element.textContent = "✗ " + req.text;
+        }
+      }
+    });
+
+    // Update strength bar
+    const strengthBar = document.getElementById("strengthBar");
+    const strengthText = document.getElementById("strengthText");
+    const score = requirements.filter((r) => r.check).length;
+
+    if (strengthBar) {
+      const percentage = (score / requirements.length) * 100;
+      strengthBar.style.width = percentage + "%";
+
+      if (percentage <= 25) {
+        strengthBar.style.background = "#dc2626";
+        if (strengthText) strengthText.textContent = "Password strength: Weak";
+      } else if (percentage <= 50) {
+        strengthBar.style.background = "#f59e0b";
+        if (strengthText) strengthText.textContent = "Password strength: Fair";
+      } else if (percentage <= 75) {
+        strengthBar.style.background = "#3b82f6";
+        if (strengthText) strengthText.textContent = "Password strength: Good";
+      } else {
+        strengthBar.style.background = "#10b981";
+        if (strengthText)
+          strengthText.textContent = "Password strength: Strong";
+      }
+    }
+
+    validateForcePasswordMatch();
+  }
+
+  function validateForcePasswordMatch() {
+    const password = document.getElementById("forceNewPassword")?.value || "";
+    const confirm =
+      document.getElementById("forceConfirmPassword")?.value || "";
+    const matchElement = document.getElementById("req-match");
+
+    if (!matchElement) return;
+
+    if (password && confirm && password === confirm) {
+      matchElement.classList.add("valid");
+      matchElement.textContent = "✓ Passwords match";
+    } else {
+      matchElement.classList.remove("valid");
+      matchElement.textContent = "✗ Passwords match";
+    }
+  }
+
+  function displayError(message) {
+    const errorDiv = document.getElementById("loginError");
+    if (errorDiv) {
+      errorDiv.textContent = message;
+      errorDiv.style.display = "block";
+    }
+  }
+
+  function clearError() {
+    const errorDiv = document.getElementById("loginError");
+    if (errorDiv) {
+      errorDiv.textContent = "";
+      errorDiv.style.display = "none";
+    }
+  }
+
+  function handleLoginError(response, data) {
+    let errorMessage = data.message || "Login failed. Please try again.";
+
+    if (response.status === 423) {
+      errorMessage = data.message || "Account locked. Please try again later.";
+    } else if (response.status === 403) {
+      errorMessage = data.message || "Account access restricted.";
+    } else if (response.status === 401) {
+      errorMessage = data.message || "Invalid username or password.";
+    } else if (response.status === 500) {
+      errorMessage = "Server error. Please try again later.";
+      console.error("Server Error:", data);
+    }
+
+    displayError(errorMessage);
+  }
+
+  function showToast(message, type = "info") {
+    // Use existing toast function if available
+    if (typeof UI !== "undefined" && UI.toast) {
+      UI.toast(message, type);
+      return;
+    }
+
+    // Fallback toast
+    const toast = document.createElement("div");
+    toast.className = `toast-notification ${type}`;
+    toast.innerHTML = `<span>${message}</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  }
+
+  // Make functions globally accessible
+  window.showForcePasswordModal = showForcePasswordModal;
+  window.closeForcePasswordModal = closeForcePasswordModal;
+  window.submitForcePasswordChange = submitForcePasswordChange;
+  window.validateForcePassword = validateForcePassword;
+  window.validateForcePasswordMatch = validateForcePasswordMatch;
 
   // Helper functions
   function displayError(message) {

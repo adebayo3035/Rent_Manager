@@ -87,6 +87,7 @@ function renderMaintenanceRequests(requests, pagination) {
                     <div class="request-card" onclick="viewRequestDetails(${request.request_id})">
                         <div class="request-header">
                             <div class="request-title">${escapeHtml(request.issue_type)}</div>
+                            <div class="request-id">Request ID: ${escapeHtml(request.request_id)}</div>
                             <div style="display: flex; gap: 8px;">
                                 <span class="priority-badge priority-${request.priority}">${request.priority.toUpperCase()}</span>
                                 <span class="request-status status-${request.status}">${formatStatus(request.status)}</span>
@@ -615,6 +616,7 @@ async function submitConfirmation(requestId) {
         
         if (data.success) {
             if (window.showToast) window.showToast('Thank you for your feedback!', 'success');
+            window.location.reload();
             await fetchMaintenanceRequests();
         } else {
             throw new Error(data.message || 'Failed to submit confirmation');

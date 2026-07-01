@@ -1,4 +1,5 @@
-// navbar.js
+// navbar.js - Cleaned up version (removed force password change from navbar)
+
 // ==================== GLOBAL VARIABLES ====================
 let navbarCurrentUser = null;
 let inactivityTimer = null;
@@ -7,7 +8,7 @@ let isWarningShowing = false;
 let navbarUserPromise = null;
 
 // Configuration
-const INACTIVITY_TIMEOUT = 2 * 60 * 1000; // 20 minutes
+const INACTIVITY_TIMEOUT = 20 * 60 * 1000; // 20 minutes
 const WARNING_TIMEOUT = 2 * 60 * 1000; // 2 minutes warning
 
 // ==================== NOTIFICATION BADGE VARIABLES ====================
@@ -31,13 +32,6 @@ async function initializeApp() {
     
     // Then setup inactivity timer
     setupInactivityTimer();
-    
-    // Check if password needs to be changed (first login)
-    if (sessionStorage.getItem('needs_password_change') === 'true') {
-        setTimeout(() => {
-            showForcePasswordModal();
-        }, 500);
-    }
 }
 
 function setupEventListeners() {
@@ -78,15 +72,14 @@ function setupEventListeners() {
         });
     }
     
-    // Logout button - FIXED: Ensure currentUser is available
+    // Logout button
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
-        // Remove any existing listeners to avoid duplicates
         logoutBtn.removeEventListener('click', handleLogoutClick);
         logoutBtn.addEventListener('click', handleLogoutClick);
     }
     
-    // Notifications button - NOW shows toast when clicked
+    // Notifications button
     const notifBtn = document.getElementById('notificationsBtn');
     if (notifBtn) {
         notifBtn.removeEventListener('click', fetchNotificationsWithToast);
@@ -104,14 +97,12 @@ function setupEventListeners() {
     });
 }
 
-// ==================== NOTIFICATION BADGE FUNCTIONS (NEW) ====================
+// ==================== NOTIFICATION BADGE FUNCTIONS ====================
 
 // Silent update - only updates badge count, NO toast
 async function updateNotificationBadge() {
     try {
-        // Only fetch if user is logged in
         if (!navbarCurrentUser && !window.currentUser) {
-            console.log("No user logged in, skipping notification badge update");
             return;
         }
         
@@ -147,7 +138,6 @@ async function fetchNotificationsWithToast() {
                 badge.style.display = count > 0 ? 'flex' : 'none';
             }
             
-            // Show toast ONLY when bell is clicked
             if (count > 0) {
                 showToast(`You have ${count} unread notification${count > 1 ? 's' : ''}`, 'info');
             } else {
@@ -162,18 +152,15 @@ async function fetchNotificationsWithToast() {
 
 // Initialize notification badge on page load (silent, no toast)
 async function initNotificationBadge() {
-    // Wait for user data to be loaded
     if (navbarCurrentUser || window.currentUser) {
         await updateNotificationBadge();
         startNotificationRefresh();
     } else {
-        // Listen for user data loaded event
         window.addEventListener('userDataLoaded', async function() {
             await updateNotificationBadge();
             startNotificationRefresh();
         });
         
-        // Also try after a short delay
         setTimeout(async () => {
             if (navbarCurrentUser || window.currentUser) {
                 await updateNotificationBadge();
@@ -183,7 +170,6 @@ async function initNotificationBadge() {
     }
 }
 
-// Start periodic refresh of notification badge (every 30 seconds, silent)
 function startNotificationRefresh() {
     if (notificationRefreshInterval) {
         clearInterval(notificationRefreshInterval);
@@ -191,9 +177,9 @@ function startNotificationRefresh() {
     
     notificationRefreshInterval = setInterval(() => {
         if (navbarCurrentUser || window.currentUser) {
-            updateNotificationBadge(); // Silent update, no toast
+            updateNotificationBadge();
         }
-    }, 3000000); // Refresh every 3000 seconds
+    }, 30000); // Refresh every 30 seconds
 }
 
 function stopNotificationRefresh() {
@@ -203,15 +189,12 @@ function stopNotificationRefresh() {
     }
 }
 
-// Wrapper function for logout to ensure currentUser is available
 function handleLogoutClick(e) {
     e.preventDefault();
     if (navbarCurrentUser) {
         handleLogout();
     } else {
-        console.error('Current user not loaded yet');
         showToast('Please wait, loading user data...', 'warning');
-        // Retry after a short delay
         setTimeout(() => {
             if (navbarCurrentUser) {
                 handleLogout();
@@ -240,15 +223,12 @@ async function fetchNavbarUserData() {
                 const response = await fetch('../backend/tenant/fetch_user_data.php');
                 const data = await response.json();
                 
-                console.log('User data response:', data);
-                
                 if (!(data.success && data.data)) {
                     throw new Error(data.message || 'Failed to fetch user data');
                 }
 
                 navbarCurrentUser = data.data;
                 window.currentUser = navbarCurrentUser;
-                console.log('Current user set:', navbarCurrentUser);
                 
                 await updateUserInfo();
                 window.dispatchEvent(new CustomEvent('userDataLoaded', { detail: navbarCurrentUser }));
@@ -270,7 +250,6 @@ async function fetchNavbarUserData() {
 }
 
 async function updateUserInfo() {
-    // Small delay to ensure DOM is ready
     await new Promise(resolve => setTimeout(resolve, 100));
     
     const user = window.currentUser || navbarCurrentUser;
@@ -281,46 +260,22 @@ async function updateUserInfo() {
     }
     
     navbarCurrentUser = user;
-    console.log('Updating user info with data:', user);
     
     const nameElement = document.getElementById('tenantName');
     const apartmentElement = document.getElementById('tenantApartment');
     const photoElement = document.getElementById('photoElement');
     
-    // Debug: Log if elements exist
-    console.log('DOM Elements found:', {
-        nameElement: !!nameElement,
-        apartmentElement: !!apartmentElement,
-        photoElement: !!photoElement
-    });
-    
-    // Get the full name
     const fullName = `${user.firstname || ''} ${user.lastname || ''}`.trim();
     const apartmentNumber = user.apartment_number || user.apartment_code || 'No Apartment';
     
-    console.log('Values to display:', {
-        fullName,
-        apartmentNumber,
-        photo: user.photo
-    });
-    
-    // Update name
     if (nameElement) {
         nameElement.textContent = fullName || 'Tenant';
-        console.log('Name element updated to:', nameElement.textContent);
-    } else {
-        console.warn('tenantName element not found in DOM');
     }
     
-    // Update apartment number
     if (apartmentElement) {
         apartmentElement.textContent = `Apartment Number: ${apartmentNumber}`;
-        console.log('Apartment element updated to:', apartmentElement.textContent);
-    } else {
-        console.warn('tenantApartment element not found in DOM');
     }
     
-    // Update photo
     if (photoElement) {
         photoElement.innerHTML = '';
         
@@ -338,25 +293,16 @@ async function updateUserInfo() {
                 ? window.location.pathname.split('/tenant/')[0]
                 : '';
             img.src = `${appBasePath}/admin/backend/tenants/tenant_photos/${user.photo}`;
-            console.log('Attempting to load photo from:', img.src);
 
             img.onerror = function() {
-                console.error('Failed to load image from:', img.src);
                 img.remove();
                 renderUserInitials(photoElement, fullName);
             };
             
-            img.onload = function() {
-                console.log('Image loaded successfully from:', img.src);
-            };
-            
             photoElement.appendChild(img);
         } else {
-            console.log('No photo available for user');
             renderUserInitials(photoElement, fullName);
         }
-    } else {
-        console.warn('photoElement element not found in DOM');
     }
 }
 
@@ -377,18 +323,14 @@ function renderUserInitials(container, fullName) {
     `;
 }
 
-// ==================== LOGOUT - FIXED VERSION ====================
+// ==================== LOGOUT ====================
 async function handleLogout() {
-    // Double-check currentUser exists
     if (!navbarCurrentUser) {
         console.error('No currentUser available for logout');
         showToast('User session not found', 'error');
         return;
     }
     
-    console.log('Logging out user:', navbarCurrentUser.tenant_code);
-    
-    // Stop notification refresh on logout
     stopNotificationRefresh();
     
     // Remove any existing dialog
@@ -397,7 +339,6 @@ async function handleLogout() {
         existingDialog.remove();
     }
     
-    // Create logout confirmation dialog
     const dialogHtml = `
         <div id="customConfirmDialog" class="confirm-dialog">
             <div class="confirm-dialog-content">
@@ -429,19 +370,15 @@ async function handleLogout() {
         }
     };
     
-    // Logout button - FIXED: Pass the correct logout_id
     confirmBtn.onclick = async () => {
         closeDialog();
         
-        // Show loading state
         showToast('Logging out...', 'info');
         
         try {
             const logoutData = {
-                logout_id: navbarCurrentUser.tenant_code  // This should match what your backend expects
+                logout_id: navbarCurrentUser.tenant_code
             };
-            
-            console.log('Sending logout request with data:', logoutData);
             
             const response = await fetch('../backend/authentication/logout.php', {
                 method: 'POST',
@@ -453,7 +390,6 @@ async function handleLogout() {
             });
             
             const data = await response.json();
-            console.log('Logout response:', data);
             
             if (data.success) {
                 showToast('Logged out successfully', 'success');
@@ -469,7 +405,6 @@ async function handleLogout() {
         }
     };
     
-    // Cancel button
     cancelBtn.onclick = () => {
         closeDialog();
     };
@@ -479,7 +414,7 @@ async function handleLogout() {
     };
 }
 
-// ==================== INACTIVITY TIMER (Fixed) ====================
+// ==================== INACTIVITY TIMER ====================
 function setupInactivityTimer() {
     const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     
@@ -496,7 +431,6 @@ function resetInactivityTimer() {
     isWarningShowing = false;
     
     inactivityTimer = setTimeout(() => {
-        console.log('User inactive for', INACTIVITY_TIMEOUT / 1000, 'seconds');
         showInactivityWarning();
     }, INACTIVITY_TIMEOUT);
 }
@@ -520,7 +454,6 @@ function showInactivityWarning() {
     isWarningShowing = true;
     
     warningTimer = setTimeout(() => {
-        console.log('Warning timeout reached, logging out...');
         performAutoLogout();
     }, WARNING_TIMEOUT);
     
@@ -528,21 +461,18 @@ function showInactivityWarning() {
         'Session Timeout Warning',
         'You have been inactive for a while. Do you want to stay logged in?',
         () => {
-            console.log('User chose to stay logged in');
             clearWarningTimer();
             isWarningShowing = false;
             resetInactivityTimer();
             showToast('Session extended', 'success');
         },
         () => {
-            console.log('User chose to logout');
             performAutoLogout();
         }
     );
 }
 
 async function performAutoLogout() {
-    // Stop notification refresh on auto-logout
     stopNotificationRefresh();
     
     if (!navbarCurrentUser) {
@@ -628,7 +558,6 @@ function showConfirmationDialog(title, message, onConfirm, onCancel) {
 
 // ==================== UTILITY FUNCTIONS ====================
 function showToast(message, type = 'info') {
-    // Remove existing toasts
     const existingToasts = document.querySelectorAll('.toast-notification');
     existingToasts.forEach(toast => toast.remove());
     
@@ -651,186 +580,12 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Force password change functions (keep your existing implementation)
-function showForcePasswordModal() {
-    const modal = document.getElementById('forcePasswordModal');
-    if (modal) {
-        modal.style.display = 'flex';
-        modal.classList.add('active');
-        
-        const newPasswordInput = document.getElementById('forceNewPassword');
-        const confirmPasswordInput = document.getElementById('forceConfirmPassword');
-        
-        if (newPasswordInput) {
-            newPasswordInput.addEventListener('input', validateForcePasswordStrength);
-        }
-        if (confirmPasswordInput) {
-            confirmPasswordInput.addEventListener('input', validateForcePasswordStrength);
-        }
-        
-        modal.addEventListener('click', function(e) {
-            if (e.target === modal) {
-                showToast('Please change your password to continue', 'warning');
-            }
-        });
-        
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && modal.classList.contains('active')) {
-                e.preventDefault();
-                showToast('Please change your password to continue', 'warning');
-            }
-        });
-    }
-}
-
-function closeForcePasswordModal() {
-    const modal = document.getElementById('forcePasswordModal');
-    if (modal) {
-        modal.classList.remove('active');
-        modal.style.display = 'none';
-    }
-}
-
-function validateForcePasswordStrength() {
-    const password = document.getElementById('forceNewPassword')?.value || '';
-    
-    const hasLength = password.length >= 8;
-    const hasUpper = /[A-Z]/.test(password);
-    const hasLower = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    
-    updateRequirement('req-length', hasLength);
-    updateRequirement('req-upper', hasUpper);
-    updateRequirement('req-lower', hasLower);
-    updateRequirement('req-number', hasNumber);
-    
-    let strength = 0;
-    if (hasLength) strength++;
-    if (hasUpper) strength++;
-    if (hasLower) strength++;
-    if (hasNumber) strength++;
-    
-    const strengthBar = document.getElementById('strengthBar');
-    const strengthText = document.getElementById('strengthText');
-    
-    if (strengthBar) {
-        let width = (strength / 4) * 100;
-        strengthBar.style.width = width + '%';
-        
-        if (strength <= 1) {
-            strengthBar.style.background = '#dc2626';
-            if (strengthText) strengthText.textContent = 'Password strength: Weak';
-        } else if (strength <= 2) {
-            strengthBar.style.background = '#f59e0b';
-            if (strengthText) strengthText.textContent = 'Password strength: Fair';
-        } else if (strength <= 3) {
-            strengthBar.style.background = '#3b82f6';
-            if (strengthText) strengthText.textContent = 'Password strength: Good';
-        } else {
-            strengthBar.style.background = '#10b981';
-            if (strengthText) strengthText.textContent = 'Password strength: Strong';
-        }
-    }
-    
-    return strength === 4;
-}
-
-function updateRequirement(elementId, isValid) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        if (isValid) {
-            element.classList.add('valid');
-        } else {
-            element.classList.remove('valid');
-        }
-    }
-}
-
-async function submitForcePasswordChange() {
-    const newPassword = document.getElementById('forceNewPassword')?.value;
-    const confirmPassword = document.getElementById('forceConfirmPassword')?.value;
-    const newQuestion = document.getElementById('newSecretQuestion')?.value;
-    const newAnswer = document.getElementById('newAnswer')?.value;
-    const confirmAnswer = document.getElementById('confirmNewAnswer')?.value;
-    
-    if (!newPassword || !confirmPassword || !newQuestion || !newAnswer || !confirmAnswer) {
-        showToast('Please fill in all fields', 'error');
-        return;
-    }
-    
-    if (newPassword !== confirmPassword) {
-        showToast('Passwords do not match', 'error');
-        return;
-    }
-    
-    if (newPassword.length < 8) {
-        showToast('Password must be at least 8 characters', 'error');
-        return;
-    }
-    
-    if (!/[A-Z]/.test(newPassword)) {
-        showToast('Password must contain at least one uppercase letter', 'error');
-        return;
-    }
-    
-    if (!/[a-z]/.test(newPassword)) {
-        showToast('Password must contain at least one lowercase letter', 'error');
-        return;
-    }
-    
-    if (!/[0-9]/.test(newPassword)) {
-        showToast('Password must contain at least one number', 'error');
-        return;
-    }
-    
-    if (newAnswer !== confirmAnswer) {
-        showToast('Secret Answers do not match', 'error');
-        return;
-    }
-    
-    try {
-        const response = await fetch('../backend/authentication/change_default_password.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                new_password: newPassword,
-                confirm_password: confirmPassword,
-                new_question : newQuestion,
-                new_answer: newAnswer,
-                confirm_answer: confirmAnswer
-
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('Security Details changed successfully! Please log in again.', 'success');
-            sessionStorage.removeItem('needs_password_change');
-            sessionStorage.removeItem('temp_user_id');
-            closeForcePasswordModal();
-            
-            setTimeout(() => {
-                window.location.href = '../pages/index.php?message=password_changed';
-            }, 2000);
-        } else {
-            throw new Error(data.message || 'Failed to change password');
-        }
-    } catch (error) {
-        console.error('Error changing password:', error);
-        showToast(error.message, 'error');
-    }
-}
-
 // Make functions globally available
 window.currentUser = window.currentUser || null;
 window.fetchNavbarUserData = fetchNavbarUserData;
 window.updateUserInfo = updateUserInfo;
 window.showToast = showToast;
 window.handleLogout = handleLogout;
-window.validateForcePasswordStrength = validateForcePasswordStrength;
-window.submitForcePasswordChange = submitForcePasswordChange;
-window.closeForcePasswordModal = closeForcePasswordModal;
 
 // Add styles
 const dialogStyles = document.createElement('style');
