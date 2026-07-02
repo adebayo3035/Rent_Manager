@@ -481,7 +481,7 @@ function getNotificationIcon($type, $category) {
 function getNotificationLink($category, $notification_id) {
     $links = [
         'account_reactivation' => 'account_management.php',
-        'account_lock' => 'settings.php',
+        'account_lock' => 'account_unlock.php',
         'payment' => 'payments.php',
         'system_alert' => 'dashboard.php',
         'other' => 'notifications.php'

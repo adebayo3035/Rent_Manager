@@ -1,4 +1,3 @@
-// navbar.js
 // ==================== GLOBAL VARIABLES ====================
 let navbarCurrentUser = null;
 let inactivityTimer = null;
@@ -31,16 +30,6 @@ async function initializeApp() {
     
     // Then setup inactivity timer
     setupInactivityTimer();
-    
-    const userRequiresPasswordChange = navbarCurrentUser && Number(navbarCurrentUser.password_changed) === 0;
-
-    // Check if password needs to be changed (first login)
-    if (sessionStorage.getItem('needs_password_change') === 'true' || userRequiresPasswordChange) {
-        sessionStorage.setItem('needs_password_change', 'true');
-        setTimeout(() => {
-            showForcePasswordModal();
-        }, 500);
-    }
 }
 
 function setupEventListeners() {
@@ -107,7 +96,7 @@ function setupEventListeners() {
     });
 }
 
-// ==================== NOTIFICATION BADGE FUNCTIONS (NEW) ====================
+// ==================== NOTIFICATION BADGE FUNCTIONS ====================
 
 // Silent update - only updates badge count, NO toast
 async function updateNotificationBadge() {
@@ -482,7 +471,7 @@ async function handleLogout() {
     };
 }
 
-// ==================== INACTIVITY TIMER (Fixed) ====================
+// ==================== INACTIVITY TIMER ====================
 function setupInactivityTimer() {
     const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     
@@ -654,199 +643,12 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Force password change functions (keep your existing implementation)
-function showForcePasswordModal() {
-    const modal = document.getElementById('forcePasswordModal');
-    if (modal) {
-        modal.style.display = 'flex';
-        modal.classList.add('active');
-        modal.setAttribute('aria-hidden', 'false');
-        
-        const newPasswordInput = document.getElementById('forceNewPassword');
-        const confirmPasswordInput = document.getElementById('forceConfirmPassword');
-        
-        if (newPasswordInput) {
-            newPasswordInput.oninput = validateForcePasswordStrength;
-            setTimeout(() => newPasswordInput.focus(), 100);
-        }
-        if (confirmPasswordInput) {
-            confirmPasswordInput.oninput = validateForcePasswordStrength;
-        }
-        
-        modal.addEventListener('click', function(e) {
-            if (e.target === modal) {
-                showToast('Please change your password to continue', 'warning');
-            }
-        });
-        
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && modal.classList.contains('active')) {
-                e.preventDefault();
-                showToast('Please change your password to continue', 'warning');
-            }
-        });
-    }
-}
-
-function closeForcePasswordModal() {
-    const modal = document.getElementById('forcePasswordModal');
-    if (modal) {
-        modal.classList.remove('active');
-        modal.style.display = 'none';
-        modal.setAttribute('aria-hidden', 'true');
-    }
-}
-
-function validateForcePasswordStrength() {
-    const password = document.getElementById('forceNewPassword')?.value || '';
-    
-    const hasLength = password.length >= 8;
-    const hasUpper = /[A-Z]/.test(password);
-    const hasLower = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    
-    updateRequirement('req-length', hasLength);
-    updateRequirement('req-upper', hasUpper);
-    updateRequirement('req-lower', hasLower);
-    updateRequirement('req-number', hasNumber);
-    
-    let strength = 0;
-    if (hasLength) strength++;
-    if (hasUpper) strength++;
-    if (hasLower) strength++;
-    if (hasNumber) strength++;
-    
-    const strengthBar = document.getElementById('strengthBar');
-    const strengthText = document.getElementById('strengthText');
-    
-    if (strengthBar) {
-        let width = (strength / 4) * 100;
-        strengthBar.style.width = width + '%';
-        
-        if (strength <= 1) {
-            strengthBar.style.background = '#dc2626';
-            if (strengthText) strengthText.textContent = 'Password strength: Weak';
-        } else if (strength <= 2) {
-            strengthBar.style.background = '#f59e0b';
-            if (strengthText) strengthText.textContent = 'Password strength: Fair';
-        } else if (strength <= 3) {
-            strengthBar.style.background = '#3b82f6';
-            if (strengthText) strengthText.textContent = 'Password strength: Good';
-        } else {
-            strengthBar.style.background = '#10b981';
-            if (strengthText) strengthText.textContent = 'Password strength: Strong';
-        }
-    }
-    
-    return strength === 4;
-}
-
-function updateRequirement(elementId, isValid) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        if (isValid) {
-            element.classList.add('valid');
-        } else {
-            element.classList.remove('valid');
-        }
-    }
-}
-
-async function submitForcePasswordChange() {
-    const newPassword = document.getElementById('forceNewPassword')?.value;
-    const confirmPassword = document.getElementById('forceConfirmPassword')?.value;
-    const newQuestion = document.getElementById('newSecretQuestion')?.value;
-    const newAnswer = document.getElementById('newAnswer')?.value;
-    const confirmAnswer = document.getElementById('confirmNewAnswer')?.value;
-    const submitButton = document.getElementById('forcePasswordSubmit');
-    
-   if (!newPassword || !confirmPassword || !newQuestion || !newAnswer || !confirmAnswer) {
-        showToast('Please fill in all fields', 'error');
-        return;
-    }
-    
-    
-    if (newPassword !== confirmPassword) {
-        showToast('Passwords do not match', 'error');
-        return;
-    }
-    
-    if (newPassword.length < 8) {
-        showToast('Password must be at least 8 characters', 'error');
-        return;
-    }
-    
-    if (!/[A-Z]/.test(newPassword)) {
-        showToast('Password must contain at least one uppercase letter', 'error');
-        return;
-    }
-    
-    if (!/[a-z]/.test(newPassword)) {
-        showToast('Password must contain at least one lowercase letter', 'error');
-        return;
-    }
-    
-    if (!/[0-9]/.test(newPassword)) {
-        showToast('Password must contain at least one number', 'error');
-        return;
-    }
-    if (newAnswer !== confirmAnswer) {
-        showToast('Secret Answers do not match', 'error');
-        return;
-    }
-    
-    try {
-        if (submitButton) {
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Updating Password...</span>';
-        }
-
-        const response = await fetch('../backend/authentication/change_default_password.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ 
-                new_password: newPassword,
-                confirm_password: confirmPassword,
-                new_question : newQuestion,
-                new_answer: newAnswer,
-                confirm_answer: confirmAnswer
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('Password changed successfully! Please log in again.', 'success');
-            sessionStorage.removeItem('needs_password_change');
-            sessionStorage.removeItem('temp_user_id');
-            closeForcePasswordModal();
-            
-            setTimeout(() => {
-                window.location.href = '../pages/index.php?message=password_changed';
-            }, 2000);
-        } else {
-            throw new Error(data.message || 'Failed to change password');
-        }
-    } catch (error) {
-        console.error('Error changing password:', error);
-        showToast(error.message, 'error');
-        if (submitButton) {
-            submitButton.disabled = false;
-            submitButton.innerHTML = '<i class="fas fa-check-circle"></i><span>Change Password & Continue</span>';
-        }
-    }
-}
-
 // Make functions globally available
 window.currentUser = window.currentUser || null;
 window.fetchNavbarUserData = fetchNavbarUserData;
 window.updateUserInfo = updateUserInfo;
 window.showToast = showToast;
 window.handleLogout = handleLogout;
-window.validateForcePasswordStrength = validateForcePasswordStrength;
-window.submitForcePasswordChange = submitForcePasswordChange;
-window.closeForcePasswordModal = closeForcePasswordModal;
 
 // Add styles
 const dialogStyles = document.createElement('style');

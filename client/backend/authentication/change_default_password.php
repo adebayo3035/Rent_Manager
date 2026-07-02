@@ -1,44 +1,145 @@
 <?php
+// change_default_password.php - First login password & secret question setup for CLIENT
+
 header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 
-session_start();
+// Start session for logging purposes
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Generate unique request ID for tracking
+$requestId = uniqid('change_default_pw_client_', true);
+logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ========== START ==========");
+logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Request Time: " . date('Y-m-d H:i:s'));
 
 try {
-    // Check if user is logged in
-    if (!isset($_SESSION['client_code'])) {
-        json_error("Not logged in", 401, null, 'AUTH_REQUIRED');
-    }
-
-    // Check if user is a client
-    if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'Client') {
-        json_error("Unauthorized access", 403, null, 'UNAUTHORIZED');
-    }
-
-    $client_code = $_SESSION['client_code'] ?? null;
-
-    if (!$client_code) {
-        json_error("Client code not found", 400, null, 'TENANT_CODE_MISSING');
-    }
-
-    // Get input data
+    // ==================== STEP 1: GET INPUT DATA ====================
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 1: Getting input data");
+    
     $input = json_decode(file_get_contents('php://input'), true);
     
     if (!$input) {
-        json_error("Invalid input data", 400, null, 'INVALID_INPUT');
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: Invalid input data");
+        json_error("Invalid input data", 400);
     }
+    
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Input keys: " . implode(', ', array_keys($input)));
 
     // Extract data from request
+    $user_id = isset($input['user_id']) ? trim($input['user_id']) : '';
+    $temp_token = isset($input['temp_token']) ? trim($input['temp_token']) : '';
     $new_password = isset($input['new_password']) ? $input['new_password'] : '';
     $confirm_password = isset($input['confirm_password']) ? $input['confirm_password'] : '';
-    $secret_question_key = isset($input['new_question']) ? trim($input['new_question']) : '';
-    $secret_answer = isset($input['new_answer']) ? trim($input['new_answer']) : '';
+    $secret_question_key = isset($input['secret_question']) ? trim($input['secret_question']) : '';
+    $secret_answer = isset($input['secret_answer']) ? trim($input['secret_answer']) : '';
     $confirm_answer = isset($input['confirm_answer']) ? trim($input['confirm_answer']) : '';
+    $user_type = 'client';
 
-    // Map the selected value to the actual question text
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] User ID: {$user_id}");
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Temp Token: " . substr($temp_token, 0, 20) . "...");
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Secret Question Key: {$secret_question_key}");
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] New Password provided: " . (!empty($new_password) ? 'Yes' : 'No'));
+
+    // ==================== STEP 2: VALIDATE TEMP TOKEN FROM DATABASE ====================
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 2: Validating temp token from database");
+    
+    if (empty($user_id)) {
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: User ID is required");
+        json_error("User ID is required", 400);
+    }
+
+    if (empty($temp_token)) {
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: Temp token is required");
+        json_error("Invalid session. Please log in again.", 401);
+    }
+
+    // Validate token from database
+    $token_query = "
+        SELECT id, user_id, token, expires_at, is_used 
+        FROM temp_auth_tokens 
+        WHERE user_id = ? AND user_type = ? AND token = ? AND is_used = 0 AND expires_at > NOW()
+        LIMIT 1
+    ";
+    
+    $token_stmt = $conn->prepare($token_query);
+    $token_stmt->bind_param("sss", $user_id, $user_type, $temp_token);
+    $token_stmt->execute();
+    $token_result = $token_stmt->get_result();
+    $token_data = $token_result->fetch_assoc();
+    $token_stmt->close();
+
+    if (!$token_data) {
+        // Check if token exists but is expired or used
+        $check_query = "
+            SELECT id, is_used, expires_at 
+            FROM temp_auth_tokens 
+            WHERE user_id = ? AND token = ?
+            LIMIT 1
+        ";
+        $check_stmt = $conn->prepare($check_query);
+        $check_stmt->bind_param("ss", $user_id, $temp_token);
+        $check_stmt->execute();
+        $check_result = $check_stmt->get_result();
+        $check_data = $check_result->fetch_assoc();
+        $check_stmt->close();
+
+        if ($check_data) {
+            if ($check_data['is_used'] == 1) {
+                logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: Token already used");
+                json_error("Token already used. Please log in again.", 401);
+            } elseif (strtotime($check_data['expires_at']) < time()) {
+                logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: Token expired");
+                json_error("Token expired. Please log in again.", 401);
+            }
+        }
+        
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: Invalid token for user: {$user_id}");
+        json_error("Invalid or expired session. Please log in again.", 401);
+    }
+
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Token validated successfully");
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Token ID: {$token_data['id']}, Expires: {$token_data['expires_at']}");
+
+    // ==================== STEP 3: VALIDATE PASSWORD ====================
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 3: Validating password");
+    
+    $validation_errors = [];
+
+    // Password validation
+    if (empty($new_password)) {
+        $validation_errors['new_password'] = "New password is required";
+    } else {
+        if (strlen($new_password) < 8) {
+            $validation_errors['new_password'] = "Password must be at least 8 characters long";
+        }
+        if (!preg_match('/[A-Z]/', $new_password)) {
+            $validation_errors['new_password'] = "Password must contain at least one uppercase letter";
+        }
+        if (!preg_match('/[a-z]/', $new_password)) {
+            $validation_errors['new_password'] = "Password must contain at least one lowercase letter";
+        }
+        if (!preg_match('/[0-9]/', $new_password)) {
+            $validation_errors['new_password'] = "Password must contain at least one number";
+        }
+        if (preg_match('/\s/', $new_password)) {
+            $validation_errors['new_password'] = "Password cannot contain spaces";
+        }
+    }
+
+    if (empty($confirm_password)) {
+        $validation_errors['confirm_password'] = "Please confirm your password";
+    } elseif ($new_password !== $confirm_password) {
+        $validation_errors['confirm_password'] = "Passwords do not match";
+    }
+
+    // ==================== STEP 4: VALIDATE SECRET QUESTION ====================
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 4: Validating secret question");
+    
     $question_map = [
         'mother_maiden_name' => "What is your mother's maiden name?",
         'first_pet' => "What was the name of your first pet?",
@@ -52,44 +153,28 @@ try {
         'favorite_place' => "What is your favorite place to visit?"
     ];
 
-    // Validation array
-    $validation_errors = [];
-
-    // === PASSWORD VALIDATION ===
-    if (empty($new_password)) {
-        $validation_errors['new_password'] = "New password is required";
-    } elseif (strlen($new_password) < 8) {
-        $validation_errors['new_password'] = "Password must be at least 8 characters long";
-    } elseif (!preg_match('/[A-Z]/', $new_password)) {
-        $validation_errors['new_password'] = "Password must contain at least one uppercase letter";
-    } elseif (!preg_match('/[a-z]/', $new_password)) {
-        $validation_errors['new_password'] = "Password must contain at least one lowercase letter";
-    } elseif (!preg_match('/[0-9]/', $new_password)) {
-        $validation_errors['new_password'] = "Password must contain at least one number";
-    }
-
-    if (empty($confirm_password)) {
-        $validation_errors['confirm_password'] = "Please confirm your password";
-    } elseif ($new_password !== $confirm_password) {
-        $validation_errors['confirm_password'] = "Passwords do not match";
-    }
-
-    // === SECRET QUESTION VALIDATION ===
     if (empty($secret_question_key)) {
         $validation_errors['secret_question'] = "Please select a secret question";
     } elseif (!array_key_exists($secret_question_key, $question_map)) {
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: Invalid secret question key: {$secret_question_key}");
         $validation_errors['secret_question'] = "Invalid secret question selected";
     }
 
-    // === SECRET ANSWER VALIDATION ===
+    // ==================== STEP 5: VALIDATE SECRET ANSWER ====================
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 5: Validating secret answer");
+    
     if (empty($secret_answer)) {
         $validation_errors['secret_answer'] = "Secret answer is required";
-    } elseif (strlen($secret_answer) < 8) {
-        $validation_errors['secret_answer'] = "Secret answer must be at least 8 characters long";
-    } elseif (trim($secret_answer) === '') {
-        $validation_errors['secret_answer'] = "Secret answer cannot be empty or contain only spaces";
-    } elseif (preg_match('/[<>"\'\\\\]/', $secret_answer)) {
-        $validation_errors['secret_answer'] = "Secret answer contains invalid characters";
+    } else {
+        if (strlen($secret_answer) < 8) {
+            $validation_errors['secret_answer'] = "Secret answer must be at least 8 characters long";
+        }
+        if (trim($secret_answer) === '') {
+            $validation_errors['secret_answer'] = "Secret answer cannot be empty or contain only spaces";
+        }
+        if (preg_match('/[<>"\'\\\\]/', $secret_answer)) {
+            $validation_errors['secret_answer'] = "Secret answer contains invalid characters";
+        }
     }
 
     if (empty($confirm_answer)) {
@@ -100,43 +185,54 @@ try {
 
     // If validation errors exist, return them
     if (!empty($validation_errors)) {
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Validation failed with " . count($validation_errors) . " errors");
+        foreach ($validation_errors as $field => $error) {
+            logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}]   - {$field}: {$error}");
+        }
         json_validation_error($validation_errors, "Validation failed");
     }
-
-    // Check if this is a first-time login (force password change)
-    // You should have a session variable or database flag for this
-    $needs_force_change = isset($_SESSION['needs_password_change']) && $_SESSION['needs_password_change'] === true;
     
-    if (!$needs_force_change) {
-        // If not forced, check if secret question is already set
-        $check_query = "SELECT secret_question, has_secret_set FROM clients WHERE client_code = ?";
-        $check_stmt = $conn->prepare($check_query);
-        $check_stmt->bind_param("s", $client_code);
-        $check_stmt->execute();
-        $check_result = $check_stmt->get_result();
-        $client_data = $check_result->fetch_assoc();
-        $check_stmt->close();
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] All validations passed");
 
-        if ($client_data && isset($client_data['has_secret_set']) && $client_data['has_secret_set'] == 1) {
-            json_error("Security details already set", 403, null, 'ALREADY_SET');
-        }
+    // ==================== STEP 6: GET CLIENT DATA ====================
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 6: Fetching client data");
+    
+    $client_query = "SELECT client_code, email, firstname, lastname FROM clients WHERE client_code = ? AND status = 1  LIMIT 1";
+    $client_stmt = $conn->prepare($client_query);
+    $client_stmt->bind_param("s", $user_id);
+    $client_stmt->execute();
+    $client_result = $client_stmt->get_result();
+    $client = $client_result->fetch_assoc();
+    $client_stmt->close();
+
+    if (!$client) {
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: Client not found: {$user_id}");
+        json_error("Client not found", 404);
     }
+    
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Client found: {$client['email']}");
 
-    // Get the actual question text
+    // ==================== STEP 7: GET ACTUAL QUESTION TEXT ====================
     $secret_question = $question_map[$secret_question_key];
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Secret question: {$secret_question}");
 
-    // Normalize and encrypt the secret answer
+    // ==================== STEP 8: HASH DATA ====================
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 8: Hashing sensitive data");
+    
     $normalized_answer = strtolower(trim($secret_answer));
-    $encrypted_answer = hashSecretAnswer($normalized_answer);
-
-    // Hash the new password
+    $encrypted_answer = password_hash($normalized_answer, PASSWORD_DEFAULT);
     $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
 
-    // Start transaction
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Password and secret answer hashed successfully");
+
+    // ==================== STEP 9: START TRANSACTION ====================
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 9: Starting database transaction");
     $conn->begin_transaction();
 
     try {
-        // Update clients table with password, secret question and answer
+        // ==================== STEP 10: UPDATE CLIENT ====================
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 10: Updating client record");
+        
         $update_query = "
             UPDATE clients 
             SET password = ?,
@@ -144,14 +240,16 @@ try {
                 secret_answer = ?,
                 password_changed = 1,
                 has_secret_set = 1,
+                last_updated_by = ?,
                 date_updated = NOW()
             WHERE client_code = ?
         ";
         
         $update_stmt = $conn->prepare($update_query);
-        $update_stmt->bind_param("ssss", $hashed_password, $secret_question, $encrypted_answer, $client_code);
+        $update_stmt->bind_param("sssss", $hashed_password, $secret_question, $encrypted_answer, $user_id, $user_id);
         
         if (!$update_stmt->execute()) {
+            logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: Failed to update client: " . $update_stmt->error);
             throw new Exception("Failed to update security details: " . $update_stmt->error);
         }
         
@@ -159,42 +257,76 @@ try {
         $update_stmt->close();
 
         if ($affected_rows === 0) {
+            logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR: No rows affected");
             throw new Exception("No changes made. Client not found.");
         }
-
-        // Commit transaction
-        $conn->commit();
-
-        // Clear the force password change flag from session
-        unset($_SESSION['needs_password_change']);
         
-        // Log the activity
-        logActivity("Password and secret question set for client: $client_code (First login)");
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Client updated successfully. Affected rows: {$affected_rows}");
 
-        // Create notification for security settings change
-        createSecurityNotification($conn, $client_code, 'security_details_updated');
+        // ==================== STEP 11: MARK TOKEN AS USED ====================
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 11: Marking token as used");
+        
+        $update_token_query = "
+            UPDATE temp_auth_tokens 
+            SET is_used = 1, used_at = NOW() 
+            WHERE id = ?
+        ";
+        $update_token_stmt = $conn->prepare($update_token_query);
+        $update_token_stmt->bind_param("i", $token_data['id']);
+        $update_token_stmt->execute();
+        $update_token_stmt->close();
+        
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Token marked as used");
 
-        // Invalidate all existing sessions (optional but recommended)
-        // You can implement session invalidation here if you have a session table
+        // ==================== STEP 12: CLEAN UP OLD TOKENS ====================
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 12: Cleaning up old tokens");
+        
+        $cleanup_query = "DELETE FROM temp_auth_tokens WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY)";
+        $conn->query($cleanup_query);
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Old tokens cleaned up");
 
-        // Return success response
+        // ==================== STEP 13: CREATE NOTIFICATION ====================
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Step 13: Creating notification");
+        createSecurityNotification($conn, $user_id, 'security_details_updated');
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Notification created");
+
+        // ==================== STEP 14: COMMIT ====================
+        $conn->commit();
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Transaction committed successfully");
+
+        // ==================== STEP 15: CLEAR SESSION TOKEN ====================
+        if (isset($_SESSION['temp_auth_token'][$user_id])) {
+            unset($_SESSION['temp_auth_token'][$user_id]);
+            logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Session token cleared");
+        }
+
+        // ==================== STEP 16: LOG ACTIVITY ====================
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Password and secret question set for client: {$user_id} (First login)");
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Client: {$client['firstname']} {$client['lastname']} ({$client['email']})");
+
+        // ==================== STEP 17: RETURN SUCCESS ====================
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ========== SUCCESS ==========");
+        
         json_success([
             'has_secret_set' => true,
             'password_changed' => true,
-            'secret_question' => $secret_question
+            'secret_question' => $secret_question,
+            'user_id' => $user_id,
+            'message' => 'Security details updated successfully. Please log in with your new credentials.'
         ], "Security details updated successfully. Please log in again.");
 
     } catch (Exception $e) {
-        // Rollback transaction on error
+        logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ERROR in transaction: " . $e->getMessage());
         $conn->rollback();
         throw $e;
     }
 
 } catch (Exception $e) {
-    logActivity("Error in change_default_password: " . $e->getMessage());
-    json_error($e->getMessage(), 500, null, 'SERVER_ERROR');
-}
-
-function hashSecretAnswer($answer) {
-    return password_hash(strtolower(trim($answer)), PASSWORD_DEFAULT);
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] ========== ERROR ==========");
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Error: " . $e->getMessage());
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Error Code: " . $e->getCode());
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Error File: " . $e->getFile());
+    logActivity("[CHANGE_DEFAULT_PW_CLIENT] [ID:{$requestId}] Error Line: " . $e->getLine());
+    
+    json_error($e->getMessage(), 500);
 }
