@@ -24,8 +24,8 @@ require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
- if (!isset($_SESSION)) session_start();
- rateLimiter();
+if (!isset($_SESSION)) session_start();
+rateLimiter();
 
 logActivity("========== STARTING TENANT ONBOARDING PROCESS ==========");
 
@@ -355,8 +355,8 @@ try {
     // 6. Insert tenant
     logActivity("Step 3.6: Preparing to insert tenant into database");
     // Calculate rent period end Date (1 year from start date)
-    $start_period= $inputs['lease_start_date'];
-    $end_period_date= new DateTime($start_period);
+    $start_period = $inputs['lease_start_date'];
+    $end_period_date = new DateTime($start_period);
     $end_period_date->modify('+1 year')->modify('-1 day');
     $end_period = $end_period_date->format('Y-m-d');
 
@@ -392,7 +392,6 @@ try {
         $inputs['employer_address'],
         $inputs['employer_contact'],
         $inputs['lease_start_date'],
-        // $inputs['lease_end_date'],
         $end_period,
         $inputs['lease_end_date'],
         $inputs['payment_frequency'],
@@ -429,16 +428,14 @@ try {
     logActivity("Apartment occupancy status updated to OCCUPIED");
 
     // When an apartment becomes OCCUPIED update the status on properties table
-$updatePropertyStmt = $conn->prepare("
-    UPDATE properties 
-    SET occupied_apartments = occupied_apartments + 1
-    WHERE property_code = ?
-");
-$updatePropertyStmt->bind_param("s", $inputs['property_code']);
-$updatePropertyStmt->execute();
-$updatePropertyStmt->close();
-
-
+    $updatePropertyStmt = $conn->prepare("
+        UPDATE properties 
+        SET occupied_apartments = occupied_apartments + 1
+        WHERE property_code = ?
+    ");
+    $updatePropertyStmt->bind_param("s", $inputs['property_code']);
+    $updatePropertyStmt->execute();
+    $updatePropertyStmt->close();
 
     // ==================== PAYMENT RECORDING ====================
     logActivity("Step 3.8: Recording payments");
@@ -526,10 +523,9 @@ $updatePropertyStmt->close();
 
     $payment_method = 'cash';
     $status = "";
-    if($inputs['payment_frequency'] == 'Annually'){
+    if ($inputs['payment_frequency'] == 'Annually') {
         $status = 'completed';
-    }
-    else{
+    } else {
         $status = 'ongoing';
     }
     $payment_type = 'rent';
@@ -565,181 +561,445 @@ $updatePropertyStmt->close();
 
     logActivity("Rent payment record inserted successfully. Rent Payment ID: {$rent_payment_id}");
 
+    // ==================== CREATE PAYMENT TRACKER RECORDS ====================
+    logActivity("Step 3.8b: Creating ALL payment tracker records for the entire lease period");
 
-// ==================== CREATE PAYMENT TRACKER RECORDS ====================
-logActivity("Step 3.8b: Creating ALL payment tracker records for the entire lease period");
+    // FIX: Use the FULL YEAR lease end date, not the input lease_end_date
+    $tracker_start_date = new DateTime($rent_period_start);  // 2026-05-02
+    $lease_full_end = new DateTime($rent_period_end);        // 2027-05-01 (calculated from +1 year)
+    $payment_frequency = $inputs['payment_frequency'];
 
-// FIX: Use the FULL YEAR lease end date, not the input lease_end_date
-$tracker_start_date = new DateTime($rent_period_start);  // 2026-05-02
-$lease_full_end = new DateTime($rent_period_end);        // 2027-05-01 (calculated from +1 year)
-$payment_frequency = $inputs['payment_frequency'];
+    logActivity("Tracker generation - Period from: {$tracker_start_date->format('Y-m-d')} to: {$lease_full_end->format('Y-m-d')}");
 
-logActivity("Tracker generation - Period from: {$tracker_start_date->format('Y-m-d')} to: {$lease_full_end->format('Y-m-d')}");
-
-// Calculate tracker intervals based on payment frequency
-$interval_months = 0;
-switch ($payment_frequency) {
-    case 'Monthly': $interval_months = 1; break;
-    case 'Quarterly': $interval_months = 3; break;
-    case 'Semi-Annually': $interval_months = 6; break;
-    case 'Annually': $interval_months = 12; break;
-    default: $interval_months = 1;
-}
-
-$tracker_count = 0;
-$period_number = 1;
-$remaining_balance = $annual_rent;
-
-// Prepare the insert statement for ALL periods (initially all 'available')
-$insert_tracker = $conn->prepare("
-    INSERT INTO rent_payment_tracker (
-        rent_payment_id,
-        tenant_code,
-        apartment_code,
-        period_number,
-        start_date,
-        end_date,
-        remaining_balance,
-        amount_paid,
-        payment_date,
-        status,
-        payment_id,
-        created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, 'available', ?, NOW())
-");
-
-if (!$insert_tracker) {
-    throw new Exception('Prepare failed for tracker insert: ' . $conn->error);
-}
-
-// Generate ALL periods from lease start to FULL YEAR lease end
-$current_start = clone $tracker_start_date;
-
-while ($current_start <= $lease_full_end) {
-    // Calculate period end date
-    $current_end = clone $current_start;
-    $current_end->modify("+{$interval_months} months");
-    $current_end->modify('-1 day');
-    
-    // Adjust if end date exceeds full lease end
-    if ($current_end > $lease_full_end) {
-        $current_end = clone $lease_full_end;
+    // Calculate tracker intervals based on payment frequency
+    $interval_months = 0;
+    switch ($payment_frequency) {
+        case 'Monthly':
+            $interval_months = 1;
+            break;
+        case 'Quarterly':
+            $interval_months = 3;
+            break;
+        case 'Semi-Annually':
+            $interval_months = 6;
+            break;
+        case 'Annually':
+            $interval_months = 12;
+            break;
+        default:
+            $interval_months = 1;
     }
-    
-    $period_start_formatted = $current_start->format('Y-m-d');
-    $period_end_formatted = $current_end->format('Y-m-d');
-    
-    // Generate UNIQUE payment_id for this tracker record
-    $tracker_payment_id = 'TRAK_' . strtoupper(uniqid()) . '_' . $period_number;
-    
-    logActivity("Creating tracker record #{$period_number}: {$period_start_formatted} to {$period_end_formatted} with status 'available'");
-    logActivity("Generated payment_id: {$tracker_payment_id}");
-    
-    $insert_tracker->bind_param(
-        "sssissds",
-        $rent_payment_id,
-        $tenant_code,
-        $inputs['apartment_code'],
-        $period_number,
-        $period_start_formatted,
-        $period_end_formatted,
-        $remaining_balance,
-        $tracker_payment_id
-    );
-    
-    if (!$insert_tracker->execute()) {
-        logActivity("Warning: Failed to insert tracker record for period {$period_number}: " . $insert_tracker->error);
-    } else {
-        logActivity("Tracker record #{$period_number} created successfully with payment_id: {$tracker_payment_id}");
-        $tracker_count++;
-    }
-    
-    // Update remaining balance for next period
-    $remaining_balance -= $payment_amount_per_period;
-    
-    // Move to next period
-    $current_start = clone $current_end;
-    $current_start->modify('+1 day');
-    $period_number++;
-    
-    // Safety break to prevent infinite loop
-    if ($period_number > 100) break;
-}
 
-$insert_tracker->close();
-logActivity("Created {$tracker_count} payment tracker records for the entire lease period");
-// ==================== UPDATE FIRST PERIOD TO 'PAID' ====================
-logActivity("Step 3.8c: Updating first period to 'paid' status (onboarding payment)");
+    $tracker_count = 0;
+    $period_number = 1;
+    $remaining_balance = $annual_rent;
 
-// First, get the payment_id of the first period
-$get_first_payment_id = $conn->prepare("
-    SELECT payment_id FROM rent_payment_tracker 
-    WHERE rent_payment_id = ? AND period_number = 1
-");
-$get_first_payment_id->bind_param("s", $rent_payment_id);
-$get_first_payment_id->execute();
-$first_result = $get_first_payment_id->get_result();
-$first_tracker = $first_result->fetch_assoc();
-$get_first_payment_id->close();
-
-if ($first_tracker) {
-    $first_payment_id = $first_tracker['payment_id'];
-    $action = "APPROVED FIRST RENT PAYMENT";
-    $notes = "New Tenant First Rent Payment at Onboarding";
-    
-    $update_first_tracker = $conn->prepare("
-        UPDATE rent_payment_tracker 
-        SET status = 'paid', 
-            payment_date = NOW(),
-            verified_by = ?,
-            verified_at = NOW(),
-            admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[" . strtoupper($action) . "] ', NOW(), ' by Admin ID: {$userId}\nNotes: {$notes}'),
-            amount_paid = ?,
-            payment_method = 'cash',
-            payment_reference = ?
-        WHERE rent_payment_id = ? 
-        AND period_number = 1
-        LIMIT 1
+    // Prepare the insert statement for ALL periods (initially all 'available')
+    $insert_tracker = $conn->prepare("
+        INSERT INTO rent_payment_tracker (
+            rent_payment_id,
+            tenant_code,
+            apartment_code,
+            period_number,
+            start_date,
+            end_date,
+            remaining_balance,
+            amount_paid,
+            payment_date,
+            status,
+            payment_id,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, 'available', ?, NOW())
     ");
-    
-    if (!$update_first_tracker) {
-        throw new Exception('Prepare failed for first period update: ' . $conn->error);
+
+    if (!$insert_tracker) {
+        throw new Exception('Prepare failed for tracker insert: ' . $conn->error);
     }
-    
-    $update_first_tracker->bind_param("sdss", $userId, $payment_amount_per_period, $reference_number, $rent_payment_id);
-    $update_first_tracker->execute();
-    
-    if ($update_first_tracker->affected_rows > 0) {
-        logActivity("First payment period (#1) marked as 'paid' with payment_id: {$first_payment_id}");
-        logActivity("Amount paid: ₦{$payment_amount_per_period}, Reference: {$reference_number}");
+
+    // Generate ALL periods from lease start to FULL YEAR lease end
+    $current_start = clone $tracker_start_date;
+
+    while ($current_start <= $lease_full_end) {
+        // Calculate period end date
+        $current_end = clone $current_start;
+        $current_end->modify("+{$interval_months} months");
+        $current_end->modify('-1 day');
+
+        // Adjust if end date exceeds full lease end
+        if ($current_end > $lease_full_end) {
+            $current_end = clone $lease_full_end;
+        }
+
+        $period_start_formatted = $current_start->format('Y-m-d');
+        $period_end_formatted = $current_end->format('Y-m-d');
+
+        // Generate UNIQUE payment_id for this tracker record
+        $tracker_payment_id = 'TRAK_' . strtoupper(uniqid()) . '_' . $period_number;
+
+        logActivity("Creating tracker record #{$period_number}: {$period_start_formatted} to {$period_end_formatted} with status 'available'");
+        logActivity("Generated payment_id: {$tracker_payment_id}");
+
+        $insert_tracker->bind_param(
+            "sssissds",
+            $rent_payment_id,
+            $tenant_code,
+            $inputs['apartment_code'],
+            $period_number,
+            $period_start_formatted,
+            $period_end_formatted,
+            $remaining_balance,
+            $tracker_payment_id
+        );
+
+        if (!$insert_tracker->execute()) {
+            logActivity("Warning: Failed to insert tracker record for period {$period_number}: " . $insert_tracker->error);
+        } else {
+            logActivity("Tracker record #{$period_number} created successfully with payment_id: {$tracker_payment_id}");
+            $tracker_count++;
+        }
+
+        // Update remaining balance for next period
+        $remaining_balance -= $payment_amount_per_period;
+
+        // Move to next period
+        $current_start = clone $current_end;
+        $current_start->modify('+1 day');
+        $period_number++;
+
+        // Safety break to prevent infinite loop
+        if ($period_number > 100) break;
+    }
+
+    $insert_tracker->close();
+    logActivity("Created {$tracker_count} payment tracker records for the entire lease period");
+
+    // ==================== UPDATE FIRST PERIOD TO 'PAID' ====================
+    logActivity("Step 3.8c: Updating first period to 'paid' status (onboarding payment)");
+
+    // First, get the payment_id of the first period
+    $get_first_payment_id = $conn->prepare("
+        SELECT payment_id FROM rent_payment_tracker 
+        WHERE rent_payment_id = ? AND period_number = 1
+    ");
+    $get_first_payment_id->bind_param("s", $rent_payment_id);
+    $get_first_payment_id->execute();
+    $first_result = $get_first_payment_id->get_result();
+    $first_tracker = $first_result->fetch_assoc();
+    $get_first_payment_id->close();
+
+    if ($first_tracker) {
+        $first_payment_id = $first_tracker['payment_id'];
+        $action = "APPROVED FIRST RENT PAYMENT";
+        $notes = "New Tenant First Rent Payment at Onboarding";
+
+        $update_first_tracker = $conn->prepare("
+            UPDATE rent_payment_tracker 
+            SET status = 'paid', 
+                payment_date = NOW(),
+                verified_by = ?,
+                verified_at = NOW(),
+                admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[" . strtoupper($action) . "] ', NOW(), ' by Admin ID: {$userId}\nNotes: {$notes}'),
+                amount_paid = ?,
+                payment_method = 'cash',
+                payment_reference = ?
+            WHERE rent_payment_id = ? 
+            AND period_number = 1
+            LIMIT 1
+        ");
+
+        if (!$update_first_tracker) {
+            throw new Exception('Prepare failed for first period update: ' . $conn->error);
+        }
+
+        $update_first_tracker->bind_param("sdss", $userId, $payment_amount_per_period, $reference_number, $rent_payment_id);
+        $update_first_tracker->execute();
+
+        if ($update_first_tracker->affected_rows > 0) {
+            logActivity("First payment period (#1) marked as 'paid' with payment_id: {$first_payment_id}");
+            logActivity("Amount paid: ₦{$payment_amount_per_period}, Reference: {$reference_number}");
+
+            // ==================== SETTLEMENT PROCESSING FOR FIRST PAYMENT ====================
+            logActivity("Step 3.8d: Processing settlement for first rent payment");
+
+            try {
+                // Get property details and settlement formula
+                $propertyQuery = "
+                    SELECT 
+                        p.id AS property_id,
+                        p.property_code,
+                        p.client_code,
+                        NULLIF(p.agent_code, '') AS agent_code,
+                        COALESCE(s.admin_percentage, 10.00) AS admin_percentage,
+                        COALESCE(s.agent_percentage, 5.00) AS agent_percentage,
+                        COALESCE(s.client_percentage, 85.00) AS client_percentage
+                    FROM properties p
+                    LEFT JOIN property_settlement s ON p.id = s.property_id
+                    WHERE p.property_code = ? AND p.status = '1'
+                    LIMIT 1
+                ";
+
+                $propertyStmt = $conn->prepare($propertyQuery);
+                if ($propertyStmt) {
+                    $propertyStmt->bind_param("s", $inputs['property_code']);
+                    $propertyStmt->execute();
+                    $property = $propertyStmt->get_result()->fetch_assoc();
+                    $propertyStmt->close();
+                } else {
+                    logActivity("Failed to prepare property query: " . $conn->error);
+                    throw new Exception("Database error occurred");
+                }
+
+                if (!$property) {
+                    logActivity("Property not found for settlement: {$inputs['property_code']}");
+                    throw new Exception("Property not found for settlement");
+                }
+
+                logActivity("Property found for settlement: " . json_encode([
+                    'property_id' => $property['property_id'],
+                    'property_code' => $property['property_code'],
+                    'admin_pct' => $property['admin_percentage'],
+                    'agent_pct' => $property['agent_percentage'],
+                    'client_pct' => $property['client_percentage']
+                ]));
+
+                // Calculate shares
+                $periodAmount = $payment_amount_per_period;
+                $adminShare = round($periodAmount * ($property['admin_percentage'] / 100), 2);
+                $agentShare = round($periodAmount * ($property['agent_percentage'] / 100), 2);
+                $clientShare = round($periodAmount * ($property['client_percentage'] / 100), 2);
+
+                // Handle rounding differences
+                $totalShares = $adminShare + $agentShare + $clientShare;
+                if (abs($totalShares - $periodAmount) > 0.01) {
+                    $difference = round($periodAmount - $totalShares, 2);
+                    $clientShare += $difference;
+                    logActivity("Rounding adjustment: $difference added to client share");
+                }
+
+                logActivity("Settlement shares calculated: " . json_encode([
+                    'period_amount' => $periodAmount,
+                    'admin_share' => $adminShare,
+                    'agent_share' => $agentShare,
+                    'client_share' => $clientShare
+                ]));
+
+                // Get payment ID from rent_payments
+                $paymentId = 0;
+                $paymentIdQuery = "SELECT payment_id FROM rent_payments WHERE rent_payment_id = ? LIMIT 1";
+                $paymentIdStmt = $conn->prepare($paymentIdQuery);
+                if ($paymentIdStmt) {
+                    $paymentIdStmt->bind_param("s", $rent_payment_id);
+                    $paymentIdStmt->execute();
+                    $paymentIdResult = $paymentIdStmt->get_result();
+                    $paymentIdRow = $paymentIdResult->fetch_assoc();
+                    $paymentIdStmt->close();
+                    if ($paymentIdRow) {
+                        $paymentId = (int) $paymentIdRow['payment_id'];
+                    }
+                }
+
+                if ($paymentId <= 0) {
+                    logActivity("Invalid payment_id for settlement");
+                    throw new Exception("Unable to find valid payment record");
+                }
+
+                // Insert settlement transaction
+                $settlementQuery = "
+                    INSERT INTO settlement_transactions 
+                    (
+                        payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
+                        agent_code, client_code, total_rent_amount, admin_share, agent_share,
+                        client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
+                        settlement_status, rent_payment_date, settlement_date, processed_by, notes,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW(), NOW())
+                ";
+
+                $settlementStmt = $conn->prepare($settlementQuery);
+                if (!$settlementStmt) {
+                    logActivity("Failed to prepare settlement insert: " . $conn->error);
+                    throw new Exception("Database error occurred");
+                }
+
+                $settlementStatus = 'completed';
+                $rentPaymentDate = date('Y-m-d H:i:s');
+                $settlementNotes = "Auto-created from first payment during tenant onboarding";
+                $tenantId = (int) $new_tenant_id;
+                $propertyId = (int) $property['property_id'];
+                $agentCode = $property['agent_code'] ?: null;
+                $processedBy = (string) $userId;
+
+                // Get tracker_id from the first tracker record
+                $trackerId = 0;
+                $trackerIdQuery = "SELECT tracker_id FROM rent_payment_tracker WHERE rent_payment_id = ? AND period_number = 1 LIMIT 1";
+                $trackerIdStmt = $conn->prepare($trackerIdQuery);
+                if ($trackerIdStmt) {
+                    $trackerIdStmt->bind_param("s", $rent_payment_id);
+                    $trackerIdStmt->execute();
+                    $trackerIdResult = $trackerIdStmt->get_result();
+                    $trackerIdRow = $trackerIdResult->fetch_assoc();
+                    $trackerIdStmt->close();
+                    if ($trackerIdRow) {
+                        $trackerId = (int) $trackerIdRow['tracker_id'];
+                    }
+                }
+
+                if ($trackerId <= 0) {
+                    logActivity("Invalid tracker_id for settlement");
+                    throw new Exception("Unable to find valid tracker record");
+                }
+
+                logActivity("Settlement insert params: " . json_encode([
+                    'payment_id' => $paymentId,
+                    'tracker_id' => $trackerId,
+                    'rent_payment_id' => $rent_payment_id,
+                    'property_id' => $propertyId,
+                    'tenant_id' => $tenantId,
+                    'agent_code' => $agentCode,
+                    'client_code' => $property['client_code'],
+                    'total_rent_amount' => $periodAmount,
+                    'admin_share' => $adminShare,
+                    'agent_share' => $agentShare,
+                    'client_share' => $clientShare,
+                    'admin_percentage_used' => $property['admin_percentage'],
+                    'agent_percentage_used' => $property['agent_percentage'],
+                    'client_percentage_used' => $property['client_percentage']
+                ]));
+
+                // 18 placeholders -> 18 variables
+                $settlementStmt->bind_param(
+                    "iisiiissddddddssss",
+                    $paymentId,
+                    $trackerId,
+                    $rent_payment_id,
+                    $propertyId,
+                    $tenantId,
+                    $agentCode,
+                    $property['client_code'],
+                    $periodAmount,
+                    $adminShare,
+                    $agentShare,
+                    $clientShare,
+                    $property['admin_percentage'],
+                    $property['agent_percentage'],
+                    $property['client_percentage'],
+                    $settlementStatus,
+                    $rentPaymentDate,
+                    $processedBy,
+                    $settlementNotes
+                );
+
+                if (!$settlementStmt->execute()) {
+                    logActivity("Settlement insert failed: " . $settlementStmt->error);
+                    throw new Exception("Failed to create settlement record");
+                }
+
+                $settlementId = $settlementStmt->insert_id;
+                $settlementStmt->close();
+
+                logActivity("Settlement created for first payment - ID: $settlementId, Tracker: $trackerId");
+
+                // ==================== UPDATE BALANCES ====================
+
+                // Update admin balance
+                if ($adminShare > 0) {
+                    $updateAdminQuery = "
+                        UPDATE admin_tbl 
+                        SET settlement_balance = COALESCE(settlement_balance, 0) + ?,
+                            total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                            last_settlement_date = NOW()
+                        WHERE unique_id = ?
+                    ";
+                    $updateAdminStmt = $conn->prepare($updateAdminQuery);
+                    if ($updateAdminStmt) {
+                        $updateAdminStmt->bind_param("dds", $adminShare, $adminShare, $userId);
+                        $updateAdminStmt->execute();
+                        $updateAdminStmt->close();
+                        logActivity("Admin balance updated: +$adminShare");
+                    } else {
+                        logActivity("Warning: Could not update admin balance");
+                    }
+                }
+
+                // Update client balance
+                if ($clientShare > 0) {
+                    $updateClientQuery = "
+                        UPDATE clients 
+                        SET settlement_balance = COALESCE(settlement_balance, 0) + ?,
+                            total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                            last_settlement_date = NOW()
+                        WHERE client_code = ?
+                    ";
+                    $updateClientStmt = $conn->prepare($updateClientQuery);
+                    if ($updateClientStmt) {
+                        $updateClientStmt->bind_param("dds", $clientShare, $clientShare, $property['client_code']);
+                        $updateClientStmt->execute();
+                        $updateClientStmt->close();
+                        logActivity("Client balance updated: +$clientShare");
+                    } else {
+                        logActivity("Warning: Could not update client balance");
+                    }
+                }
+
+                // Update agent balance (if agent exists)
+                if (!empty($property['agent_code']) && $agentShare > 0) {
+                    $updateAgentQuery = "
+                        UPDATE agents 
+                        SET settlement_balance = COALESCE(settlement_balance, 0) + ?,
+                            total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                            last_settlement_date = NOW()
+                        WHERE agent_code = ?
+                    ";
+                    $updateAgentStmt = $conn->prepare($updateAgentQuery);
+                    if ($updateAgentStmt) {
+                        $updateAgentStmt->bind_param("dds", $agentShare, $agentShare, $property['agent_code']);
+                        $updateAgentStmt->execute();
+                        $updateAgentStmt->close();
+                        logActivity("Agent balance updated: +$agentShare");
+                    } else {
+                        logActivity("Warning: Could not update agent balance");
+                    }
+                }
+
+                logActivity("Settlement completed for first payment - ID: $settlementId");
+
+            } catch (Exception $settlementError) {
+                logActivity("SETTLEMENT ERROR (First Payment): " . $settlementError->getMessage());
+                // Note: We don't throw here because the tenant onboarding shouldn't fail if settlement fails
+                // We just log the error and continue
+                logActivity("WARNING: Settlement processing failed but tenant onboarding continues");
+            }
+            // ==================== END SETTLEMENT PROCESSING ====================
+
+        } else {
+            logActivity("WARNING: Could not update first period - it may not exist or already paid");
+        }
+        $update_first_tracker->close();
     } else {
-        logActivity("WARNING: Could not update first period - it may not exist or already paid");
+        logActivity("ERROR: Could not find first period tracker record");
     }
-    $update_first_tracker->close();
-} else {
-    logActivity("ERROR: Could not find first period tracker record");
-}
 
-// ==================== VERIFY TRACKER RECORDS ====================
-$verify_tracker = $conn->prepare("
-    SELECT period_number, start_date, end_date, status, amount_paid, payment_id, payment_date
-    FROM rent_payment_tracker 
-    WHERE rent_payment_id = ? 
-    ORDER BY period_number
-");
-$verify_tracker->bind_param("s", $rent_payment_id);
-$verify_tracker->execute();
-$verify_result = $verify_tracker->get_result();
+    // ==================== VERIFY TRACKER RECORDS ====================
+    $verify_tracker = $conn->prepare("
+        SELECT period_number, start_date, end_date, status, amount_paid, payment_id, payment_date
+        FROM rent_payment_tracker 
+        WHERE rent_payment_id = ? 
+        ORDER BY period_number
+    ");
+    $verify_tracker->bind_param("s", $rent_payment_id);
+    $verify_tracker->execute();
+    $verify_result = $verify_tracker->get_result();
 
-logActivity("=== TRACKER RECORDS VERIFICATION ===");
-while ($row = $verify_result->fetch_assoc()) {
-    logActivity("Period #{$row['period_number']}: {$row['start_date']} to {$row['end_date']} | Status: {$row['status']} | Payment ID: {$row['payment_id']} | Amount Paid: {$row['amount_paid']} | Payment Date: {$row['payment_date']}");
-}
-$verify_tracker->close();
+    logActivity("=== TRACKER RECORDS VERIFICATION ===");
+    while ($row = $verify_result->fetch_assoc()) {
+        logActivity("Period #{$row['period_number']}: {$row['start_date']} to {$row['end_date']} | Status: {$row['status']} | Payment ID: {$row['payment_id']} | Amount Paid: {$row['amount_paid']} | Payment Date: {$row['payment_date']}");
+    }
+    $verify_tracker->close();
 
     // ==================== RECORD SECURITY DEPOSIT IN PAYMENTS TABLE ====================
     if ($security_deposit > 0) {
-        logActivity("Step 3.8c: Recording security deposit payment of ₦{$security_deposit}");
+        logActivity("Step 3.8e: Recording security deposit payment of ₦{$security_deposit}");
 
         $deposit_description = "Security Deposit for apartment {$inputs['apartment_code']}";
         $payment_category = 'security_deposit';
@@ -797,9 +1057,8 @@ $verify_tracker->close();
     }
 
     // ==================== UPDATE TENANT WITH AGREED RENT INFORMATION ====================
-    logActivity("Step 3.8d: Updating tenant with agreed rent information");
+    logActivity("Step 3.8f: Updating tenant with agreed rent information");
 
-    // FIXED: Added agreed_payment_frequency to the UPDATE statement
     $update_tenant = $conn->prepare("
         UPDATE tenants 
         SET agreed_rent_amount = ?,

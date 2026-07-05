@@ -53,6 +53,10 @@
                     <i class="fas fa-credit-card"></i>
                     <span>Rent Payments</span>
                 </a>
+                <a href="settlement.php" class="nav-item" data-page="settlement">
+                    <i class="fas fa-handshake"></i>
+                    <span>Settlements</span>
+                </a>
                 <a href="fees.php" class="nav-item" data-page="fees">
                     <i class="fas fa-money"></i>
                     <span>Manage Fees</span>

@@ -103,6 +103,10 @@ function renderPaymentsPage() {
             <i class="fas fa-credit-card"></i>
             <span>View All Payments</span>
         </a>
+        <a href="settlement.php" class="dashboard-action">
+            <i class="fas fa-credit-card"></i>
+            <span>View Settlements</span>
+        </a>
         </div>
         
         ${renderPaymentsTable()}

@@ -76,6 +76,9 @@
                             <a href="client.php" class="dropdown-item">
                                 <i class="fas fa-users"></i> Clients
                             </a>
+                            <a href="settlement.php" class="dropdown-item">
+                                <i class="fas fa-users"></i> Settlement Settings
+                            </a>
                         </div>
                         
                         <div class="dropdown-column">
@@ -230,6 +233,9 @@
                                 </a>
                                 <a href="client.php" class="mobile-nav-link sub">
                                     <i class="fas fa-users"></i> Clients
+                                </a>
+                                <a href="settlement.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-users"></i> Settlement Settings
                                 </a>
                             </div>
 

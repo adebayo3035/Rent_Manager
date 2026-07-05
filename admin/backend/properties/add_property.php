@@ -369,34 +369,25 @@ try {
         $stmt->close();
         logActivity("Property inserted successfully. ID: {$newPropertyId}, Code: {$property_code}");
 
-        // ------------------------- CREATE AUDIT TRAIL -------------------------
-        // $auditSql = "INSERT INTO property_audit_log 
-        //     (property_code, action, performed_by, details, ip_address, user_agent)
-        //     VALUES (?, 'CREATE', ?, ?, ?, ?)";
-        
-        // $auditStmt = $conn->prepare($auditSql);
-        // if ($auditStmt) {
-        //     $details = json_encode([
-        //         'property_name' => $inputs['property_name'],
-        //         'property_type_id' => $property_type_id,
-        //         'units' => $property_type_unit,
-        //         'agent_code' => $inputs['agent_code'],
-        //         'client_code' => $inputs['client_code']
-        //     ]);
-        //     $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        //     $userAgent = substr($_SERVER['HTTP_USER_AGENT'] ?? 'unknown', 0, 255);
-            
-        //     $auditStmt->bind_param('sssss', 
-        //         $property_code, 
-        //         $created_by, 
-        //         $details, 
-        //         $ipAddress, 
-        //         $userAgent
-        //     );
-        //     $auditStmt->execute();
-        //     $auditStmt->close();
-        //     logActivity("Audit log created for property {$property_code}");
-        // }
+        // ------------------------- INSERT SETTLEMENT FORMULA -------------------------
+// Default percentages - admin can change these later
+$default_admin_pct = 10.00;
+$default_agent_pct = 5.00;
+$default_client_pct = 85.00;
+
+$settlement_sql = "
+    INSERT INTO property_settlement 
+    (property_id, admin_percentage, agent_percentage, client_percentage, updated_by)
+    VALUES (?, ?, ?, ?, ?)
+";
+
+$settlement_stmt = $conn->prepare($settlement_sql);
+$settlement_stmt->bind_param("iddds", $newPropertyId, $default_admin_pct, $default_agent_pct, $default_client_pct, $created_by);
+$settlement_stmt->execute();
+$settlement_stmt->close();
+
+logActivity("Settlement formula added for property ID: {$newPropertyId}");
+
 
         // ------------------------- COMMIT TRANSACTION -------------------------
         $conn->commit();
@@ -411,14 +402,19 @@ try {
         consumeCsrfToken(CSRF_FORM_NAME);
 
         // ------------------------- SUCCESS RESPONSE -------------------------
-        $response = [
-            'success' => true,
-            'message' => 'Property onboarded successfully!',
-            'property_code' => $property_code,
-            'property_id' => $newPropertyId,
-            'photo_url' => '/property_photos/' . $file_name,
-            'timestamp' => date('Y-m-d H:i:s')
-        ];
+       $response = [
+    'success' => true,
+    'message' => 'Property onboarded successfully!',
+    'property_code' => $property_code,
+    'property_id' => $newPropertyId,
+    'photo_url' => '/property_photos/' . $file_name,
+    'settlement' => [
+        'admin' => $default_admin_pct . '%',
+        'agent' => $default_agent_pct . '%',
+        'client' => $default_client_pct . '%'
+    ],
+    'timestamp' => date('Y-m-d H:i:s')
+];
         
         echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
         
