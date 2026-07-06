@@ -150,6 +150,20 @@ body {
     gap: 8px;
     transition: all 0.3s ease;
 }
+.btn-unlock{
+    padding: 5px 10px;
+    border: none;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 400;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+    background-color: #ff3742;
+    color: #fff;
+}
 
 .btn-primary {
     background: #667eea;

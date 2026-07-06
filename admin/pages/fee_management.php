@@ -8,8 +8,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../../styles.css">
     <link rel="stylesheet" href="../css/fee_management.css">
+    <link rel="stylesheet" href="../../ui.css">
+    
 
 </head>
 <?php include('navbar.php'); ?>
@@ -230,7 +231,7 @@
         </div>
     </div>
 
-    <!-- UI Library -->
+    <!-- UI Framework Containers -->
     <div id="toastContainer"></div>
 
     <div id="alertModal" class="ui-modal">
@@ -255,7 +256,7 @@
     <div id="uiLoaderOverlay">
         <div class="ui-loader"></div>
     </div>
-    <script src="../scripts/main.js"></script>
+    <!-- <script src="../scripts/main.js"></script> -->
     <script src="../../ui.js"></script>
     <script src="../../validator.js"></script>
 

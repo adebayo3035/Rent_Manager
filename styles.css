@@ -193,7 +193,7 @@ th, td {
 }
 
 th {
-    background: linear-gradient(135deg, var(--dark) 0%, #334155 100%);
+    /* background: linear-gradient(135deg, var(--dark) 0%, #334155 100%); */
     color: white;
     font-weight: 600;
     font-size: 14px;

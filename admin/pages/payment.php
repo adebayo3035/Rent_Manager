@@ -6,7 +6,7 @@
     <title>Payment Management | RentFlow Pro</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-     <link rel="stylesheet" href="../../styles.css">
+     <link rel="stylesheet" href="../../ui.css">
     <link rel="stylesheet" href="../css/payment.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>

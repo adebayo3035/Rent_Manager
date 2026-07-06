@@ -30,7 +30,11 @@ async function loadProperties() {
             properties = data.message;
             renderTable(properties);
             updateRowCount(properties.length);
-        } else {
+        } 
+        else if(data.responseCode = "403"){
+            window.location.replace("../pages/unauthorized.php")
+        }
+        else {
             showToast(data.data || 'Failed to load properties', 'error');
             tbody.innerHTML = `
                 <tr>

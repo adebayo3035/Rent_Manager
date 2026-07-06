@@ -1,0 +1,205 @@
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ==================== UNAUTHORIZED PAGE ==================== */
+        .unauthorized-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            margin-top: 70px; /* Space for navbar */
+        }
+
+        .unauthorized-container {
+            max-width: 520px;
+            width: 100%;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 50px 40px 40px;
+            text-align: center;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+            border: 1px solid #eef2f7;
+            animation: fadeInUp 0.5s ease;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ==================== ICON ==================== */
+        .unauthorized-icon {
+            width: 88px;
+            height: 88px;
+            border-radius: 50%;
+            background: #fef2f2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            border: 6px solid #fee2e2;
+        }
+
+        .unauthorized-icon i {
+            font-size: 40px;
+            color: #dc2626;
+        }
+
+        /* ==================== HEADING ==================== */
+        .unauthorized-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1f36;
+            margin-bottom: 8px;
+        }
+
+        .unauthorized-subtitle {
+            font-size: 15px;
+            color: #64748b;
+            margin-bottom: 6px;
+            line-height: 1.6;
+        }
+
+        .unauthorized-code {
+            font-size: 13px;
+            color: #94a3b8;
+            background: #f8fafc;
+            display: inline-block;
+            padding: 2px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+            margin-bottom: 24px;
+        }
+
+        /* ==================== DIVIDER ==================== */
+        .unauthorized-divider {
+            height: 1px;
+            background: #eef2f7;
+            margin: 20px 0 24px;
+        }
+
+        /* ==================== SUGGESTIONS ==================== */
+        .unauthorized-suggestions {
+            text-align: left;
+            margin-bottom: 28px;
+        }
+
+        .unauthorized-suggestions p {
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a1f36;
+            margin-bottom: 10px;
+        }
+
+        .unauthorized-suggestions ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .unauthorized-suggestions ul li {
+            font-size: 14px;
+            color: #475569;
+            padding: 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .unauthorized-suggestions ul li i {
+            width: 20px;
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        /* ==================== BUTTON ==================== */
+        .unauthorized-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 12px 32px;
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .unauthorized-btn:hover {
+            background: #1d4ed8;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.25);
+        }
+
+        .unauthorized-btn i {
+            font-size: 16px;
+        }
+
+        /* ==================== SECONDARY ACTION ==================== */
+        .unauthorized-secondary {
+            margin-top: 16px;
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        .unauthorized-secondary a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .unauthorized-secondary a:hover {
+            text-decoration: underline;
+        }
+
+        /* ==================== RESPONSIVE ==================== */
+        @media (max-width: 480px) {
+            .unauthorized-container {
+                padding: 32px 20px 28px;
+                margin: 0 12px;
+            }
+
+            .unauthorized-title {
+                font-size: 22px;
+            }
+
+            .unauthorized-icon {
+                width: 72px;
+                height: 72px;
+            }
+
+            .unauthorized-icon i {
+                font-size: 32px;
+            }
+
+            .unauthorized-btn {
+                font-size: 14px;
+                padding: 10px 24px;
+            }
+        }

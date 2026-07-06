@@ -6,6 +6,7 @@
     <title>RentFlow Pro | Management Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../../ui.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* Dashboard CSS will be included below */
@@ -253,6 +254,56 @@
             </div>
         </div>
     </div>
+
+     <!-- UI Framework Containers -->
+    <div id="toastContainer"></div>
+
+    <div id="alertModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="alertTitle">Alert</h3>
+            <p id="alertMessage"></p>
+            <button id="alertOkBtn">OK</button>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="ui-modal">
+        <div class="ui-modal-content">
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage"></p>
+            <div class="ui-modal-buttons">
+                <button id="confirmCancelBtn">Cancel</button>
+                <button id="confirmOkBtn">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="uiLoaderOverlay">
+        <div class="ui-loader"></div>
+    </div>
+
+    <!-- Custom Confirm Modal -->
+    <!-- <div id="customConfirmModal" class="custom-modal">
+        <div class="custom-modal-content">
+            <div class="custom-modal-header">
+                <h3 id="confirmTitle">Confirm Action</h3>
+                <button class="custom-modal-close" onclick="closeConfirmModal()">&times;</button>
+            </div>
+            <div class="custom-modal-body">
+                <p id="confirmMessage">Are you sure?</p>
+            </div>
+            <div class="custom-modal-footer">
+                <button class="custom-btn-cancel" id="confirmCancelBtn">Cancel</button>
+                <button class="custom-btn-confirm" id="confirmConfirmBtn">Confirm</button>
+            </div>
+        </div>
+    </div> -->
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
+
+    <!-- JavaScript -->
+      <script src="../scripts/main.js"></script>
+    <script src="../../ui.js"></script>
+    <script src="../../validator.js"></script>
 
     <script src = "../scripts/dashboard.js"></script>
 </body>
