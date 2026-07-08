@@ -92,7 +92,7 @@ try {
 
         $fee_query = "
             SELECT tf.*, ft.fee_name, ft.fee_code, ft.is_recurring, ft.recurrence_period,
-                   a.apartment_number, a.apartment_code, p.name as property_name
+                   a.apartment_number, a.apartment_code, a.apartment_type_id, p.name as property_name, p.property_code
             FROM tenant_fees tf
             JOIN fee_types ft ON tf.fee_type_id = ft.fee_type_id
             JOIN apartments a ON tf.apartment_code = a.apartment_code
@@ -120,6 +120,9 @@ try {
         logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - status: {$fee['status']}");
         logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - due_date: {$fee['due_date']}");
         logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - is_recurring: " . ($fee['is_recurring'] ? 'Yes' : 'No'));
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - property_code: {$fee['property_code']}");
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - apartment_type_id: {$fee['apartment_type_id']}");
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - fee_type_id: {$fee['fee_type_id']}");
 
         if ($fee['status'] === 'paid') {
             logActivity("[FEE_PAYMENT] [ID:{$requestId}] ERROR: Fee already paid - Status: {$fee['status']}");
@@ -127,9 +130,50 @@ try {
         }
         logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 8.3 - Fee status verified: not paid");
 
+        // ==================== STEP 8.4: CHECK IF FEE IS ACTIVE IN PROPERTY CONFIG ====================
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 8.4: Checking if fee is active in property_apartment_type_fees");
+
+        $active_fee_query = "
+            SELECT fee_id, is_active, amount as configured_amount
+            FROM property_apartment_type_fees 
+            WHERE property_code = ? 
+            AND apartment_type_id = ? 
+            AND fee_type_id = ?
+            AND is_active = 1
+            LIMIT 1
+        ";
+
+        $active_stmt = $conn->prepare($active_fee_query);
+        $active_stmt->bind_param("sii", $fee['property_code'], $fee['apartment_type_id'], $fee['fee_type_id']);
+        $active_stmt->execute();
+        $active_result = $active_stmt->get_result();
+        $active_fee = $active_result->fetch_assoc();
+        $active_stmt->close();
+
+        if (!$active_fee) {
+            logActivity("[FEE_PAYMENT] [ID:{$requestId}] ERROR: Fee type is not active for this property/apartment type");
+            logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - property_code: {$fee['property_code']}");
+            logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - apartment_type_id: {$fee['apartment_type_id']}");
+            logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - fee_type_id: {$fee['fee_type_id']}");
+            throw new Exception("This fee type is currently not active for this property. Please contact admin.", 400);
+        }
+
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 8.5 - Fee is active in property configuration:");
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - fee_id: {$active_fee['fee_id']}");
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - is_active: {$active_fee['is_active']}");
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - configured_amount: {$active_fee['configured_amount']}");
+
+        // ==================== STEP 8.5: CHECK IF FEE AMOUNT MATCHES CONFIGURED AMOUNT ====================
+        if (abs($fee['amount'] - $active_fee['configured_amount']) > 0.01) {
+            logActivity("[FEE_PAYMENT] [ID:{$requestId}] WARNING: Fee amount mismatch");
+            logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - tenant_fee amount: {$fee['amount']}");
+            logActivity("[FEE_PAYMENT] [ID:{$requestId}]   - configured amount: {$active_fee['configured_amount']}");
+            // Allow payment but log warning
+        }
+
         // Use provided amount or fee amount
         $amount = $amount_paid ?: $fee['amount'];
-        logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 8.4 - Payment amount: ₦{$amount}");
+        logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 8.6 - Payment amount: ₦{$amount}");
 
         // ==================== STEP 9: GENERATE UNIQUE IDENTIFIERS ====================
         logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 9: Generating unique identifiers");
@@ -141,29 +185,28 @@ try {
         logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 9.2 - Generated transaction_id: {$transaction_id}");
 
         // ==================== STEP 10: UPDATE TENANT FEES TABLE ====================
-        // ==================== STEP 10: UPDATE TENANT FEES TABLE ====================
         logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 10: Updating tenant_fees table");
 
         $update_fee_query = "
-    UPDATE tenant_fees 
-    SET status = 'paid', 
-        payment_date = NOW(), 
-        payment_method = ?, 
-        receipt_number = ?,
-        payment_id = ?,
-        notes = CONCAT(IFNULL(notes, ''), ' Paid on ', NOW(), ' via ', ?, '. Receipt: ', ?)
-    WHERE tenant_fee_id = ?
-";
+            UPDATE tenant_fees 
+            SET status = 'paid', 
+                payment_date = NOW(), 
+                payment_method = ?, 
+                receipt_number = ?,
+                payment_id = ?,
+                notes = CONCAT(IFNULL(notes, ''), ' Paid on ', NOW(), ' via ', ?, '. Receipt: ', ?)
+            WHERE tenant_fee_id = ?
+        ";
 
         $update_stmt = $conn->prepare($update_fee_query);
         $update_stmt->bind_param(
             "sssssi",
-            $payment_method,      // payment_method for the payment_method column
-            $receipt_number,      // receipt_number for the receipt_number column
-            $transaction_id,      // payment_id (FIXED: transaction_id)
-            $payment_method,      // payment_method for notes (via)
-            $receipt_number,      // receipt_number for notes (Receipt:)
-            $tenant_fee_id        // WHERE clause
+            $payment_method,
+            $receipt_number,
+            $transaction_id,
+            $payment_method,
+            $receipt_number,
+            $tenant_fee_id
         );
 
         if (!$update_stmt->execute()) {

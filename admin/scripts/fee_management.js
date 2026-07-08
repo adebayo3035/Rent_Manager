@@ -551,6 +551,8 @@ async function loadApartmentTypes(propertyCode) {
 }
 
 // ==================== RENDER PROPERTY FEES (UPDATED) ====================
+// ==================== RENDER PROPERTY FEES (FIXED) ====================
+// ==================== RENDER PROPERTY FEES (UPDATED) ====================
 function renderPropertyFees() {
   const container = dom.propertyFeesContent;
   if (!container) return;
@@ -605,15 +607,21 @@ function renderPropertyFees() {
   );
 
   for (const [typeName, typeData] of sortedTypes) {
+    // Separate active and inactive for count display only
+    const activeFees = typeData.fees.filter(f => f.is_active == 1 || f.is_active === true);
+    const inactiveFees = typeData.fees.filter(f => f.is_active == 0 || f.is_active === false);
+    const allFees = typeData.fees;
+
     html += `
       <div class="property-fees-section">
         <div class="section-header">
           <div class="section-title">
             <i class="fas fa-door-open"></i>
             <h4>${escapeHtml(typeName)}</h4>
-            <span class="apartment-count">${typeData.fees.length} fees</span>
+            <span class="apartment-count">${activeFees.length} active, ${inactiveFees.length} inactive</span>
           </div>
         </div>
+        
         <div class="table-responsive">
           <table class="fee-config-table">
             <thead>
@@ -623,38 +631,54 @@ function renderPropertyFees() {
                 <th>Mandatory</th>
                 <th>Recurrence</th>
                 <th>Effective From</th>
-                <th style="width: 100px;">Actions</th>
+                <th>Status</th>
+                <th style="width: 120px;">Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${typeData.fees.map(fee => `
-                <tr data-fee-id="${fee.fee_id || fee.tenant_fee_id || ""}" data-fee-type="${fee.fee_type_id}" data-apartment-type="${typeData.apartment_type_id}">
-                  <td>
-                    <div class="fee-name-cell">
-                      <strong>${escapeHtml(fee.fee_name)}</strong>
-                      <span class="fee-code">${escapeHtml(fee.fee_code || "")}</span>
-                    </div>
-                  </td>
-                  <td class="amount-cell">₦${formatNumber(fee.amount)}</td>
-                  <td>
-                    ${parseInt(fee.is_mandatory) === 1 ? 
-                      '<span class="badge-mandatory">Mandatory</span>' : 
-                      '<span class="badge-optional">Optional</span>'}
-                  </td>
-                  <td>${fee.is_recurring ? fee.recurrence_period || "Monthly" : "One-time"}</td>
-                  <td>${formatDate(fee.effective_from)}</td>
-                  <td>
-                    <div class="action-buttons">
-                      <button class="btn-icon btn-edit" onclick="openEditFeeModal('${propertyName}', '${propertyCode}', ${typeData.apartment_type_id}, ${fee.fee_type_id}, '${typeName}')" title="Edit Fee">
-                        <i class="fas fa-edit"></i>
-                      </button>
-                      <button class="btn-icon btn-delete" onclick="deletePropertyFee('${propertyCode}', ${typeData.apartment_type_id}, ${fee.fee_type_id})" title="Remove Fee">
-                        <i class="fas fa-trash-alt"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              `).join('')}
+              ${allFees.map(fee => {
+                const isActive = fee.is_active == 1 || fee.is_active === true;
+                return `
+                  <tr data-fee-id="${fee.fee_id || ''}" data-fee-type="${fee.fee_type_id}" data-apartment-type="${typeData.apartment_type_id}" class="${isActive ? '' : 'inactive-row'}">
+                    <td>
+                      <div class="fee-name-cell">
+                        <strong>${escapeHtml(fee.fee_name)}</strong>
+                        <span class="fee-code">${escapeHtml(fee.fee_code || '')}</span>
+                      </div>
+                    </td>
+                    <td class="amount-cell">₦${formatNumber(fee.amount)}</td>
+                    <td>
+                      ${parseInt(fee.is_mandatory) === 1 ? 
+                        '<span class="badge-mandatory">Mandatory</span>' : 
+                        '<span class="badge-optional">Optional</span>'}
+                    </td>
+                    <td>${fee.is_recurring ? fee.recurrence_period || "Monthly" : "One-time"}</td>
+                    <td>${formatDate(fee.effective_from)}</td>
+                    <td>
+                      <span class="status-badge ${isActive ? 'status-active' : 'status-inactive'}">
+                        <span class="status-dot"></span>
+                        ${isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="action-buttons">
+                        ${isActive ? `
+                          <button class="btn-icon btn-edit" onclick="openEditFeeModal('${propertyName}', '${propertyCode}', ${typeData.apartment_type_id}, ${fee.fee_type_id}, '${typeName}')" title="Edit Fee">
+                            <i class="fas fa-edit"></i>
+                          </button>
+                          <button class="btn-icon btn-delete" onclick="confirmUpdateFeeStatus('${propertyCode}', ${typeData.apartment_type_id}, ${fee.fee_type_id}, '${escapeHtml(fee.fee_name)}', 'deactivate')" title="Deactivate Fee">
+                            <i class="fas fa-trash-alt"></i>
+                          </button>
+                        ` : `
+                          <button class="btn-icon btn-reactivate" onclick="confirmUpdateFeeStatus('${propertyCode}', ${typeData.apartment_type_id}, ${fee.fee_type_id}, '${escapeHtml(fee.fee_name)}', 'reactivate')" title="Reactivate Fee">
+                            <i class="fas fa-undo-alt"></i>
+                          </button>
+                        `}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -671,6 +695,96 @@ function renderPropertyFees() {
 
   container.innerHTML = html;
 }
+// ==================== UPDATE FEE STATUS (Single Endpoint) ====================
+async function updateFeeStatus(propertyCode, apartmentTypeId, feeTypeId, action) {
+  const actionLabels = {
+    deactivate: 'deactivated',
+    reactivate: 'reactivated'
+  };
+  
+  const actionPastTense = actionLabels[action] || action;
+  
+  try {
+    const response = await fetch('../backend/fee_management/update_fee_status.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        property_code: propertyCode,
+        apartment_type_id: apartmentTypeId,
+        fee_type_id: feeTypeId,
+        action: action
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      showToast(`Fee ${actionPastTense} successfully`, 'success');
+      await loadPropertyFees(propertyCode);
+      return true;
+    } else {
+      throw new Error(result.message || `Failed to ${action} fee`);
+    }
+  } catch (error) {
+    console.error(`Error ${action}ing fee:`, error);
+    showToast(error.message, 'error');
+    return false;
+  }
+}
+
+// ==================== CONFIRM UPDATE FEE STATUS ====================
+function confirmUpdateFeeStatus(propertyCode, apartmentTypeId, feeTypeId, feeName, action) {
+  const actionLabels = {
+    deactivate: {
+      title: 'Deactivate Fee',
+      message: `Are you sure you want to deactivate "${feeName}"? This will remove it from active fee configurations for this property/apartment type.`,
+      confirmText: 'Yes, Deactivate',
+      confirmClass: 'btn-danger',
+      type: 'danger'
+    },
+    reactivate: {
+      title: 'Reactivate Fee',
+      message: `Are you sure you want to reactivate "${feeName}"? This will make it available for tenant fee configurations.`,
+      confirmText: 'Yes, Reactivate',
+      confirmClass: 'btn-success',
+      type: 'success'
+    }
+  };
+
+  const config = actionLabels[action];
+  if (!config) {
+    showToast('Invalid action', 'error');
+    return;
+  }
+
+  // Call showCustomConfirm with the correct object parameter
+  showCustomConfirm({
+    title: config.title,
+    message: config.message,
+    type: config.type,
+    confirmText: config.confirmText,
+    confirmClass: config.confirmClass,
+    cancelText: 'Cancel',
+    details: [
+      { label: 'Fee Name', value: feeName },
+      { label: 'Property Code', value: propertyCode },
+      { label: 'Action', value: action.charAt(0).toUpperCase() + action.slice(1) }
+    ]
+  }).then((confirmed) => {
+    if (confirmed) {
+      updateFeeStatus(propertyCode, apartmentTypeId, feeTypeId, action);
+    } else {
+      console.log(`${action} cancelled`);
+    }
+  });
+}
+
+// ==================== REMOVE OLD FUNCTIONS ====================
+// Delete or comment out these functions:
+// - deletePropertyFee()
+// - confirmDeletePropertyFee()
+// - reactivatePropertyFee()
+// - confirmReactivatePropertyFee()
 
 // ==================== ADD FEE MODAL ====================
 async function showAddFeeModal() {

@@ -27,7 +27,7 @@ try {
     $fee_type_id = isset($_GET['fee_type_id']) ? (int)$_GET['fee_type_id'] : null;
     $is_recurring = isset($_GET['is_recurring']) ? (int)$_GET['is_recurring'] : null;
 
-    // Build query
+    // ==================== BUILD MAIN QUERY ====================
     $query = "
         SELECT 
             tf.tenant_fee_id,
@@ -50,11 +50,22 @@ try {
             ft.is_recurring,
             ft.recurrence_period,
             a.apartment_number,
-            p.name as property_name
+            a.apartment_type_id,
+            p.name as property_name,
+            p.property_code,
+            -- Check if fee is active in property_apartment_type_fees
+            COALESCE(patf.is_active, 0) as is_active_in_property,
+            patf.amount as configured_amount,
+            patf.effective_from,
+            patf.effective_to
         FROM tenant_fees tf
         JOIN fee_types ft ON tf.fee_type_id = ft.fee_type_id
         LEFT JOIN apartments a ON tf.apartment_code = a.apartment_code
         LEFT JOIN properties p ON a.property_code = p.property_code
+        LEFT JOIN property_apartment_type_fees patf 
+            ON p.property_code = patf.property_code 
+            AND a.apartment_type_id = patf.apartment_type_id 
+            AND tf.fee_type_id = patf.fee_type_id
         WHERE tf.tenant_code = ?
     ";
     
@@ -93,17 +104,36 @@ try {
         $today = new DateTime();
         $is_overdue = ($row['status'] === 'pending' && $due_date < $today);
         
-        // If overdue and status is still pending, update in memory (optional: update DB)
+        // If overdue and status is still pending, update in memory
         if ($is_overdue && $row['status'] === 'pending') {
             $row['status'] = 'overdue';
         }
         
+        // Determine if fee can be paid (must be active in property config)
+        $can_pay = ($row['is_active_in_property'] == 1 && $row['status'] !== 'paid' && $row['status'] !== 'waived');
+        $is_active = ($row['is_active_in_property'] == 1);
+        
+        // Check if fee is within effective date range
+        $is_within_effective_range = true;
+        if ($row['effective_from'] && $row['effective_from'] > date('Y-m-d')) {
+            $is_within_effective_range = false;
+        }
+        if ($row['effective_to'] && $row['effective_to'] < date('Y-m-d')) {
+            $is_within_effective_range = false;
+        }
+        
+        // If not within effective range, cannot pay
+        if (!$is_within_effective_range) {
+            $can_pay = false;
+        }
+
         $fees[] = [
             'tenant_fee_id' => (int)$row['tenant_fee_id'],
             'fee_type_id' => (int)$row['fee_type_id'],
             'fee_name' => $row['fee_name'],
             'fee_code' => $row['fee_code'],
             'amount' => (float)$row['amount'],
+            'configured_amount' => $row['configured_amount'] ? (float)$row['configured_amount'] : null,
             'due_date' => $row['due_date'],
             'status' => $is_overdue ? 'overdue' : $row['status'],
             'is_mandatory' => (bool)$row['is_mandatory'],
@@ -114,12 +144,19 @@ try {
             'receipt_number' => $row['receipt_number'],
             'notes' => $row['notes'],
             'apartment_number' => $row['apartment_number'],
-            'property_name' => $row['property_name']
+            'property_name' => $row['property_name'],
+            // Property fee configuration status
+            'is_active_in_property' => (bool)$is_active,
+            'can_pay' => (bool)$can_pay,
+            'is_within_effective_range' => (bool)$is_within_effective_range,
+            'effective_from' => $row['effective_from'],
+            'effective_to' => $row['effective_to'],
+            'amount_mismatch' => ($row['configured_amount'] && abs($row['amount'] - $row['configured_amount']) > 0.01)
         ];
     }
     $stmt->close();
 
-    // Get summary statistics
+    // ==================== GET SUMMARY STATISTICS ====================
     $summary_query = "
         SELECT 
             COUNT(*) as total_fees,
@@ -140,10 +177,49 @@ try {
     $summary = $summary_result->fetch_assoc();
     $summary_stmt->close();
 
+    // ==================== GET ACTIVE FEE TYPES FROM PROPERTY CONFIG ====================
+    $active_fees_query = "
+        SELECT 
+            patf.fee_type_id,
+            ft.fee_name,
+            ft.fee_code,
+            patf.amount,
+            patf.is_active,
+            patf.effective_from,
+            patf.effective_to
+        FROM property_apartment_type_fees patf
+        JOIN fee_types ft ON patf.fee_type_id = ft.fee_type_id
+        JOIN apartments a ON a.apartment_type_id = patf.apartment_type_id
+        JOIN tenants t ON t.apartment_code = a.apartment_code
+        WHERE t.tenant_code = ?
+        AND patf.is_active = 1
+        ORDER BY ft.fee_name ASC
+    ";
+    
+    $active_stmt = $conn->prepare($active_fees_query);
+    $active_stmt->bind_param("s", $tenant_code);
+    $active_stmt->execute();
+    $active_result = $active_stmt->get_result();
+    
+    $active_fee_types = [];
+    while ($row = $active_result->fetch_assoc()) {
+        $active_fee_types[] = [
+            'fee_type_id' => (int)$row['fee_type_id'],
+            'fee_name' => $row['fee_name'],
+            'fee_code' => $row['fee_code'],
+            'amount' => (float)$row['amount'],
+            'is_active' => (bool)$row['is_active'],
+            'effective_from' => $row['effective_from'],
+            'effective_to' => $row['effective_to']
+        ];
+    }
+    $active_stmt->close();
+
     $conn->close();
 
     $response_data = [
         'fees' => $fees,
+        'active_fee_types' => $active_fee_types,
         'summary' => [
             'total_fees' => (int)($summary['total_fees'] ?? 0),
             'total_pending' => (float)($summary['total_pending'] ?? 0),

@@ -41,7 +41,6 @@ try {
         JOIN fee_types ft ON pf.fee_type_id = ft.fee_type_id
         JOIN apartment_type at ON pf.apartment_type_id = at.type_id
         WHERE pf.property_code = ? 
-        AND pf.is_active = 1
     ";
     
     $params = [$property_code];
@@ -86,7 +85,8 @@ try {
             'is_mandatory' => (bool)$fee['is_mandatory'],
             'is_recurring' => (bool)$fee['is_recurring'],
             'recurrence_period' => $fee['recurrence_period'],
-            'effective_from' => $fee['effective_from']
+            'effective_from' => $fee['effective_from'],
+            'is_active' => $fee['is_active']
         ];
     }
     

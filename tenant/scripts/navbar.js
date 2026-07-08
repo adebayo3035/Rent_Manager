@@ -179,7 +179,7 @@ function startNotificationRefresh() {
         if (navbarCurrentUser || window.currentUser) {
             updateNotificationBadge();
         }
-    }, 30000); // Refresh every 30 seconds
+    }, 600000); // Refresh every 10 minutes
 }
 
 function stopNotificationRefresh() {
