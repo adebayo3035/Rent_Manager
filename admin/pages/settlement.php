@@ -1,150 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Property Settlement Management - Rent Pilot</title>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../../ui.css">
+    <title>Settlement Tracking - Rent Pilot</title>
+     <link rel="stylesheet" href="../../ui.css">
     <link rel="stylesheet" href="../css/settlement.css">
-
-    <!-- Font Awesome -->
     <script src="https://kit.fontawesome.com/7cab3097e7.js" crossorigin="anonymous"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
-
 <body>
-    <!-- Include Navbar -->
-    <?php include('navbar.php'); ?>
-
-    <!-- Main Content -->
-    <div class="settlement-container">
-        <div class="settlement-header">
-            <div>
-                <h1>Property Settlement Management</h1>
-                <p class="subtitle">Manage revenue sharing formulas for each property</p>
+    <?php include_once __DIR__ . '/navbar.php'; ?>
+    
+    <div class="settlements-container">
+        <!-- Page Header -->
+        <div class="page-header">
+            <div class="header-left">
+                <h1><i class="fas fa-hand-holding-usd"></i> Settlement Tracking</h1>
+                <p class="subtitle">Track and manage revenue settlements across all properties</p>
             </div>
-            <button class="btn btn-outline" onclick="resetAllToDefault()">
-                <i class="fas fa-undo"></i> Reset All to Default
-            </button>
+            <div class="header-right">
+                <button class="btn btn-outline" onclick="exportReport()">
+                    <i class="fas fa-file-download"></i> Export
+                </button>
+                <button class="btn btn-primary" onclick="refreshData()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
         </div>
-
-        <!-- Alert Messages -->
-        <div id="alertContainer"></div>
-
-        <!-- Settlement Table -->
-        <div class="table-wrapper">
-            <div class="table-toolbar">
-                <div class="search-box">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="searchInput" placeholder="Search property..." onkeyup="filterTable()">
-                </div>
-                <div class="table-info">
-                    <span id="rowCount">Loading...</span>
+        
+        <!-- Summary Cards -->
+        <div class="summary-cards" id="summaryCards">
+            <div class="summary-card total">
+                <div class="card-icon"><i class="fas fa-receipt"></i></div>
+                <div class="card-info">
+                    <span class="card-label">Total Settlements</span>
+                    <span class="card-value" id="totalCount">-</span>
+                    <span class="card-sub" id="totalAmount">₦0</span>
                 </div>
             </div>
-
+            <div class="summary-card completed">
+                <div class="card-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="card-info">
+                    <span class="card-label">Completed</span>
+                    <span class="card-value" id="completedCount">-</span>
+                    <span class="card-sub" id="completedAmount">₦0</span>
+                </div>
+            </div>
+            <div class="summary-card pending">
+                <div class="card-icon"><i class="fas fa-clock"></i></div>
+                <div class="card-info">
+                    <span class="card-label">Pending</span>
+                    <span class="card-value" id="pendingCount">-</span>
+                    <span class="card-sub" id="pendingAmount">₦0</span>
+                </div>
+            </div>
+            <div class="summary-card user-share">
+                <div class="card-icon"><i class="fas fa-user-check"></i></div>
+                <div class="card-info">
+                    <span class="card-label">Your Total Share</span>
+                    <span class="card-value" id="userShareTotal">₦0</span>
+                    <span class="card-sub" id="userTotal">Total: ₦0</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Filters -->
+        <div class="filters-bar">
+            <div class="filter-group">
+                <label>Status</label>
+                <select id="filterStatus" class="filter-select">
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Payable To</label>
+                <select id="filterPayable" class="filter-select">
+                    <option value="">All Parties</option>
+                    <option value="admin">Admin</option>
+                    <option value="client">Client</option>
+                    <option value="agent">Agent</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Date From</label>
+                <input type="date" id="filterDateFrom" class="filter-input">
+            </div>
+            <div class="filter-group">
+                <label>Date To</label>
+                <input type="date" id="filterDateTo" class="filter-input">
+            </div>
+            <div class="filter-group search-group">
+                <label>Search</label>
+                <div class="search-wrapper">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="filterSearch" placeholder="Property, tenant..." class="filter-input">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-secondary" onclick="applyFilters()">Apply</button>
+                <button class="btn btn-outline" onclick="clearFilters()">Clear</button>
+            </div>
+        </div>
+        
+        <!-- Table -->
+        <div class="table-wrapper">
+            <div class="table-header">
+                <span class="table-title">Settlement Records</span>
+                <span class="table-count" id="recordCount">0 records</span>
+            </div>
             <div class="table-responsive">
-                <table id="settlementTable" class="settlement-table">
+                <table class="settlements-table">
                     <thead>
                         <tr>
+                            <th>#</th>
                             <th>Property</th>
-                            <th>Client</th>
-                            <th>Agent</th>
-                            <th>Admin %</th>
-                            <th>Agent %</th>
-                            <th>Client %</th>
-                            <th>Total</th>
+                            <th>Tenant</th>
+                            <th>Period</th>
+                            <th>Total Amount</th>
+                            <th>Your Share</th>
                             <th>Status</th>
-                            <th>Last Updated</th>
-                            <th>Actions</th>
+                            <th>Date</th>
+                            <th style="width: 80px;">Action</th>
                         </tr>
                     </thead>
-                    <tbody id="settlementTableBody">
+                    <tbody id="settlementsBody">
                         <tr>
                             <td colspan="9" class="loading-cell">
                                 <div class="spinner"></div>
-                                Loading properties...
+                                Loading settlements...
                             </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-        </div>
-
-        <!-- Update Modal -->
-        <div id="updateModal" class="modal" style="display:none;">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Update Settlement Formula</h3>
-                    <button class="modal-close" onclick="closeModal()">&times;</button>
+            <!-- Pagination -->
+            <div class="table-footer">
+                <div class="pagination-info">
+                    Showing <span id="showingStart">0</span> to <span id="showingEnd">0</span> of <span id="totalRecords">0</span> records
                 </div>
-                <div class="modal-body">
-                    <div class="property-info" id="modalPropertyInfo"></div>
-
-                    <form id="updateForm">
-                        <input type="hidden" id="modalPropertyId">
-
-                        <div class="form-group">
-                            <label>Admin Percentage</label>
-                            <input type="number" id="modalAdminPct" step="0.01" min="0" max="100" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Agent Percentage</label>
-                            <input type="number" id="modalAgentPct" step="0.01" min="0" max="100" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Client Percentage</label>
-                            <input type="number" id="modalClientPct" step="0.01" min="0" max="100" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Notes (Optional)</label>
-                            <textarea id="modalNotes" rows="3"
-                                placeholder="Add notes explaining why you're proposing this change..."
-                                style="width:100%; padding:8px 12px; border:1px solid #e5e7eb; border-radius:6px; font-family:inherit; resize:vertical;"></textarea>
-                        </div>
-
-                        <div id="modalTotalDisplay" class="total-display">
-                            Total: <span id="modalTotal">0</span>%
-                            <span id="modalTotalStatus"></span>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="updateSettlement()">
-                        <i class="fas fa-save"></i> Update
+                <div class="pagination-controls" id="paginationControls">
+                    <button class="btn-page" id="prevPage" onclick="changePage('prev')" disabled>
+                        <i class="fas fa-chevron-left"></i>
                     </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Reset Confirm Modal -->
-        <div id="resetModal" class="modal" style="display:none;">
-            <div class="modal-content modal-sm">
-                <div class="modal-header">
-                    <h3>Reset to Default</h3>
-                    <button class="modal-close" onclick="closeResetModal()">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <p>Are you sure you want to reset the settlement formula for <strong
-                            id="resetPropertyName"></strong> to default (10%, 5%, 85%)?</p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" onclick="closeResetModal()">Cancel</button>
-                    <button class="btn btn-warning" onclick="confirmReset()">
-                        <i class="fas fa-undo"></i> Reset
+                    <span class="page-info" id="pageInfo">Page 1 of 1</span>
+                    <button class="btn-page" id="nextPage" onclick="changePage('next')" disabled>
+                        <i class="fas fa-chevron-right"></i>
                     </button>
                 </div>
             </div>
         </div>
     </div>
+    
+    <!-- Settlement Details Modal -->
+    <div id="settlementModal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-info-circle"></i> Settlement Details</h3>
+                <button class="modal-close" onclick="closeSettlementModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="settlementDetails">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    Loading details...
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSettlementModal()">Close</button>
+                <button class="btn btn-primary" onclick="printSettlement()">
+                    <i class="fas fa-print"></i> Print
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
 
-     <!-- UI Framework Containers -->
+    <!-- UI Framework Containers -->
     <div id="toastContainer"></div>
 
     <div id="alertModal" class="ui-modal">
@@ -169,14 +205,9 @@
     <div id="uiLoaderOverlay">
         <div class="ui-loader"></div>
     </div>
-    <!-- Toast Container -->
-    <div id="toastContainer"></div>
 
-    <!-- JavaScript -->
-      <script src="../scripts/main.js"></script>
+    <script src="../scripts/main.js"></script>
     <script src="../../ui.js"></script>
-    <script src="../../validator.js"></script>
     <script src="../scripts/settlement.js"></script>
 </body>
-
 </html>

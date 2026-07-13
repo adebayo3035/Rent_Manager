@@ -139,7 +139,7 @@ function renderProfile(data) {
   statsSection.innerHTML = `
         <div class="stat-item">
             <div class="stat-label">Wallet Balance</div>
-            <div class="stat-value"># ${data.total_settlement_earned || "0"}</div>
+            <div class="stat-value">₦ ${formatNumber(data.total_settlement_earned) || "0"}</div>
         </div>
         <div class="stat-item">
             <div class="stat-value">${data.stats?.total_logins || 0}</div>
@@ -192,6 +192,10 @@ function renderProfile(data) {
 // Refresh profile
 function refreshProfile() {
   fetchProfile();
+}
+function formatNumber(value) {
+    if (!value) return '0.00';
+    return new Intl.NumberFormat('en-NG').format(value);
 }
 
 // Edit profile (placeholder function)

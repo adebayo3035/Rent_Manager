@@ -564,17 +564,27 @@ function verifyPayment($conn, $adminId)
                 $processedBy = (string) $adminId;
                 $rentPaymentId = $tracker['rent_payment_id'];
 
+                // Agent is only "paid" if an agent actually exists on this property
+                $agentPaid = !empty($agentCode) ? 1 : 0;
+
                 $settlementQuery = "
-                    INSERT INTO settlement_transactions 
-                    (
-                        payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
-                        agent_code, client_code, total_rent_amount, admin_share, agent_share,
-                        client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
-                        settlement_status, rent_payment_date, settlement_date, processed_by, notes,
-                        created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW(), NOW())
-                ";
+    INSERT INTO settlement_transactions 
+    (
+        payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
+        agent_code, client_code, total_rent_amount, admin_share, agent_share,
+        client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
+        settlement_status, rent_payment_date, settlement_date, processed_by, notes,
+        admin_paid, admin_payment_date,
+        agent_paid, agent_payment_date,
+        client_paid, client_payment_date,
+        created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?,
+            1, NOW(),
+            ?, NOW(),
+            1, NOW(),
+            NOW(), NOW())
+";
 
                 $settlementStmt = $conn->prepare($settlementQuery);
                 if (!$settlementStmt) {
@@ -582,11 +592,11 @@ function verifyPayment($conn, $adminId)
                     throw new Exception("Database error occurred");
                 }
 
-                // 18 placeholders -> 18 variables
-                // Type string: i i s i i s s d d d d d d d s s s s
-                // Without spaces: iisiiissddddddssss (18 characters)
+                // 19 placeholders -> 19 variables
+// Type string: i i s i i s s d d d d d d d s s s s i
+// Without spaces: iisiissdddddddssssi (20 characters)
                 $settlementStmt->bind_param(
-                    "iisiiissddddddssss",
+                    "iisiissdddddddssssi",
                     $paymentId,
                     $trackerId,
                     $rentPaymentId,
@@ -604,7 +614,8 @@ function verifyPayment($conn, $adminId)
                     $settlementStatus,
                     $rentPaymentDate,
                     $processedBy,
-                    $settlementNotes
+                    $settlementNotes,
+                    $agentPaid
                 );
 
                 if (!$settlementStmt->execute()) {

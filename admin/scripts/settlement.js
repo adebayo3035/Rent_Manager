@@ -1,58 +1,106 @@
-// settlement.js - Property Settlement Management
+// settlements.js - Settlement tracking module
 
 // ==================== STATE ====================
-let properties = [];
-let selectedPropertyId = null;
-let resetPropertyId = null;
+const state = {
+    currentPage: 1,
+    totalPages: 0,
+    totalRecords: 0,
+    perPage: 20,
+    settlements: [],
+    filters: {
+        status: '',
+        payable: '',
+        date_from: '',
+        date_to: '',
+        search: ''
+    }
+};
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', function() {
-    loadProperties();
+    loadSettlements();
+    
+    // Enter key search
+    document.getElementById('filterSearch').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            applyFilters();
+        }
+    });
 });
 
-// ==================== LOAD PROPERTIES ====================
-async function loadProperties() {
-    const tbody = document.getElementById('settlementTableBody');
+// ==================== LOAD SETTLEMENTS ====================
+async function loadSettlements() {
+    const tbody = document.getElementById('settlementsBody');
     tbody.innerHTML = `
         <tr>
-            <td colspan="10" class="loading-cell">
+            <td colspan="9" class="loading-cell">
                 <div class="spinner"></div>
-                Loading properties...
+                Loading settlements...
             </td>
         </tr>
     `;
 
     try {
-        const response = await fetch('../backend/settlement/manage_settlement.php?action=get_properties');
+        const params = new URLSearchParams({
+            page: state.currentPage,
+            limit: state.perPage,
+            status: state.filters.status,
+            date_from: state.filters.date_from,
+            date_to: state.filters.date_to,
+            search: state.filters.search,
+            payable_type: state.filters.payable
+        });
+
+        const response = await fetch(`../backend/settlement/get_settlement.php?${params}`);
         const data = await response.json();
 
-        if (data.success && Array.isArray(data.message)) {
-            properties = data.message;
-            renderTable(properties);
-            updateRowCount(properties.length);
-        } 
-        else if(data.responseCode = "403"){
-            window.location.replace("../pages/unauthorized.php")
-        }
-        else {
-            showToast(data.data || 'Failed to load properties', 'error');
+        console.log('API Response:', data); // Debug log
+
+        if (data.success) {
+            // FIX: Data is in data.message, not data.data
+            const result = data.message;
+            
+            if (result) {
+                state.settlements = result.settlements || [];
+                state.totalRecords = result.pagination?.total_records || 0;
+                state.totalPages = result.pagination?.total_pages || 0;
+                
+                console.log('Settlements loaded:', state.settlements.length);
+                console.log('Total records:', state.totalRecords);
+                
+                renderTable();
+                renderSummary(result.summary);
+                renderPagination();
+            } else {
+                showToast('No data received from server', 'warning');
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="empty-cell">
+                            <i class="fas fa-exclamation-circle"></i>
+                            No data received
+                        </td>
+                    </tr>
+                `;
+            }
+        } else {
+            showToast(data.message || 'Failed to load settlements', 'error');
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="10" class="loading-cell" style="color: #ef4444;">
+                    <td colspan="9" class="empty-cell">
                         <i class="fas fa-exclamation-circle"></i>
-                        ${data.data || 'Failed to load properties'}
+                        ${data.message || 'Failed to load data'}
                     </td>
                 </tr>
             `;
         }
     } catch (error) {
-        console.error('Error loading properties:', error);
+        console.error('Error loading settlements:', error);
         showToast('Network error. Please try again.', 'error');
         tbody.innerHTML = `
             <tr>
-                <td colspan="10" class="loading-cell" style="color: #ef4444;">
+                <td colspan="9" class="empty-cell">
                     <i class="fas fa-exclamation-circle"></i>
-                    Failed to load properties. Please refresh the page.
+                    Failed to load data. Please refresh the page.
                 </td>
             </tr>
         `;
@@ -60,441 +108,401 @@ async function loadProperties() {
 }
 
 // ==================== RENDER TABLE ====================
-function renderTable(propertiesData) {
-    const tbody = document.getElementById('settlementTableBody');
+function renderTable() {
+    const tbody = document.getElementById('settlementsBody');
     
-    if (!propertiesData || !Array.isArray(propertiesData) || propertiesData.length === 0) {
+    if (!state.settlements || state.settlements.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="10" class="loading-cell">
-                    No properties found.
+                <td colspan="9" class="empty-cell">
+                    <i class="fas fa-inbox"></i>
+                    No settlements found
                 </td>
             </tr>
         `;
+        document.getElementById('recordCount').textContent = '0 records';
         return;
     }
 
     let html = '';
-    propertiesData.forEach(property => {
-        const adminPct = parseFloat(property.admin_percentage) || 10.00;
-        const agentPct = parseFloat(property.agent_percentage) || 5.00;
-        const clientPct = parseFloat(property.client_percentage) || 85.00;
-        const total = adminPct + agentPct + clientPct;
-        const isValid = Math.abs(total - 100) <= 0.01;
-        const statusClass = property.status == 1 ? 'badge-success' : 'badge-danger';
-        const statusText = property.status == 1 ? 'Active' : 'Inactive';
+    state.settlements.forEach((settlement, index) => {
+        const statusColors = {
+            'pending': 'warning',
+            'processing': 'info',
+            'completed': 'success',
+            'failed': 'danger',
+            'reversed': 'secondary'
+        };
+        const statusClass = statusColors[settlement.settlement_status] || 'secondary';
         
-        // Settlement status
-        const settlementStatus = property.settlement_status || 'active';
-        const isPending = settlementStatus === 'pending';
-        const settlementStatusClass = isPending ? 'badge-warning' : 'badge-success';
-        const settlementStatusText = isPending ? 'Pending Approval' : 'Active';
-
+        // Admin view - show all shares
+        const shareDisplay = `
+            Admin: ₦${formatNumber(settlement.admin_share)}<br>
+            Agent: ₦${formatNumber(settlement.agent_share)}<br>
+            Client: ₦${formatNumber(settlement.client_share)}
+        `;
+        const percentageDisplay = `
+            ${settlement.admin_percentage_used || 0}% / 
+            ${settlement.agent_percentage_used || 0}% / 
+            ${settlement.client_percentage_used || 0}%
+        `;
+        
+        const rowNumber = (state.currentPage - 1) * state.perPage + index + 1;
+        
+        // Get property name safely
+        const propertyName = settlement.property?.name || 'N/A';
+        const propertyCode = settlement.property?.code || '';
+        
+        // Get tenant name safely
+        const tenantName = settlement.tenant?.name || 'N/A';
+        const tenantCode = settlement.tenant?.code || '';
+        
         html += `
             <tr>
+                <td>${rowNumber}</td>
                 <td>
                     <div class="property-cell">
-                        <span class="property-code">${escapeHtml(property.property_code)}</span>
-                        <span class="property-name">${escapeHtml(property.property_name)}</span>
-                        <span class="badge ${statusClass}">${statusText}</span>
+                        <span class="property-name">${escapeHtml(propertyName)}</span>
+                        <span class="property-code">${escapeHtml(propertyCode)}</span>
                     </div>
                 </td>
-                <td>${escapeHtml(property.client_code)}</td>
-                <td>${escapeHtml(property.agent_code || 'None')}</td>
                 <td>
-                    <input type="number" class="percentage-input input-sm" 
-                           value="${adminPct.toFixed(2)}" step="0.01" min="0" max="100"
-                           data-property-id="${property.id}" data-type="admin"
-                           onchange="onPercentageChange(this)" ${isPending ? 'disabled' : ''}>
-                </td>
-                <td>
-                    <input type="number" class="percentage-input input-sm" 
-                           value="${agentPct.toFixed(2)}" step="0.01" min="0" max="100"
-                           data-property-id="${property.id}" data-type="agent"
-                           onchange="onPercentageChange(this)" ${isPending ? 'disabled' : ''}>
-                </td>
-                <td>
-                    <input type="number" class="percentage-input input-sm" 
-                           value="${clientPct.toFixed(2)}" step="0.01" min="0" max="100"
-                           data-property-id="${property.id}" data-type="client"
-                           onchange="onPercentageChange(this)" ${isPending ? 'disabled' : ''}>
-                </td>
-                <td class="total-cell ${isValid ? 'total-valid' : 'total-invalid'}">
-                    ${total.toFixed(2)}%
-                </td>
-                <td>
-                    <span class="badge ${settlementStatusClass}">${settlementStatusText}</span>
-                </td>
-                <td class="updated-cell">
-                    ${property.updated_at ? formatDate(property.updated_at) : 'Never'}
-                    ${property.updated_by_name ? `<br><span class="updated-by">by ${escapeHtml(property.updated_by_name)}</span>` : ''}
-                </td>
-                <td>
-                    <div class="action-cell">
-                        ${!isPending ? `
-                            <button class="btn btn-primary btn-sm" onclick="openUpdateModal(${property.id})">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button class="btn btn-warning btn-sm" onclick="openResetModal(${property.id}, '${escapeHtml(property.property_name)}')">
-                                <i class="fas fa-undo"></i>
-                            </button>
-                        ` : `
-                            <span class="text-muted" style="font-size: 12px;">
-                                <i class="fas fa-clock"></i> Pending approval
-                            </span>
-                        `}
+                    <div class="tenant-cell">
+                        <span class="tenant-name">${escapeHtml(tenantName)}</span>
+                        <span class="tenant-code">${escapeHtml(tenantCode)}</span>
                     </div>
+                </td>
+                <td>
+                    <span class="period-badge">Tracker #${escapeHtml(settlement.tracker_id || 'N/A')}</span>
+                </td>
+                <td class="amount">₦${formatNumber(settlement.total_amount)}</td>
+                <td class="amount">
+                    <div class="share-display">
+                        <span class="share-amount">${shareDisplay}</span>
+                        <span class="share-percentage">(${percentageDisplay})</span>
+                    </div>
+                </td>
+                <td>
+                    <span class="status-badge status-${statusClass}">
+                        ${(settlement.settlement_status || 'pending').toUpperCase()}
+                    </span>
+                </td>
+                <td>${formatDate(settlement.settlement_date)}</td>
+                <td>
+                    <button class="btn-icon btn-view" onclick="viewSettlement(${settlement.id})" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
                 </td>
             </tr>
         `;
     });
 
     tbody.innerHTML = html;
+    document.getElementById('recordCount').textContent = `${state.settlements.length} records`;
 }
 
-// ==================== PERCENTAGE CHANGE (Inline Edit) ====================
-function onPercentageChange(input) {
-    const row = input.closest('tr');
-    const adminInput = row.querySelector('[data-type="admin"]');
-    const agentInput = row.querySelector('[data-type="agent"]');
-    const clientInput = row.querySelector('[data-type="client"]');
-    const totalCell = row.querySelector('.total-cell');
-
-    const admin = parseFloat(adminInput.value) || 0;
-    const agent = parseFloat(agentInput.value) || 0;
-    const client = parseFloat(clientInput.value) || 0;
-    const total = admin + agent + client;
-
-    totalCell.textContent = total.toFixed(2) + '%';
-    totalCell.className = `total-cell ${Math.abs(total - 100) <= 0.01 ? 'total-valid' : 'total-invalid'}`;
-}
-
-// ==================== UPDATE MODAL ====================
-function openUpdateModal(propertyId) {
-    const property = properties.find(p => parseInt(p.id) === propertyId);
-    if (!property) {
-        showToast('Property not found', 'error');
+// ==================== RENDER SUMMARY ====================
+function renderSummary(summary) {
+    if (!summary) {
+        console.log('No summary data');
         return;
     }
+    
+    console.log('Summary:', summary);
+    
+    document.getElementById('totalCount').textContent = summary.total_count || 0;
+    document.getElementById('totalAmount').textContent = `₦${formatNumber(summary.total_amount)}`;
+    
+    // For admin view, show completed/pending/failed counts
+    document.getElementById('completedCount').textContent = summary.total_count || 0;
+    document.getElementById('completedAmount').textContent = `₦${formatNumber(summary.total_amount)}`;
+    document.getElementById('pendingCount').textContent = 0;
+    document.getElementById('pendingAmount').textContent = '₦0.00';
+    document.getElementById('userShareTotal').textContent = `₦${formatNumber(summary.total_admin_share || 0)}`;
+    document.getElementById('userTotal').textContent = `₦${formatNumber(summary.total_amount || 0)}`;
+}
 
-    selectedPropertyId = propertyId;
-    document.getElementById('modalPropertyId').value = propertyId;
-    document.getElementById('modalAdminPct').value = property.admin_percentage || 10.00;
-    document.getElementById('modalAgentPct').value = property.agent_percentage || 5.00;
-    document.getElementById('modalClientPct').value = property.client_percentage || 85.00;
-    document.getElementById('modalNotes').value = '';
+// ==================== RENDER PAGINATION ====================
+function renderPagination() {
+    const start = (state.currentPage - 1) * state.perPage + 1;
+    const end = Math.min(state.currentPage * state.perPage, state.totalRecords);
+    
+    document.getElementById('showingStart').textContent = state.totalRecords > 0 ? start : 0;
+    document.getElementById('showingEnd').textContent = end;
+    document.getElementById('totalRecords').textContent = state.totalRecords;
+    document.getElementById('pageInfo').textContent = `Page ${state.currentPage} of ${state.totalPages || 1}`;
+    
+    document.getElementById('prevPage').disabled = state.currentPage <= 1;
+    document.getElementById('nextPage').disabled = state.currentPage >= state.totalPages;
+}
 
-    document.getElementById('modalPropertyInfo').innerHTML = `
-        <div><span class="label">Property:</span> <span class="value">${escapeHtml(property.property_code)} - ${escapeHtml(property.property_name)}</span></div>
-        <div><span class="label">Client:</span> <span class="value">${escapeHtml(property.client_code)}</span></div>
-        <div><span class="label">Agent:</span> <span class="value">${escapeHtml(property.agent_code || 'None')}</span></div>
-        <div><span class="label">Current Formula:</span> <span class="value">Admin ${property.admin_percentage}% / Agent ${property.agent_percentage}% / Client ${property.client_percentage}%</span></div>
+// ==================== VIEW SETTLEMENT DETAILS ====================
+async function viewSettlement(settlementId) {
+    const modal = document.getElementById('settlementModal');
+    const details = document.getElementById('settlementDetails');
+    
+    details.innerHTML = `
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            Loading details...
+        </div>
     `;
-
-    // Add event listeners for real-time total calculation
-    ['modalAdminPct', 'modalAgentPct', 'modalClientPct'].forEach(id => {
-        document.getElementById(id).addEventListener('input', updateModalTotal);
-    });
-
-    updateModalTotal();
-    document.getElementById('updateModal').style.display = 'flex';
+    
+    modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
-}
-
-function updateModalTotal() {
-    const admin = parseFloat(document.getElementById('modalAdminPct').value) || 0;
-    const agent = parseFloat(document.getElementById('modalAgentPct').value) || 0;
-    const client = parseFloat(document.getElementById('modalClientPct').value) || 0;
-    const total = admin + agent + client;
-    const isValid = Math.abs(total - 100) <= 0.01;
-
-    document.getElementById('modalTotal').textContent = total.toFixed(2);
-    const statusEl = document.getElementById('modalTotalStatus');
-    statusEl.textContent = isValid ? '✅ Valid' : '❌ Must equal 100%';
-    statusEl.style.color = isValid ? '#10b981' : '#ef4444';
-}
-
-function closeModal() {
-    document.getElementById('updateModal').style.display = 'none';
-    document.body.style.overflow = '';
-}
-
-// ==================== UPDATE SETTLEMENT ====================
-async function updateSettlement() {
-    const propertyId = document.getElementById('modalPropertyId').value;
-    const adminPct = parseFloat(document.getElementById('modalAdminPct').value);
-    const agentPct = parseFloat(document.getElementById('modalAgentPct').value);
-    const clientPct = parseFloat(document.getElementById('modalClientPct').value);
-    const notes = document.getElementById('modalNotes').value.trim();
-
-    // Validate
-    if (isNaN(adminPct) || isNaN(agentPct) || isNaN(clientPct)) {
-        showToast('Please enter valid percentages', 'error');
-        return;
-    }
-
-    const total = adminPct + agentPct + clientPct;
-    if (Math.abs(total - 100) > 0.01) {
-        showToast(`Percentages must total 100%. Current total: ${total.toFixed(2)}%`, 'error');
-        return;
-    }
-
-    const updateBtn = document.querySelector('#updateModal .btn-primary');
-    const originalText = updateBtn.innerHTML;
-    updateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
-    updateBtn.disabled = true;
-
+    
     try {
-        const response = await fetch('../backend/settlement/manage_settlement.php?action=update', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                property_id: propertyId,
-                admin_percentage: adminPct,
-                agent_percentage: agentPct,
-                client_percentage: clientPct,
-                notes: notes
-            })
-        });
-
+        const response = await fetch(`../backend/settlement/get_settlement_details.php?id=${settlementId}`);
         const data = await response.json();
-
+        
+        console.log('Details response:', data);
+        
         if (data.success) {
-            showToast('Settlement change proposal submitted. Awaiting client approval.', 'success');
-            closeModal();
-            loadProperties(); // Refresh table
-        } else {
-            showToast(data.data || 'Update failed', 'error');
-        }
-    } catch (error) {
-        console.error('Update error:', error);
-        showToast('Network error. Please try again.', 'error');
-    } finally {
-        updateBtn.innerHTML = originalText;
-        updateBtn.disabled = false;
-    }
-}
-
-// ==================== RESET MODAL ====================
-function openResetModal(propertyId, propertyName) {
-    resetPropertyId = propertyId;
-    document.getElementById('resetPropertyName').textContent = propertyName;
-    document.getElementById('resetModal').style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-}
-
-function closeResetModal() {
-    document.getElementById('resetModal').style.display = 'none';
-    document.body.style.overflow = '';
-    resetPropertyId = null;
-}
-
-async function confirmReset() {
-    if (!resetPropertyId) return;
-
-    const resetBtn = document.querySelector('#resetModal .btn-warning');
-    const originalText = resetBtn.innerHTML;
-    resetBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
-    resetBtn.disabled = true;
-
-    try {
-        const response = await fetch('../backend/settlement/manage_settlement.php?action=reset', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                property_id: resetPropertyId,
-                notes: 'Reset to default (10%, 5%, 85%)'
-            })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            showToast('Reset proposal submitted. Awaiting client approval.', 'success');
-            closeResetModal();
-            loadProperties(); // Refresh table
-        } else {
-            showToast(data.message || 'Reset failed', 'error');
-            closeResetModal();
-        }
-    } catch (error) {
-        console.error('Reset error:', error);
-        showToast('Network error. Please try again.', 'error');
-        closeResetModal();
-    } finally {
-        resetBtn.innerHTML = originalText;
-        resetBtn.disabled = false;
-    }
-}
-
-// ==================== RESET ALL ====================
-function resetAllToDefault() {
-    showCustomConfirm(
-        'Reset All Properties',
-        'Are you sure you want to reset all properties to default (10%, 5%, 85%)? This will create individual proposals for each property awaiting client approval.',
-        async () => {
-            try {
-                const response = await fetch('../backend/settlement/manage_settlement.php?action=reset_all', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    showToast(data.data || 'Reset proposals submitted for all properties', 'success');
-                    loadProperties();
-                } else {
-                    showToast(data.data || 'Reset all failed', 'error');
-                }
-            } catch (error) {
-                console.error('Reset all error:', error);
-                showToast('Network error. Please try again.', 'error');
+            // The settlement details are in data.data (from the API response)
+            // data.message contains the success message string, not the data
+            const settlementData = data.message;
+            
+            if (settlementData) {
+                renderSettlementDetails(settlementData);
+            } else {
+                details.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <p>No settlement details found</p>
+                    </div>
+                `;
             }
-        },
-        () => {
-            console.log('Reset all cancelled');
+        } else {
+            details.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <p>${data.message || 'Failed to load details'}</p>
+                </div>
+            `;
         }
-    );
+    } catch (error) {
+        console.error('Error loading settlement details:', error);
+        details.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-circle"></i>
+                <p>Failed to load details. Please try again.</p>
+            </div>
+        `;
+    }
 }
 
-// ==================== CUSTOM CONFIRM MODAL ====================
-function showCustomConfirm(title, message, onConfirm, onCancel) {
-    const existingDialog = document.getElementById('customConfirmDialog');
-    if (existingDialog) {
-        existingDialog.remove();
+function renderSettlementDetails(settlement) {
+    const container = document.getElementById('settlementDetails');
+    
+    if (!settlement) {
+        container.innerHTML = `<div class="empty-state"><p>No details available</p></div>`;
+        return;
     }
-
-    const dialogHtml = `
-        <div id="customConfirmDialog" class="confirm-dialog">
-            <div class="confirm-dialog-content">
-                <div class="confirm-dialog-header">
-                    <h3>${escapeHtml(title)}</h3>
-                    <button class="confirm-dialog-close">&times;</button>
+    
+    console.log('Rendering settlement details:', settlement);
+    
+    container.innerHTML = `
+        <div class="details-grid">
+            <div class="detail-section">
+                <h4>Property Information</h4>
+                <div class="detail-row">
+                    <span class="label">Property:</span>
+                    <span class="value">${escapeHtml(settlement.property?.name || 'N/A')} (${escapeHtml(settlement.property?.code || 'N/A')})</span>
                 </div>
-                <div class="confirm-dialog-body">
-                    <p>${escapeHtml(message)}</p>
+                <div class="detail-row">
+                    <span class="label">Client:</span>
+                    <span class="value">${escapeHtml(settlement.client?.name || 'N/A')}</span>
                 </div>
-                <div class="confirm-dialog-footer">
-                    <button class="confirm-btn-cancel">Cancel</button>
-                    <button class="confirm-btn-confirm">Yes, Reset All</button>
+                <div class="detail-row">
+                    <span class="label">Agent:</span>
+                    <span class="value">${escapeHtml(settlement.agent?.name || 'N/A')}</span>
                 </div>
+                <div class="detail-row">
+                    <span class="label">Processed By:</span>
+                    <span class="value">${escapeHtml(settlement.processed_by_name || settlement.processed_by || 'N/A')}</span>
+                </div>
+            </div>
+            
+            <div class="detail-section">
+                <h4>Tenant Information</h4>
+                <div class="detail-row">
+                    <span class="label">Tenant:</span>
+                    <span class="value">${escapeHtml(settlement.tenant?.name || 'N/A')}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Apartment:</span>
+                    <span class="value">${escapeHtml(settlement.tenant?.apartment_number || settlement.tenant?.apartment || 'N/A')}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Period:</span>
+                    <span class="value">Tracker #${settlement.tracker_id}</span>
+                </div>
+            </div>
+            
+            <div class="detail-section">
+                <h4>Payment Breakdown</h4>
+                <div class="detail-row">
+                    <span class="label">Total Amount:</span>
+                    <span class="value amount">₦${formatNumber(settlement.total_amount)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Admin Share (${settlement.admin_percentage_used || 0}%):</span>
+                    <span class="value">₦${formatNumber(settlement.admin_share)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Agent Share (${settlement.agent_percentage_used || 0}%):</span>
+                    <span class="value">₦${formatNumber(settlement.agent_share)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Client Share (${settlement.client_percentage_used || 0}%):</span>
+                    <span class="value">₦${formatNumber(settlement.client_share)}</span>
+                </div>
+            </div>
+            
+            <div class="detail-section">
+                <h4>Payment Status</h4>
+                <div class="detail-row">
+                    <span class="label">Settlement Status:</span>
+                    <span class="value status-badge status-${settlement.settlement_status || 'pending'}">${(settlement.settlement_status || 'PENDING').toUpperCase()}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Admin:</span>
+                    <span class="value">${settlement.admin_paid ? '✅ Paid' : '⏳ Pending'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Agent:</span>
+                    <span class="value">${settlement.agent_paid ? '✅ Paid' : '⏳ Pending'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Client:</span>
+                    <span class="value">${settlement.client_paid ? '✅ Paid' : '⏳ Pending'}</span>
+                </div>
+            </div>
+            
+            <div class="detail-section full-width">
+                <h4>Timeline</h4>
+                <div class="detail-row">
+                    <span class="label">Settlement Date:</span>
+                    <span class="value">${formatDateTime(settlement.settlement_date)}</span>
+                </div>
+                ${settlement.admin_payment_date ? `
+                    <div class="detail-row">
+                        <span class="label">Admin Payment:</span>
+                        <span class="value">${formatDateTime(settlement.admin_payment_date)}</span>
+                    </div>
+                ` : ''}
+                ${settlement.agent_payment_date ? `
+                    <div class="detail-row">
+                        <span class="label">Agent Payment:</span>
+                        <span class="value">${formatDateTime(settlement.agent_payment_date)}</span>
+                    </div>
+                ` : ''}
+                ${settlement.client_payment_date ? `
+                    <div class="detail-row">
+                        <span class="label">Client Payment:</span>
+                        <span class="value">${formatDateTime(settlement.client_payment_date)}</span>
+                    </div>
+                ` : ''}
+                ${settlement.notes ? `
+                    <div class="detail-row">
+                        <span class="label">Notes:</span>
+                        <span class="value">${escapeHtml(settlement.notes)}</span>
+                    </div>
+                ` : ''}
             </div>
         </div>
     `;
-
-    document.body.insertAdjacentHTML('beforeend', dialogHtml);
-
-    const dialog = document.getElementById('customConfirmDialog');
-    const confirmBtn = dialog.querySelector('.confirm-btn-confirm');
-    const cancelBtn = dialog.querySelector('.confirm-btn-cancel');
-    const closeBtn = dialog.querySelector('.confirm-dialog-close');
-
-    const closeDialog = () => {
-        if (dialog && dialog.remove) {
-            dialog.remove();
-        }
-    };
-
-    confirmBtn.onclick = () => {
-        closeDialog();
-        if (onConfirm) onConfirm();
-    };
-
-    cancelBtn.onclick = () => {
-        closeDialog();
-        if (onCancel) onCancel();
-    };
-
-    closeBtn.onclick = () => {
-        closeDialog();
-        if (onCancel) onCancel();
-    };
-
-    dialog.addEventListener('click', function(e) {
-        if (e.target === dialog) {
-            closeDialog();
-            if (onCancel) onCancel();
-        }
-    });
-
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && document.getElementById('customConfirmDialog')) {
-            closeDialog();
-            if (onCancel) onCancel();
-        }
-    }, { once: true });
+}
+// ==================== FILTERS ====================
+function applyFilters() {
+    state.filters.status = document.getElementById('filterStatus').value;
+    state.filters.payable = document.getElementById('filterPayable').value;
+    state.filters.date_from = document.getElementById('filterDateFrom').value;
+    state.filters.date_to = document.getElementById('filterDateTo').value;
+    state.filters.search = document.getElementById('filterSearch').value;
+    state.currentPage = 1;
+    loadSettlements();
 }
 
-// ==================== SEARCH/FILTER ====================
-function filterTable() {
-    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-    const filtered = properties.filter(p => 
-        p.property_code.toLowerCase().includes(searchTerm) ||
-        p.property_name.toLowerCase().includes(searchTerm) ||
-        p.client_code.toLowerCase().includes(searchTerm) ||
-        (p.agent_code && p.agent_code.toLowerCase().includes(searchTerm))
-    );
-    renderTable(filtered);
-    updateRowCount(filtered.length);
+function clearFilters() {
+    document.getElementById('filterStatus').value = '';
+    document.getElementById('filterPayable').value = '';
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    document.getElementById('filterSearch').value = '';
+    state.filters = { status: '', payable: '', date_from: '', date_to: '', search: '' };
+    state.currentPage = 1;
+    loadSettlements();
 }
 
-function updateRowCount(count) {
-    document.getElementById('rowCount').textContent = `${count} property${count !== 1 ? 's' : ''}`;
+// ==================== PAGINATION ====================
+function changePage(direction) {
+    if (direction === 'prev' && state.currentPage > 1) {
+        state.currentPage--;
+    } else if (direction === 'next' && state.currentPage < state.totalPages) {
+        state.currentPage++;
+    }
+    loadSettlements();
 }
 
-// ==================== TOAST SYSTEM ====================
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    
-    const icons = {
-        success: 'fa-check-circle',
-        error: 'fa-exclamation-circle',
-        warning: 'fa-exclamation-triangle',
-        info: 'fa-info-circle'
-    };
-    
-    toast.innerHTML = `
-        <i class="fas ${icons[type] || icons.info}"></i>
-        <span>${escapeHtml(message)}</span>
-    `;
-    
-    container.appendChild(toast);
-    
-    setTimeout(() => {
-        if (toast && toast.remove) {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(100%)';
-            toast.style.transition = 'all 0.3s ease';
-            setTimeout(() => {
-                if (toast && toast.remove) {
-                    toast.remove();
-                }
-            }, 300);
-        }
-    }, 3000);
+// ==================== MODAL FUNCTIONS ====================
+function closeSettlementModal() {
+    document.getElementById('settlementModal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+function printSettlement() {
+    const content = document.getElementById('settlementDetails').innerHTML;
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    printWindow.document.write(`
+        <html><head><title>Settlement Details</title>
+        <style>
+            body { font-family: 'Inter', sans-serif; padding: 40px; }
+            .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+            .detail-section { margin-bottom: 20px; }
+            .detail-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee; }
+            .label { color: #666; }
+            .value { font-weight: 500; }
+            .full-width { grid-column: 1 / -1; }
+            h4 { margin: 0 0 10px 0; color: #1a1f36; border-bottom: 2px solid #4f46e5; padding-bottom: 6px; }
+        </style>
+        </head><body>
+        <h1>Settlement Details</h1>
+        ${content}
+        <script>window.print();</script>
+        </body></html>
+    `);
+    printWindow.document.close();
+}
+
+// ==================== OTHER FUNCTIONS ====================
+function refreshData() {
+    loadSettlements();
+    showToast('Data refreshed', 'success');
+}
+
+function exportReport() {
+    showToast('Export functionality coming soon', 'info');
 }
 
 // ==================== UTILITY FUNCTIONS ====================
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+function formatNumber(value) {
+    if (!value) return '0.00';
+    return new Intl.NumberFormat('en-NG').format(value);
 }
 
 function formatDate(dateString) {
-    if (!dateString) return 'Never';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
@@ -503,27 +511,40 @@ function formatDate(dateString) {
     });
 }
 
-// Close modals on outside click
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Close modal on outside click
 document.addEventListener('click', function(e) {
-    const updateModal = document.getElementById('updateModal');
-    const resetModal = document.getElementById('resetModal');
-    
-    if (e.target === updateModal) {
-        closeModal();
-    }
-    if (e.target === resetModal) {
-        closeResetModal();
+    const modal = document.getElementById('settlementModal');
+    if (e.target === modal) {
+        closeSettlementModal();
     }
 });
 
-// Close modals on Escape key
+// Close modal on Escape
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-        if (document.getElementById('updateModal').style.display === 'flex') {
-            closeModal();
-        }
-        if (document.getElementById('resetModal').style.display === 'flex') {
-            closeResetModal();
+        const modal = document.getElementById('settlementModal');
+        if (modal.style.display === 'flex') {
+            closeSettlementModal();
         }
     }
 });

@@ -39,8 +39,9 @@
                         <i class="fas fa-chevron-down dropdown-icon"></i>
                     </button>
                     <div class="dropdown-menu modules-menu">
+                        <!-- ==================== COLUMN 1: PROPERTY MANAGEMENT ==================== -->
                         <div class="dropdown-column">
-                            <span class="dropdown-title">Management</span>
+                            <span class="dropdown-title"><i class="fas fa-building"></i> Property Management</span>
                             <a href="property.php" class="dropdown-item">
                                 <i class="fas fa-building"></i> Properties
                             </a>
@@ -58,46 +59,57 @@
                             </a>
                         </div>
                         
+                        <!-- ==================== COLUMN 2: TENANT & PAYMENTS ==================== -->
                         <div class="dropdown-column">
-                            <span class="dropdown-title">Transactions</span>
+                            <span class="dropdown-title"><i class="fas fa-users"></i> Tenant & Payments</span>
                             <a href="tenant.php" class="dropdown-item">
                                 <i class="fas fa-user-friends"></i> Tenants
-                            </a>
-                            
-                            <a href="payment.php" class="dropdown-item">
-                                <i class="fas fa-money-check-alt"></i> Payment Manager
                             </a>
                             <a href="rent_payment.php" class="dropdown-item">
                                 <i class="fas fa-money-check-alt"></i> Rent Payments
                             </a>
-                             <a href="fee_management.php" class="dropdown-item">
-                                <i class="fas fa-money-check-alt"></i> Manage Fees
+                            <a href="payment.php" class="dropdown-item">
+                                <i class="fas fa-credit-card"></i> Payment Manager
                             </a>
-                            <a href="client.php" class="dropdown-item">
-                                <i class="fas fa-users"></i> Clients
+                            <a href="fee_management.php" class="dropdown-item">
+                                <i class="fas fa-coins"></i> Manage Fees
                             </a>
-                            <a href="settlement.php" class="dropdown-item">
-                                <i class="fas fa-users"></i> Settlement Settings
+                            <a href="evacuation_requests.php" class="dropdown-item">
+                                <i class="fas fa-door-open"></i> Tenant Evacuation
                             </a>
                         </div>
                         
+                        <!-- ==================== COLUMN 3: FINANCE & SETTLEMENTS ==================== -->
                         <div class="dropdown-column">
-                            <span class="dropdown-title">Administration</span>
-                            
-                            <a href="staff.php" class="dropdown-item">
-                                <i class="fas fa-user-shield"></i> Staff Portal
+                            <span class="dropdown-title"><i class="fas fa-hand-holding-usd"></i> Finance & Settlements</span>
+                            <a href="client.php" class="dropdown-item">
+                                <i class="fas fa-user-tie"></i> Clients
                             </a>
                             <a href="agent.php" class="dropdown-item">
                                 <i class="fas fa-user-tie"></i> Agents
                             </a>
+                            <a href="manage_settlement.php" class="dropdown-item">
+                                <i class="fas fa-sliders-h"></i> Settlement Settings
+                            </a>
+                            <a href="settlement.php" class="dropdown-item">
+                                <i class="fas fa-money-bill-wave"></i> My Settlements
+                            </a>
                             <a href="report.php" class="dropdown-item">
                                 <i class="fas fa-file-alt"></i> Reports
+                            </a>
+                        </div>
+                        
+                        <!-- ==================== COLUMN 4: ADMINISTRATION ==================== -->
+                        <div class="dropdown-column">
+                            <span class="dropdown-title"><i class="fas fa-cogs"></i> Administration</span>
+                            <a href="staff.php" class="dropdown-item">
+                                <i class="fas fa-user-shield"></i> Staff Portal
                             </a>
                             <a href="account_management.php" class="dropdown-item">
                                 <i class="fas fa-history"></i> Account Management
                             </a>
-                            <a href="evacuation_requests.php" class="dropdown-item">
-                                <i class="fas fa-delete"></i> Tenant Evacuation Portal
+                            <a href="account_unlock.php" class="dropdown-item">
+                                <i class="fas fa-unlock-alt"></i> Account Unlock
                             </a>
                         </div>
                     </div>
@@ -192,9 +204,9 @@
                             <i class="fas fa-chevron-down"></i>
                         </button>
                         <div class="mobile-accordion-content">
-                            <!-- Management -->
+                            <!-- ==================== PROPERTY MANAGEMENT ==================== -->
                             <div class="mobile-module-group">
-                                <span class="mobile-group-title">Management</span>
+                                <span class="mobile-group-title"><i class="fas fa-building"></i> Property Management</span>
                                 <a href="property.php" class="mobile-nav-link sub">
                                     <i class="fas fa-building"></i> Properties
                                 </a>
@@ -212,51 +224,57 @@
                                 </a>
                             </div>
 
-                            <!-- Transactions -->
+                            <!-- ==================== TENANT & PAYMENTS ==================== -->
                             <div class="mobile-module-group">
-                                <span class="mobile-group-title">Transactions</span>
+                                <span class="mobile-group-title"><i class="fas fa-users"></i> Tenant & Payments</span>
                                 <a href="tenant.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-friends"></i> Tenants
                                 </a>
-                                <!-- <a href="tenant_new.php" class="mobile-nav-link sub new-badge">
-                                    <i class="fas fa-user-plus"></i> New Tenant
-                                    <span class="mobile-badge">New</span>
-                                </a> -->
-                                <a href="payment.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-money-check-alt"></i> Payment Manager
-                                </a>
                                 <a href="rent_payment.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-money-check-alt"></i> Rent Payment
+                                    <i class="fas fa-money-check-alt"></i> Rent Payments
+                                </a>
+                                <a href="payment.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-credit-card"></i> Payment Manager
                                 </a>
                                 <a href="fee_management.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-money-check-alt"></i> Manage Fees
+                                    <i class="fas fa-coins"></i> Manage Fees
                                 </a>
-                                <a href="client.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-users"></i> Clients
-                                </a>
-                                <a href="settlement.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-users"></i> Settlement Settings
+                                <a href="evacuation_requests.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-door-open"></i> Tenant Evacuation
                                 </a>
                             </div>
 
-                            <!-- Administration -->
+                            <!-- ==================== FINANCE & SETTLEMENTS ==================== -->
                             <div class="mobile-module-group">
-                                <span class="mobile-group-title">Administration</span>
-                                
-                                <a href="staff.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-user-shield"></i> Staff Portal
+                                <span class="mobile-group-title"><i class="fas fa-hand-holding-usd"></i> Finance & Settlements</span>
+                                <a href="client.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-user-tie"></i> Clients
                                 </a>
                                 <a href="agent.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-tie"></i> Agents
                                 </a>
+                                <a href="manage_settlement.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-sliders-h"></i> Settlement Settings
+                                </a>
+                                <a href="settlement.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-money-bill-wave"></i> My Settlements
+                                </a>
                                 <a href="report.php" class="mobile-nav-link sub">
                                     <i class="fas fa-file-alt"></i> Reports
+                                </a>
+                            </div>
+
+                            <!-- ==================== ADMINISTRATION ==================== -->
+                            <div class="mobile-module-group">
+                                <span class="mobile-group-title"><i class="fas fa-cogs"></i> Administration</span>
+                                <a href="staff.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-user-shield"></i> Staff Portal
                                 </a>
                                 <a href="account_management.php" class="mobile-nav-link sub">
                                     <i class="fas fa-history"></i> Account Management
                                 </a>
-                                <a href="evacuation_requests.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-delete"></i> Tenant Evacuation Portal
+                                <a href="account_unlock.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-unlock-alt"></i> Account Unlock
                                 </a>
                             </div>
                         </div>

@@ -1056,17 +1056,25 @@ try {
                 }
 
                 // Insert settlement transaction
+                // Insert settlement transaction
                 $settlementQuery = "
-                    INSERT INTO settlement_transactions 
-                    (
-                        payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
-                        agent_code, client_code, total_rent_amount, admin_share, agent_share,
-                        client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
-                        settlement_status, rent_payment_date, settlement_date, processed_by, notes,
-                        created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW(), NOW())
-                ";
+    INSERT INTO settlement_transactions 
+    (
+        payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
+        agent_code, client_code, total_rent_amount, admin_share, agent_share,
+        client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
+        settlement_status, rent_payment_date, settlement_date, processed_by, notes,
+        admin_paid, admin_payment_date,
+        agent_paid, agent_payment_date,
+        client_paid, client_payment_date,
+        created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?,
+            1, NOW(),
+            ?, ?,
+            1, NOW(),
+            NOW(), NOW())
+";
 
                 $settlementStmt = $conn->prepare($settlementQuery);
                 if (!$settlementStmt) {
@@ -1081,6 +1089,9 @@ try {
                 $propertyId = (int) $property['property_id'];
                 $agentCode = $property['agent_code'] ?: null;
                 $processedBy = (string) $userId;
+
+                // Agent is only "paid" if an agent actually exists on this property
+                $agentPaid = !empty($agentCode) ? 1 : 0;
 
                 logActivity("Settlement insert params: " . json_encode([
                     'payment_id' => $paymentId,
@@ -1099,9 +1110,10 @@ try {
                     'client_percentage_used' => $property['client_percentage']
                 ]));
 
-                // 18 placeholders -> 18 variables
+                // 20 live placeholders now (agent_paid/agent_payment_date are the only
+// remaining "?" params — admin_paid/client_paid are hardcoded to 1 in the SQL)
                 $settlementStmt->bind_param(
-                    "iisiiissddddddssss",
+                    "iisiissdddddddssssis",
                     $paymentId,
                     $tracker_id,
                     $rent_payment_id,
@@ -1119,7 +1131,9 @@ try {
                     $settlementStatus,
                     $rentPaymentDate,
                     $processedBy,
-                    $settlementNotes
+                    $settlementNotes,
+                    $agentPaid,
+                    $rentPaymentDate   // agent_payment_date — or use NOW() in SQL like the others if you don't need app-side control
                 );
 
                 if (!$settlementStmt->execute()) {
