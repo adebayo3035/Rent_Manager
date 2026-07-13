@@ -84,9 +84,26 @@
  }
 
  .btn-primary {
-     background: var(--primary);
+      background: var(--primary);
      color: white;
- }
+    box-shadow: var(--shadow-md);
+}
+.btn-primary, .btn-secondary {
+    padding: 14px 32px;
+    border: none;
+    border-radius: 50px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    min-width: 180px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+}
 
  .btn-primary:hover {
      background: var(--primary-dark);

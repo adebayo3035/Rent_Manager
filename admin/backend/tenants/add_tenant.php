@@ -24,7 +24,8 @@ require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
-if (!isset($_SESSION)) session_start();
+if (!isset($_SESSION))
+    session_start();
 rateLimiter();
 
 logActivity("========== STARTING TENANT ONBOARDING PROCESS ==========");
@@ -667,7 +668,8 @@ try {
         $period_number++;
 
         // Safety break to prevent infinite loop
-        if ($period_number > 100) break;
+        if ($period_number > 100)
+            break;
     }
 
     $insert_tracker->close();
@@ -676,19 +678,24 @@ try {
     // ==================== UPDATE FIRST PERIOD TO 'PAID' ====================
     logActivity("Step 3.8c: Updating first period to 'paid' status (onboarding payment)");
 
-    // First, get the payment_id of the first period
-    $get_first_payment_id = $conn->prepare("
-        SELECT payment_id FROM rent_payment_tracker 
+    // Get the tracker_id and payment_id of the first period
+    $get_first_tracker = $conn->prepare("
+        SELECT tracker_id, payment_id 
+        FROM rent_payment_tracker 
         WHERE rent_payment_id = ? AND period_number = 1
     ");
-    $get_first_payment_id->bind_param("s", $rent_payment_id);
-    $get_first_payment_id->execute();
-    $first_result = $get_first_payment_id->get_result();
+    $get_first_tracker->bind_param("s", $rent_payment_id);
+    $get_first_tracker->execute();
+    $first_result = $get_first_tracker->get_result();
     $first_tracker = $first_result->fetch_assoc();
-    $get_first_payment_id->close();
+    $get_first_tracker->close();
 
     if ($first_tracker) {
+        $tracker_id = $first_tracker['tracker_id'];
         $first_payment_id = $first_tracker['payment_id'];
+
+        logActivity("Found first tracker - tracker_id: {$tracker_id}, payment_id: {$first_payment_id}");
+
         $action = "APPROVED FIRST RENT PAYMENT";
         $notes = "New Tenant First Rent Payment at Onboarding";
 
@@ -712,14 +719,259 @@ try {
         }
 
         $update_first_tracker->bind_param("sdss", $userId, $payment_amount_per_period, $reference_number, $rent_payment_id);
-        $update_first_tracker->execute();
+
+        // Check if update executed successfully
+        if (!$update_first_tracker->execute()) {
+            throw new Exception('Failed to update first period: ' . $update_first_tracker->error);
+        }
 
         if ($update_first_tracker->affected_rows > 0) {
             logActivity("First payment period (#1) marked as 'paid' with payment_id: {$first_payment_id}");
             logActivity("Amount paid: ₦{$payment_amount_per_period}, Reference: {$reference_number}");
 
+            // ==================== INSERT INTO RENT PAYMENT HISTORY ====================
+            logActivity("Step 3.8d: Inserting into rent_payment_history table");
+
+            // // Verify tracker_id is valid before inserting
+            // if (empty($tracker_id) || $tracker_id <= 0) {
+            //     logActivity("ERROR: Invalid tracker_id: {$tracker_id}");
+            //     throw new Exception("Tracker ID is invalid for rent_payment_history insert");
+            // }
+
+            // ==================== INSERT INTO RENT PAYMENT HISTORY ====================
+            logActivity("Step 3.8d: Inserting into rent_payment_history table");
+
+            // Verify tracker_id is valid before inserting
+            if (empty($tracker_id) || $tracker_id <= 0) {
+                logActivity("ERROR: Invalid tracker_id: {$tracker_id}");
+                throw new Exception("Tracker ID is invalid for rent_payment_history insert");
+            }
+
+            logActivity("Preparing rent_payment_history insert with tracker_id: {$tracker_id}");
+
+            $insert_history = $conn->prepare("
+    INSERT INTO rent_payment_history (
+        tracker_id,
+        tenant_code,
+        apartment_code,
+        period_number,
+        amount,
+        attempt_number,
+        payment_method,
+        reference_number,
+        receipt_number,
+        transaction_id,
+        status,
+        initiated_by,
+        initiated_by_type,
+        initiated_at,
+        verified_by,
+        verified_at,
+        verification_notes,
+        notes,
+        ip_address,
+        user_agent
+    ) VALUES (
+        ?, ?, ?, ?, ?, 
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, NOW(),
+        ?, NOW(),
+        ?, ?,
+        ?, ?
+    )
+");
+
+            if (!$insert_history) {
+                $error = 'Prepare failed for rent_payment_history insert: ' . $conn->error;
+                logActivity("ERROR: " . $error);
+                throw new Exception($error);
+            }
+
+            logActivity("rent_payment_history insert statement prepared successfully");
+
+            // Use existing reference_number and receipt_number (no new generation)
+            $transaction_id = 'TXN-' . date('Ymd') . '-' . time() . '-' . rand(1000, 9999);
+            $period = 1;
+            $attempt_number = 1;
+            $payment_method = 'cash';
+            $status = 'paid';
+            $initiated_by = (string) $userId;
+            $initiated_by_type = 'admin';
+            $verification_note = "First rent payment approved during tenant onboarding";
+            $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+
+            // ==================== LOG ALL VALUES BEFORE BINDING ====================
+            logActivity("========== RENT PAYMENT HISTORY VALUES ==========");
+            logActivity("tracker_id: " . var_export($tracker_id, true) . " (type: " . gettype($tracker_id) . ")");
+            logActivity("tenant_code: " . var_export($tenant_code, true) . " (type: " . gettype($tenant_code) . ")");
+            logActivity("apartment_code: " . var_export($inputs['apartment_code'], true) . " (type: " . gettype($inputs['apartment_code']) . ")");
+            logActivity("period: " . var_export($period, true) . " (type: " . gettype($period) . ")");
+            logActivity("payment_amount_per_period: " . var_export($payment_amount_per_period, true) . " (type: " . gettype($payment_amount_per_period) . ")");
+            logActivity("attempt_number: " . var_export($attempt_number, true) . " (type: " . gettype($attempt_number) . ")");
+            logActivity("payment_method: " . var_export($payment_method, true) . " (type: " . gettype($payment_method) . ")");
+            logActivity("reference_number: " . var_export($reference_number, true) . " (type: " . gettype($reference_number) . ")");
+            logActivity("receipt_number: " . var_export($receipt_number, true) . " (type: " . gettype($receipt_number) . ")");
+            logActivity("transaction_id: " . var_export($transaction_id, true) . " (type: " . gettype($transaction_id) . ")");
+            logActivity("status: " . var_export($status, true) . " (type: " . gettype($status) . ")");
+            logActivity("initiated_by: " . var_export($initiated_by, true) . " (type: " . gettype($initiated_by) . ")");
+            logActivity("initiated_by_type: " . var_export($initiated_by_type, true) . " (type: " . gettype($initiated_by_type) . ")");
+            logActivity("userId (verified_by): " . var_export($userId, true) . " (type: " . gettype($userId) . ")");
+            logActivity("verification_note: " . var_export($verification_note, true) . " (type: " . gettype($verification_note) . ")");
+            logActivity("notes: " . var_export($notes, true) . " (type: " . gettype($notes) . ")");
+            logActivity("ip_address: " . var_export($ip_address, true) . " (type: " . gettype($ip_address) . ")");
+            logActivity("user_agent: " . var_export($user_agent, true) . " (type: " . gettype($user_agent) . ")");
+            logActivity("========== END VALUES ==========");
+
+            // ==================== LOG THE QUERY AND BIND TYPES ====================
+            logActivity("bind_param type string: 'issidissssssiissss' (18 characters)");
+            logActivity("Number of bind variables: 18");
+
+            // ==================== EXECUTE BIND AND INSERT ====================
+            $bind_result = $insert_history->bind_param(
+                "issidissssssiissss",
+                $tracker_id,                 // i - tracker_id
+                $tenant_code,                // s - tenant_code
+                $inputs['apartment_code'],   // s - apartment_code
+                $period,                     // i - period_number (1)
+                $payment_amount_per_period,  // d - amount
+                $attempt_number,             // i - attempt_number (1)
+                $payment_method,             // s - payment_method ('cash')
+                $reference_number,           // s - reference_number (existing)
+                $receipt_number,             // s - receipt_number (existing)
+                $transaction_id,             // s - transaction_id
+                $status,                     // s - status ('paid')
+                $initiated_by,               // s - initiated_by (user ID as string)
+                $initiated_by_type,          // s - initiated_by_type ('admin')
+                $userId,                     // i - verified_by
+                $verification_note,          // s - verification_notes
+                $notes,                      // s - notes
+                $ip_address,                 // s - ip_address
+                $user_agent                  // s - user_agent
+            );
+
+            if ($bind_result === false) {
+                logActivity("ERROR: bind_param failed");
+                throw new Exception('bind_param failed for rent_payment_history insert');
+            }
+
+            logActivity("bind_param executed successfully");
+
+            // ==================== EXECUTE THE INSERT ====================
+            logActivity("Executing rent_payment_history insert...");
+
+            if (!$insert_history->execute()) {
+                $error = "Failed to insert rent_payment_history record: " . $insert_history->error;
+                logActivity("ERROR: " . $error);
+                logActivity("Error Code: " . $insert_history->errno);
+                throw new Exception('Failed to insert rent_payment_history: ' . $insert_history->error);
+            }
+
+            $history_id = $insert_history->insert_id;
+            $insert_history->close();
+
+            logActivity("rent_payment_history insert executed successfully. History ID: {$history_id}");
+
+            // ==================== VERIFY THE INSERTED DATA ====================
+            logActivity("========== VERIFYING INSERTED DATA ==========");
+
+            $verify_query = "
+    SELECT 
+        id,
+        tracker_id,
+        tenant_code,
+        apartment_code,
+        period_number,
+        amount,
+        attempt_number,
+        payment_method,
+        reference_number,
+        receipt_number,
+        transaction_id,
+        status,
+        initiated_by,
+        initiated_by_type,
+        initiated_at,
+        verified_by,
+        verified_at,
+        verification_notes,
+        notes,
+        ip_address,
+        user_agent
+    FROM rent_payment_history 
+    WHERE id = ?
+";
+
+            $verify_stmt = $conn->prepare($verify_query);
+            if (!$verify_stmt) {
+                logActivity("WARNING: Could not prepare verification query: " . $conn->error);
+            } else {
+                $verify_stmt->bind_param("i", $history_id);
+                $verify_stmt->execute();
+                $verify_result = $verify_stmt->get_result();
+                $verify_row = $verify_result->fetch_assoc();
+                $verify_stmt->close();
+
+                if ($verify_row) {
+                    logActivity("========== VERIFIED RECORD DATA ==========");
+                    logActivity("id: " . var_export($verify_row['id'], true));
+                    logActivity("tracker_id: " . var_export($verify_row['tracker_id'], true));
+                    logActivity("tenant_code: " . var_export($verify_row['tenant_code'], true));
+                    logActivity("apartment_code: " . var_export($verify_row['apartment_code'], true));
+                    logActivity("period_number: " . var_export($verify_row['period_number'], true));
+                    logActivity("amount: " . var_export($verify_row['amount'], true));
+                    logActivity("attempt_number: " . var_export($verify_row['attempt_number'], true));
+                    logActivity("payment_method: " . var_export($verify_row['payment_method'], true));
+                    logActivity("reference_number: " . var_export($verify_row['reference_number'], true));
+                    logActivity("receipt_number: " . var_export($verify_row['receipt_number'], true));
+                    logActivity("transaction_id: " . var_export($verify_row['transaction_id'], true));
+                    logActivity("status: " . var_export($verify_row['status'], true));
+                    logActivity("initiated_by: " . var_export($verify_row['initiated_by'], true));
+                    logActivity("initiated_by_type: " . var_export($verify_row['initiated_by_type'], true) . " <<<<< CHECK THIS VALUE");
+                    logActivity("initiated_at: " . var_export($verify_row['initiated_at'], true));
+                    logActivity("verified_by: " . var_export($verify_row['verified_by'], true));
+                    logActivity("verified_at: " . var_export($verify_row['verified_at'], true));
+                    logActivity("verification_notes: " . var_export($verify_row['verification_notes'], true));
+                    logActivity("notes: " . var_export($verify_row['notes'], true));
+                    logActivity("ip_address: " . var_export($verify_row['ip_address'], true));
+                    logActivity("user_agent: " . var_export($verify_row['user_agent'], true));
+                    logActivity("========== END VERIFIED RECORD ==========");
+
+                    // Check specifically if initiated_by_type was inserted correctly
+                    if (empty($verify_row['initiated_by_type'])) {
+                        logActivity("!!! WARNING: initiated_by_type is empty in the database!");
+
+                        // Try to update it directly as a test
+                        $fix_query = "UPDATE rent_payment_history SET initiated_by_type = 'admin' WHERE id = ?";
+                        $fix_stmt = $conn->prepare($fix_query);
+                        if ($fix_stmt) {
+                            $fix_stmt->bind_param("i", $history_id);
+                            $fix_stmt->execute();
+                            $fix_affected = $fix_stmt->affected_rows;
+                            $fix_stmt->close();
+                            logActivity("Attempted to fix initiated_by_type directly. Affected rows: {$fix_affected}");
+
+                            // Re-verify after fix
+                            $reverify_stmt = $conn->prepare("SELECT initiated_by_type FROM rent_payment_history WHERE id = ?");
+                            $reverify_stmt->bind_param("i", $history_id);
+                            $reverify_stmt->execute();
+                            $reverify_result = $reverify_stmt->get_result();
+                            $reverify_row = $reverify_result->fetch_assoc();
+                            $reverify_stmt->close();
+                            logActivity("After direct fix - initiated_by_type: " . var_export($reverify_row['initiated_by_type'], true));
+                        }
+                    } else {
+                        logActivity("SUCCESS: initiated_by_type is correctly set to: " . $verify_row['initiated_by_type']);
+                    }
+                } else {
+                    logActivity("ERROR: Could not retrieve inserted record with ID: {$history_id}");
+                }
+            }
+
+            logActivity("Rent payment history record inserted - History ID: {$history_id}, Tracker ID: {$tracker_id}");
+
             // ==================== SETTLEMENT PROCESSING FOR FIRST PAYMENT ====================
-            logActivity("Step 3.8d: Processing settlement for first rent payment");
+            logActivity("Step 3.8e: Processing settlement for first rent payment");
 
             try {
                 // Get property details and settlement formula
@@ -783,7 +1035,7 @@ try {
                     'client_share' => $clientShare
                 ]));
 
-                // Get payment ID from rent_payments
+                // Get payment ID from rent_payments (reuse $tracker_id from earlier)
                 $paymentId = 0;
                 $paymentIdQuery = "SELECT payment_id FROM rent_payments WHERE rent_payment_id = ? LIMIT 1";
                 $paymentIdStmt = $conn->prepare($paymentIdQuery);
@@ -830,29 +1082,9 @@ try {
                 $agentCode = $property['agent_code'] ?: null;
                 $processedBy = (string) $userId;
 
-                // Get tracker_id from the first tracker record
-                $trackerId = 0;
-                $trackerIdQuery = "SELECT tracker_id FROM rent_payment_tracker WHERE rent_payment_id = ? AND period_number = 1 LIMIT 1";
-                $trackerIdStmt = $conn->prepare($trackerIdQuery);
-                if ($trackerIdStmt) {
-                    $trackerIdStmt->bind_param("s", $rent_payment_id);
-                    $trackerIdStmt->execute();
-                    $trackerIdResult = $trackerIdStmt->get_result();
-                    $trackerIdRow = $trackerIdResult->fetch_assoc();
-                    $trackerIdStmt->close();
-                    if ($trackerIdRow) {
-                        $trackerId = (int) $trackerIdRow['tracker_id'];
-                    }
-                }
-
-                if ($trackerId <= 0) {
-                    logActivity("Invalid tracker_id for settlement");
-                    throw new Exception("Unable to find valid tracker record");
-                }
-
                 logActivity("Settlement insert params: " . json_encode([
                     'payment_id' => $paymentId,
-                    'tracker_id' => $trackerId,
+                    'tracker_id' => $tracker_id,
                     'rent_payment_id' => $rent_payment_id,
                     'property_id' => $propertyId,
                     'tenant_id' => $tenantId,
@@ -871,7 +1103,7 @@ try {
                 $settlementStmt->bind_param(
                     "iisiiissddddddssss",
                     $paymentId,
-                    $trackerId,
+                    $tracker_id,
                     $rent_payment_id,
                     $propertyId,
                     $tenantId,
@@ -898,7 +1130,7 @@ try {
                 $settlementId = $settlementStmt->insert_id;
                 $settlementStmt->close();
 
-                logActivity("Settlement created for first payment - ID: $settlementId, Tracker: $trackerId");
+                logActivity("Settlement created for first payment - ID: $settlementId, Tracker: $tracker_id");
 
                 // ==================== UPDATE BALANCES ====================
 
@@ -999,7 +1231,7 @@ try {
 
     // ==================== RECORD SECURITY DEPOSIT IN PAYMENTS TABLE ====================
     if ($security_deposit > 0) {
-        logActivity("Step 3.8e: Recording security deposit payment of ₦{$security_deposit}");
+        logActivity("Step 3.8f: Recording security deposit payment of ₦{$security_deposit}");
 
         $deposit_description = "Security Deposit for apartment {$inputs['apartment_code']}";
         $payment_category = 'security_deposit';
@@ -1057,7 +1289,7 @@ try {
     }
 
     // ==================== UPDATE TENANT WITH AGREED RENT INFORMATION ====================
-    logActivity("Step 3.8f: Updating tenant with agreed rent information");
+    logActivity("Step 3.8g: Updating tenant with agreed rent information");
 
     $update_tenant = $conn->prepare("
         UPDATE tenants 

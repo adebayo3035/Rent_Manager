@@ -217,7 +217,7 @@
                         <span id ="OTPNotifier">Click the Button below to send an OTP to tenant's email. Please ask the tenant for the code.</span>
                     </div>
                     
-                    <button type="button" id="sendOtpBtn" class="btn-primary" style="width: 100%; margin-bottom: 20px;" onclick="sendPaymentOtp()">
+                    <button type="button" id="sendOtpBtn" class="btn-primary" onclick="sendPaymentOtp()">
                         <i class="fas fa-envelope"></i> Send OTP to Tenant
                     </button>
                     

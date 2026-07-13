@@ -22,26 +22,31 @@ try {
     }
     
     $query = "
-        SELECT 
-            rph.*,
-            CASE 
-                WHEN rph.initiated_by_type = 'tenant' THEN 'You'
-                ELSE 'Admin'
-            END as initiated_by_display,
-            CASE 
-                WHEN rph.status = 'approved' THEN 'success'
-                WHEN rph.status IN ('rejected', 'failed') THEN 'danger'
-                WHEN rph.status = 'pending_verification' THEN 'warning'
-                WHEN rph.status = 'initiated' THEN 'info'
-                ELSE 'secondary'
-            END as status_class,
-            (SELECT name as property_name FROM properties p 
-             JOIN apartments a ON p.property_code = a.property_code 
-             WHERE a.apartment_code = rph.apartment_code LIMIT 1) as property_name,
-            (SELECT apartment_number FROM apartments WHERE apartment_code = rph.apartment_code) as apartment_number
-        FROM rent_payment_history rph
-        WHERE rph.id = ? AND rph.tenant_code = ?
-        LIMIT 1
+       SELECT 
+    rph.*,
+    CASE 
+        WHEN rph.initiated_by_type = 'tenant' THEN 'You'
+        ELSE 'Admin'
+    END as initiated_by_display,
+    CASE 
+        WHEN rph.status = 'approved' THEN 'success'
+        WHEN rph.status IN ('rejected', 'failed') THEN 'danger'
+        WHEN rph.status = 'pending_verification' THEN 'warning'
+        WHEN rph.status = 'initiated' THEN 'info'
+        ELSE 'secondary'
+    END as status_class,
+    (SELECT name as property_name FROM properties p 
+     JOIN apartments a ON p.property_code = a.property_code 
+     WHERE a.apartment_code = rph.apartment_code LIMIT 1) as property_name,
+    (SELECT apartment_number FROM apartments WHERE apartment_code = rph.apartment_code) as apartment_number,
+    -- Period dates from rent_payment_tracker
+    rpt.start_date AS period_start_date,
+    rpt.end_date AS period_end_date,
+    rpt.period_number
+FROM rent_payment_history rph
+LEFT JOIN rent_payment_tracker rpt ON rph.tracker_id = rpt.tracker_id
+WHERE rph.id = ? AND rph.tenant_code = ?
+LIMIT 1
     ";
     
     $stmt = $conn->prepare($query);

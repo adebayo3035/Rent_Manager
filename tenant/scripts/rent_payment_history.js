@@ -355,6 +355,14 @@ function showDetailsModal(record) {
                             <span class="summary-label">Status:</span>
                             <span class="summary-value"><span class="${record.status === "paid" ? "status-completed" : record.status === "pending_verification" ? "status-pending" : "status-failed"}">${record.status_text}</span></span>
                         </div>
+                        <div class="summary-row">
+                            <span class="summary-label">Period Start Date:</span>
+                            <span class="summary-value">${record.period_start_date || "N/A"}</span>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label">Period End Date:</span>
+                            <span class="summary-value">${record.period_end_date || "N/A"}</span>
+                        </div>
                     </div>
                     
                     <div class="payment-summary">
@@ -366,6 +374,10 @@ function showDetailsModal(record) {
                         <div class="summary-row">
                             <span class="summary-label">Apartment:</span>
                             <span class="summary-value">${record.apartment_number || "N/A"}</span>
+                        </div>
+                         <div class="summary-row">
+                            <span class="summary-label">Apartment Code:</span>
+                            <span class="summary-value">${record.apartment_code || "N/A"}</span>
                         </div>
                     </div>
                     

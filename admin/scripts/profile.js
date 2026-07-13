@@ -138,6 +138,10 @@ function renderProfile(data) {
   const statsSection = document.getElementById("statsSection");
   statsSection.innerHTML = `
         <div class="stat-item">
+            <div class="stat-label">Wallet Balance</div>
+            <div class="stat-value"># ${data.total_settlement_earned || "0"}</div>
+        </div>
+        <div class="stat-item">
             <div class="stat-value">${data.stats?.total_logins || 0}</div>
             <div class="stat-label">Total Logins</div>
         </div>
@@ -145,6 +149,7 @@ function renderProfile(data) {
             <div class="stat-value">${data.member_since || "--"}</div>
             <div class="stat-label">Member Since</div>
         </div>
+        
     `;
 
   // Update activity section with last login

@@ -69,11 +69,13 @@ try {
                 restriction_id,
                 block_id,
                 status,
+                total_settlement_earned,
                 last_deactivated_by,
                 unlock_token,
                 token_expiry,
                 onboarded_by,
-                last_updated_by
+                last_updated_by,
+                total_settlement_earned
               FROM admin_tbl 
               WHERE unique_id = ? AND status = '1'";
     
