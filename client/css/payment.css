@@ -1074,6 +1074,191 @@
   font-weight: 600;
 }
 
+/* Section Label */
+.section-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 24px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #eef2f7;
+}
+
+.section-label i {
+    color: #4f46e5;
+    font-size: 18px;
+}
+
+.section-label span {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1f36;
+}
+
+/* Settlement Stats */
+.settlement-stats .stat-card {
+    background: #f8fafc;
+    border: 1px solid #eef2f7;
+}
+
+.stat-card-settlement .stat-icon.success {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.stat-card-settlement .stat-icon.paid {
+    background: #dbeafe;
+    color: #2563eb;
+}
+
+.stat-card-settlement .stat-icon.pending {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.stat-card-settlement .stat-icon.info {
+    background: #e0e7ff;
+    color: #4f46e5;
+}
+
+.stat-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+.stat-badge.success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.stat-badge.warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.stat-badge.info {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+/* Deduction Summary */
+.deduction-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 20px 0 30px;
+}
+
+.deduction-card {
+    background: white;
+    border-radius: 10px;
+    padding: 16px 20px;
+    border: 1px solid #eef2f7;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: all 0.2s;
+}
+
+.deduction-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+
+.deduction-card.total {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+}
+
+.deduction-card.net {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+}
+
+.deduction-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.deduction-icon.admin-fee {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.deduction-icon.agent-fee {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.deduction-icon.total-deduction {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.deduction-icon.net-earning {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.deduction-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.deduction-label {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.deduction-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1a1f36;
+}
+
+.deduction-card.net .deduction-value {
+    color: #059669;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .deduction-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .deduction-summary {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .deduction-card {
+        padding: 12px 16px;
+    }
+    
+    .deduction-value {
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 480px) {
+    .deduction-summary {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .modal-content {

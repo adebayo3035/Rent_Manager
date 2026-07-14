@@ -1,4 +1,4 @@
-// client/scripts/payment.js - Client rent payment overview
+// client/scripts/payment.js - Client rent payment & settlement overview
 
 let recentPayments = [];
 let revenueSummary = null;
@@ -58,55 +58,134 @@ function renderPaymentsPage() {
   const contentArea = document.getElementById("contentArea");
   if (!contentArea) return;
 
+  // Extract data from revenueSummary
+  const rentRevenue = revenueSummary?.rent_revenue || {};
+  const settlementRevenue = revenueSummary?.settlement_revenue || {};
+  const deductions = revenueSummary?.deductions || {};
+  const summary = revenueSummary?.summary || {};
+
   contentArea.innerHTML = `
     <div class="payments-container">
       <div class="page-header">
-        <h1>Rent Payments</h1>
-        <p>Review rent collections and recent tenant payment activity.</p>
+        <h1>Rent Payments & Settlements</h1>
+        <p>Review rent collections, settlements, and your net earnings.</p>
       </div>
 
+      <!-- ==================== RENT REVENUE CARDS ==================== -->
+      <div class="section-label">
+        <i class="fas fa-money-bill-wave"></i>
+        <span>Rent Revenue</span>
+      </div>
       <div class="payment-stats">
         <div class="stat-card">
           <div class="stat-icon success"><i class="fas fa-check-circle"></i></div>
           <div class="stat-content">
-            <h3>${formatCurrency(revenueSummary?.total_collected)}</h3>
+            <h3>${formatCurrency(rentRevenue.total_collected)}</h3>
             <p>Total Collected</p>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon warning"><i class="fas fa-clock"></i></div>
           <div class="stat-content">
-            <h3>${formatCurrency(revenueSummary?.total_pending)}</h3>
+            <h3>${formatCurrency(rentRevenue.total_pending)}</h3>
             <p>Pending Verification</p>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon danger"><i class="fas fa-exclamation-circle"></i></div>
           <div class="stat-content">
-            <h3>${formatCurrency(revenueSummary?.total_overdue)}</h3>
+            <h3>${formatCurrency(rentRevenue.total_overdue)}</h3>
             <p>Overdue</p>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon info"><i class="fas fa-chart-line"></i></div>
           <div class="stat-content">
-            <h3>${formatCurrency(revenueSummary?.expected_revenue)}</h3>
+            <h3>${formatCurrency(rentRevenue.expected_revenue)}</h3>
             <p>Expected Revenue</p>
           </div>
         </div>
       </div>
 
+      <!-- ==================== SETTLEMENT REVENUE CARDS ==================== -->
+      <div class="section-label">
+        <i class="fas fa-hand-holding-usd"></i>
+        <span>Your Settlements (Net Earnings)</span>
+      </div>
+      <div class="payment-stats settlement-stats">
+        <div class="stat-card stat-card-settlement">
+          <div class="stat-icon success"><i class="fas fa-check-circle"></i></div>
+          <div class="stat-content">
+            <h3>${formatCurrency(settlementRevenue.total_earned)}</h3>
+            <p>Total Earned <small>(All Settlements)</small></p>
+          </div>
+        </div>
+        <div class="stat-card stat-card-settlement">
+          <div class="stat-icon paid"><i class="fas fa-money-bill-wave"></i></div>
+          <div class="stat-content">
+            <h3>${formatCurrency(settlementRevenue.total_paid)}</h3>
+            <p>Paid to You</p>
+            <span class="stat-badge success">${settlementRevenue.settlement_rate || 0}% of rent</span>
+          </div>
+        </div>
+        <div class="stat-card stat-card-settlement">
+          <div class="stat-icon pending"><i class="fas fa-clock"></i></div>
+          <div class="stat-content">
+            <h3>${formatCurrency(settlementRevenue.total_pending)}</h3>
+            <p>Pending Payout</p>
+            <span class="stat-badge warning">${settlementRevenue.pending_settlements || 0} settlements</span>
+          </div>
+        </div>
+        <div class="stat-card stat-card-settlement">
+          <div class="stat-icon info"><i class="fas fa-percentage"></i></div>
+          <div class="stat-content">
+            <h3>${settlementRevenue.settlement_rate || 0}%</h3>
+            <p>Settlement Rate</p>
+            <span class="stat-badge info">${settlementRevenue.completed_settlements || 0} completed</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== DEDUCTIONS & SUMMARY ==================== -->
+      <div class="deduction-summary">
+        <div class="deduction-card">
+          <div class="deduction-icon admin-fee"><i class="fas fa-user-shield"></i></div>
+          <div class="deduction-content">
+            <span class="deduction-label">Admin Fees</span>
+            <span class="deduction-value">${formatCurrency(deductions.admin_fees)}</span>
+          </div>
+        </div>
+        <div class="deduction-card">
+          <div class="deduction-icon agent-fee"><i class="fas fa-user-tie"></i></div>
+          <div class="deduction-content">
+            <span class="deduction-label">Agent Commissions</span>
+            <span class="deduction-value">${formatCurrency(deductions.agent_commissions)}</span>
+          </div>
+        </div>
+        <div class="deduction-card total">
+          <div class="deduction-icon total-deduction"><i class="fas fa-calculator"></i></div>
+          <div class="deduction-content">
+            <span class="deduction-label">Total Deductions</span>
+            <span class="deduction-value">${formatCurrency(deductions.total_deductions)}</span>
+          </div>
+        </div>
+        <div class="deduction-card net">
+          <div class="deduction-icon net-earning"><i class="fas fa-wallet"></i></div>
+          <div class="deduction-content">
+            <span class="deduction-label">Net Received</span>
+            <span class="deduction-value">${formatCurrency(summary.net_received)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== RECENT PAYMENTS TABLE ==================== -->
       <div class="payment-section">
         <div class="section-header">
           <h2>Recent Rent Payments</h2>
           <a href="payment_history.php" class="dashboard-action">
             <i class="fas fa-credit-card"></i>
             <span>View All Payments</span>
-        </a>
-        <a href="settlement.php" class="dashboard-action">
-            <i class="fas fa-credit-card"></i>
-            <span>View Settlements</span>
-        </a>
+          </a>
         </div>
         
         ${renderPaymentsTable()}

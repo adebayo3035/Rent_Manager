@@ -13,6 +13,7 @@ $dashboardContent = <<<'HTML'
         </a>
     </div>
 
+    <!-- ==================== STATS GRID ==================== -->
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-icon stat-icon-blue">
@@ -52,6 +53,7 @@ $dashboardContent = <<<'HTML'
         </div>
     </div>
 
+    <!-- ==================== REVENUE OVERVIEW ==================== -->
     <section class="dashboard-panel revenue-section">
         <div class="section-header">
             <div>
@@ -65,26 +67,104 @@ $dashboardContent = <<<'HTML'
                 <option value="all">All Time</option>
             </select>
         </div>
+
+        <!-- Rent Revenue Cards -->
         <div class="revenue-cards">
             <div class="revenue-card">
                 <span>Total Collected</span>
-                <strong id="totalCollected">&#8358;0</strong>
+                <strong class="collected" id="totalCollected">₦0.00</strong>
             </div>
             <div class="revenue-card">
                 <span>Pending Payments</span>
-                <strong class="pending" id="pendingPayments">&#8358;0</strong>
+                <strong class="pending" id="pendingPayments">₦0.00</strong>
             </div>
             <div class="revenue-card">
                 <span>Overdue Payments</span>
-                <strong class="overdue" id="overduePayments">&#8358;0</strong>
+                <strong class="overdue" id="overduePayments">₦0.00</strong>
             </div>
             <div class="revenue-card">
                 <span>Expected Revenue</span>
-                <strong id="expectedRevenue">&#8358;0</strong>
+                <strong class="expected" id="expectedRevenue">₦0.00</strong>
+            </div>
+        </div>
+
+        <!-- Section Divider -->
+        <div class="section-label">
+            <i class="fas fa-hand-holding-usd"></i>
+            <span>Your Settlement Earnings</span>
+            <span class="label-count">Net after deductions</span>
+        </div>
+
+        <!-- Settlement Revenue Cards -->
+        <div class="settlement-cards">
+            <div class="settlement-card">
+                <span>Total Earned</span>
+                <strong class="earned" id="settlementTotalEarned">₦0.00</strong>
+            </div>
+            <div class="settlement-card">
+                <span>Paid to You</span>
+                <strong class="paid" id="settlementTotalPaid">₦0.00</strong>
+                <span class="stat-badge success" id="settlementRate">0% of rent</span>
+            </div>
+            <div class="settlement-card">
+                <span>Pending Payout</span>
+                <strong class="pending" id="settlementTotalPending">₦0.00</strong>
+                <span class="stat-badge warning" id="settlementPending">0 settlements</span>
+            </div>
+            <div class="settlement-card">
+                <span>Settlement Rate</span>
+                <strong class="rate" id="settlementRateDisplay">0%</strong>
+                <span class="stat-badge info" id="settlementCompleted">0 completed</span>
+            </div>
+        </div>
+
+        <!-- Deduction Summary -->
+        <div class="section-label">
+            <i class="fas fa-calculator"></i>
+            <span>Deductions & Net Earnings</span>
+        </div>
+
+        <div class="deduction-summary">
+            <div class="deduction-card">
+                <div class="deduction-icon admin">
+                    <i class="fas fa-user-shield"></i>
+                </div>
+                <div class="deduction-content">
+                    <span class="deduction-label">Admin Fees</span>
+                    <span class="deduction-value" id="deductionAdminFees">₦0.00</span>
+                </div>
+            </div>
+            <div class="deduction-card">
+                <div class="deduction-icon agent">
+                    <i class="fas fa-user-tie"></i>
+                </div>
+                <div class="deduction-content">
+                    <span class="deduction-label">Agent Commissions</span>
+                    <span class="deduction-value" id="deductionAgentCommissions">₦0.00</span>
+                </div>
+            </div>
+            <div class="deduction-card">
+                <div class="deduction-icon total">
+                    <i class="fas fa-calculator"></i>
+                </div>
+                <div class="deduction-content">
+                    <span class="deduction-label">Total Deductions</span>
+                    <span class="deduction-value" id="deductionTotal">₦0.00</span>
+                </div>
+            </div>
+            <div class="deduction-card net">
+                <div class="deduction-icon net">
+                    <i class="fas fa-wallet"></i>
+                </div>
+                <div class="deduction-content">
+                    <span class="deduction-label">Net Received</span>
+                    <span class="deduction-value" id="summaryNetReceived">₦0.00</span>
+                </div>
             </div>
         </div>
     </section>
 
+    <!-- ==================== PROPERTIES & PAYMENTS ==================== -->
     <div class="dashboard-grid">
         <section class="dashboard-panel">
             <div class="section-header">

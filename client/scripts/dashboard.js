@@ -46,17 +46,65 @@ async function loadRevenueData() {
         const data = await fetchDashboardJson(url);
         const revenue = data.data || {};
 
-        setText('totalCollected', formatCurrency(revenue.total_collected));
-        setText('pendingPayments', formatCurrency(revenue.total_pending));
-        setText('overduePayments', formatCurrency(revenue.total_overdue));
-        setText('expectedRevenue', formatCurrency(revenue.expected_revenue));
+        // ==================== RENT REVENUE ====================
+        const rentRevenue = revenue.rent_revenue || {};
+        setText('totalCollected', formatCurrency(rentRevenue.total_collected));
+        setText('pendingPayments', formatCurrency(rentRevenue.total_pending));
+        setText('overduePayments', formatCurrency(rentRevenue.total_overdue));
+        setText('expectedRevenue', formatCurrency(rentRevenue.expected_revenue));
+
+        // ==================== SETTLEMENT REVENUE (NEW) ====================
+        const settlementRevenue = revenue.settlement_revenue || {};
+        setText('settlementTotalEarned', formatCurrency(settlementRevenue.total_earned));
+        setText('settlementTotalPaid', formatCurrency(settlementRevenue.total_paid));
+        setText('settlementTotalPending', formatCurrency(settlementRevenue.total_pending));
+        setText('settlementRateDisplay', `${settlementRevenue.settlement_rate || 0}%`);
+        setText('settlementCompleted', formatInteger(settlementRevenue.completed_settlements));
+        setText('settlementPending', formatInteger(settlementRevenue.pending_settlements));
+
+        // ==================== DEDUCTIONS ====================
+        const deductions = revenue.deductions || {};
+        setText('deductionAdminFees', formatCurrency(deductions.admin_fees));
+        setText('deductionAgentCommissions', formatCurrency(deductions.agent_commissions));
+        setText('deductionTotal', formatCurrency(deductions.total_deductions));
+
+        // ==================== SUMMARY ====================
+        const summary = revenue.summary || {};
+        setText('summaryNetReceived', formatCurrency(summary.net_received));
+        setText('summaryPendingPayout', formatCurrency(summary.pending_payout));
+        setText('summarySettlementGap', formatCurrency(summary.settlement_gap));
+
+        // ==================== UPDATE SETTLEMENT STATS CARDS ====================
+        updateSettlementStats(settlementRevenue, deductions, summary);
+
     } catch (error) {
         console.error('Error loading revenue data:', error);
+        // Rent Revenue
         setText('totalCollected', formatCurrency(0));
         setText('pendingPayments', formatCurrency(0));
         setText('overduePayments', formatCurrency(0));
         setText('expectedRevenue', formatCurrency(0));
+        // Settlement Revenue
+        setText('settlementTotalEarned', formatCurrency(0));
+        setText('settlementTotalPaid', formatCurrency(0));
+        setText('settlementTotalPending', formatCurrency(0));
+        setText('settlementRate', '0%');
+        setText('settlementCompleted', '0');
+        setText('settlementPending', '0');
+        // Deductions
+        setText('deductionAdminFees', formatCurrency(0));
+        setText('deductionAgentCommissions', formatCurrency(0));
+        setText('deductionTotal', formatCurrency(0));
+        // Summary
+        setText('summaryNetReceived', formatCurrency(0));
+        setText('summaryPendingPayout', formatCurrency(0));
+        setText('summarySettlementGap', formatCurrency(0));
     }
+}
+
+function updateSettlementStats(settlementRevenue, deductions, summary) {
+    // This function can be used to update additional UI elements if needed
+    // For now, the setText calls above handle the updates
 }
 
 async function loadProperties() {
