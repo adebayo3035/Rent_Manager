@@ -1,20 +1,37 @@
 // settlement.js - Client Settlement Management
 
 // ==================== STATE ====================
-let currentTab = 'pending';
+const state = {
+    currentTab: 'pending',
+    currentPage: 1,
+    totalPages: 0,
+    totalRecords: 0,
+    perPage: 20,
+    settlements: [],
+    pendingRequests: [],
+    filters: {
+        status: '',
+        date_from: '',
+        date_to: '',
+        search: ''
+    }
+};
+
+// Action modal state
 let selectedRequestId = null;
 let selectedAction = null;
 let pendingRequestsCache = [];
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', function() {
+    // Load default tab
     loadPendingRequests();
     setInterval(loadPendingRequests, 60000); // Auto-refresh every 60 seconds
 });
 
 // ==================== TAB SWITCHING ====================
 function switchTab(tab) {
-    currentTab = tab;
+    state.currentTab = tab;
     
     // Update tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -22,14 +39,18 @@ function switchTab(tab) {
         btn.classList.toggle('active', isActive);
         btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
+    
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     
     if (tab === 'pending') {
         document.getElementById('pendingSection').classList.add('active');
         loadPendingRequests();
-    } else {
+    } else if (tab === 'history') {
         document.getElementById('historySection').classList.add('active');
         loadHistory();
+    } else if (tab === 'settlements') {
+        document.getElementById('settlementSection').classList.add('active');
+        loadSettlement();
     }
 }
 
@@ -52,6 +73,7 @@ async function loadPendingRequests() {
 
         if (response.ok && data.success && Array.isArray(data.data)) {
             const requests = data.data;
+            state.pendingRequests = requests;
             pendingRequestsCache = requests;
             updatePendingCount(requests.length);
             
@@ -284,6 +306,521 @@ function renderHistory(history) {
     container.innerHTML = html;
 }
 
+// ==================== LOAD SETTLEMENTS ====================
+async function loadSettlement() {
+    const container = document.getElementById('settlementRecords');
+    container.innerHTML = `
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading settlements...</p>
+        </div>
+    `;
+
+    try {
+        const params = new URLSearchParams({
+            action: 'get_client_settlements',
+            page: state.currentPage,
+            limit: state.perPage,
+            status: state.filters.status,
+            date_from: state.filters.date_from,
+            date_to: state.filters.date_to,
+            search: state.filters.search
+        });
+
+        const response = await fetch(`../backend/client/settlement_api.php?${params}`, {
+            credentials: 'include',
+            headers: { 'Accept': 'application/json' }
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            const result = data.data;
+            const settlements = result.settlements || [];
+            
+            state.settlements = settlements;
+            state.totalRecords = result.pagination?.total_records || 0;
+            state.totalPages = result.pagination?.total_pages || 0;
+            
+            if (settlements.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-history"></i>
+                        <p>No settlement records available for you.</p>
+                    </div>
+                `;
+            } else {
+                renderSettlement(settlements);
+                renderPagination();
+                renderSummary(result.summary);
+            }
+        } else {
+            const message = data.message || 'Failed to load settlement records';
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle" style="color: #ef4444;"></i>
+                    <p>${escapeHtml(message)}</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading settlement records:', error);
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-circle" style="color: #ef4444;"></i>
+                <p>Failed to load settlement records. Please refresh the page.</p>
+            </div>
+        `;
+    }
+}
+
+// ==================== RENDER SETTLEMENT ====================
+// ==================== RENDER SETTLEMENT (TABLE VIEW) ====================
+function renderSettlement(settlements) {
+    const container = document.getElementById('settlementRecords');
+    
+    if (!settlements || settlements.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-history"></i>
+                <p>No settlement records available for you.</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = `
+        <div class="table-responsive">
+            <table class="settlement-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Property</th>
+                        <th>Tenant</th>
+                        <th>Amount</th>
+                        <th>Your Share</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    const startIndex = (state.currentPage - 1) * state.perPage + 1;
+
+    settlements.forEach((item, index) => {
+        const rowNumber = startIndex + index;
+        const statusColors = {
+            'pending': 'warning',
+            'processing': 'info',
+            'completed': 'success',
+            'failed': 'danger',
+            'reversed': 'secondary'
+        };
+        const statusClass = statusColors[item.settlement_status] || 'secondary';
+        const isPaid = item.user_paid || false;
+        const paidStatus = isPaid ? 'Paid' : 'Unpaid';
+        const paidClass = isPaid ? 'paid' : 'unpaid';
+
+        html += `
+            <tr>
+                <td>${rowNumber}</td>
+                <td>
+                    <div class="property-cell">
+                        <span class="property-name">${escapeHtml(item.property?.name || 'N/A')}</span>
+                        <span class="property-code">${escapeHtml(item.property?.code || 'N/A')}</span>
+                    </div>
+                </td>
+                <td>
+                    <div class="tenant-cell">
+                        <span class="tenant-name">${escapeHtml(item.tenant?.name || 'N/A')}</span>
+                        <span class="tenant-code">${escapeHtml(item.tenant?.code || 'N/A')}</span>
+                    </div>
+                </td>
+                <td class="amount">₦${formatNumber(item.total_amount)}</td>
+                <td class="amount share">
+                    ₦${formatNumber(item.user_share)}
+                    <span class="share-percentage">(${item.user_percentage || 0}%)</span>
+                </td>
+                <td>
+                    <div class="status-group">
+                        <span class="badge badge-${statusClass}">${(item.settlement_status || 'PENDING').toUpperCase()}</span>
+                        <span class="badge badge-${paidClass}">${paidStatus}</span>
+                    </div>
+                </td>
+                <td>${formatDate(item.settlement_date)}</td>
+                <td>
+                    <button class="btn-icon btn-view" onclick="viewSettlementDetails(${item.id})" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+// ==================== RENDER PAGINATION ====================
+function renderPagination() {
+    const paginationContainer = document.getElementById('paginationControls');
+    if (!paginationContainer) return;
+
+    const start = (state.currentPage - 1) * state.perPage + 1;
+    const end = Math.min(state.currentPage * state.perPage, state.totalRecords);
+
+    paginationContainer.innerHTML = `
+        <div class="pagination-info">
+            Showing <span id="showingStart">${state.totalRecords > 0 ? start : 0}</span> 
+            to <span id="showingEnd">${end}</span> 
+            of <span id="totalRecords">${state.totalRecords}</span> records
+        </div>
+        <div class="pagination-buttons">
+            <button class="btn-page" onclick="changePage('prev')" ${state.currentPage <= 1 ? 'disabled' : ''}>
+                <i class="fas fa-chevron-left"></i> Previous
+            </button>
+            <span class="page-info">Page ${state.currentPage} of ${state.totalPages || 1}</span>
+            <button class="btn-page" onclick="changePage('next')" ${state.currentPage >= state.totalPages ? 'disabled' : ''}>
+                Next <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    `;
+}
+
+// ==================== RENDER SUMMARY ====================
+function renderSummary(summary) {
+    const summaryContainer = document.getElementById('summaryCards');
+    if (!summaryContainer || !summary) return;
+
+    summaryContainer.innerHTML = `
+        <div class="summary-card">
+            <div class="card-icon total">
+                <i class="fas fa-receipt"></i>
+            </div>
+            <div class="card-info">
+                <span class="card-label">Total Settlements</span>
+                <span class="card-value">${summary.total_count || 0}</span>
+                <span class="card-sub">₦${formatNumber(summary.total_amount)}</span>
+            </div>
+        </div>
+        <div class="summary-card completed">
+            <div class="card-icon completed">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="card-info">
+                <span class="card-label">Completed</span>
+                <span class="card-value">${summary.completed_count || 0}</span>
+                <span class="card-sub">₦${formatNumber(summary.completed_amount)}</span>
+            </div>
+        </div>
+        <div class="summary-card pending">
+            <div class="card-icon pending">
+                <i class="fas fa-clock"></i>
+            </div>
+            <div class="card-info">
+                <span class="card-label">Pending</span>
+                <span class="card-value">${summary.pending_count || 0}</span>
+                <span class="card-sub">₦${formatNumber(summary.pending_amount)}</span>
+            </div>
+        </div>
+        <div class="summary-card user-share">
+            <div class="card-icon share">
+                <i class="fas fa-user-check"></i>
+            </div>
+            <div class="card-info">
+                <span class="card-label">Your Total Share</span>
+                <span class="card-value">₦${formatNumber(summary.total_user_share)}</span>
+                <span class="card-sub">Received: ₦${formatNumber(summary.total_received)}</span>
+            </div>
+        </div>
+    `;
+}
+
+// ==================== VIEW SETTLEMENT DETAILS ====================
+async function viewSettlementDetails(settlementId) {
+    // Get modal elements
+    const modal = document.getElementById('settlementDetailsModal');
+    const body = document.getElementById('settlementDetailsBody');
+    
+    // Check if modal exists
+    if (!modal) {
+        console.error('Modal element not found: settlementDetailsModal');
+        showToast('Modal not found. Please refresh the page.', 'error');
+        return;
+    }
+    
+    if (!body) {
+        console.error('Modal body element not found: settlementDetailsBody');
+        showToast('Modal body not found. Please refresh the page.', 'error');
+        return;
+    }
+    
+    // Show loading state
+    body.innerHTML = `
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading settlement details...</p>
+        </div>
+    `;
+    
+    // Show modal
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    try {
+        const response = await fetch(`../backend/client/settlement_api.php?action=get_settlement_details&id=${settlementId}`, {
+            credentials: 'include',
+            headers: { 'Accept': 'application/json' }
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            renderSettlementDetails(data.data);
+        } else {
+            body.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <p>${data.message || 'Failed to load settlement details'}</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading settlement details:', error);
+        body.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-circle"></i>
+                <p>Failed to load settlement details. Please try again.</p>
+            </div>
+        `;
+    }
+}
+
+// ==================== RENDER SETTLEMENT DETAILS ====================
+function renderSettlementDetails(settlement) {
+    const container = document.getElementById('settlementDetailsBody');
+    
+    if (!settlement) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-circle"></i>
+                <p>No details available</p>
+            </div>
+        `;
+        return;
+    }
+
+    const statusClass = settlement.settlement_status || 'pending';
+
+    container.innerHTML = `
+        <div class="details-grid">
+            <!-- Property Information -->
+            <div class="detail-section">
+                <h4><i class="fas fa-building"></i> Property Information</h4>
+                <div class="detail-row">
+                    <span class="label">Property</span>
+                    <span class="value">${escapeHtml(settlement.property?.name || 'N/A')}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Property Code</span>
+                    <span class="value">${escapeHtml(settlement.property?.code || 'N/A')}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Agent</span>
+                    <span class="value">${escapeHtml(settlement.agent?.name || 'N/A')}</span>
+                </div>
+            </div>
+            
+            <!-- Tenant Information -->
+            <div class="detail-section">
+                <h4><i class="fas fa-user"></i> Tenant Information</h4>
+                <div class="detail-row">
+                    <span class="label">Tenant</span>
+                    <span class="value">${escapeHtml(settlement.tenant?.name || 'N/A')}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Apartment</span>
+                    <span class="value">${escapeHtml(settlement.tenant?.apartment || 'N/A')}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Period</span>
+                    <span class="value">Tracker #${settlement.tracker_id || 'N/A'}</span>
+                </div>
+            </div>
+            
+            <!-- Payment Breakdown -->
+            <div class="detail-section">
+                <h4><i class="fas fa-money-bill-wave"></i> Payment Breakdown</h4>
+                <div class="detail-row">
+                    <span class="label">Total Amount</span>
+                    <span class="value amount">₦${formatNumber(settlement.total_amount)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Admin Share (${settlement.admin_percentage_used || 0}%)</span>
+                    <span class="value">₦${formatNumber(settlement.admin_share)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Agent Share (${settlement.agent_percentage_used || 0}%)</span>
+                    <span class="value">₦${formatNumber(settlement.agent_share)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Your Share (${settlement.client_percentage_used || 0}%)</span>
+                    <span class="value share">₦${formatNumber(settlement.client_share)}</span>
+                </div>
+            </div>
+            
+            <!-- Payment Status -->
+            <div class="detail-section">
+                <h4><i class="fas fa-check-circle"></i> Payment Status</h4>
+                <div class="detail-row">
+                    <span class="label">Settlement Status</span>
+                    <span class="value status-badge status-${statusClass}">
+                        ${(settlement.settlement_status || 'PENDING').toUpperCase()}
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Your Payment</span>
+                    <span class="value">${settlement.user_paid ? '✅ Paid' : '⏳ Pending'}</span>
+                </div>
+                ${settlement.user_payment_date ? `
+                    <div class="detail-row">
+                        <span class="label">Your Payment Date</span>
+                        <span class="value">${formatDateTime(settlement.user_payment_date)}</span>
+                    </div>
+                ` : ''}
+            </div>
+            
+            <!-- Timeline -->
+            <div class="detail-section full-width">
+                <h4><i class="fas fa-clock"></i> Timeline</h4>
+                <div class="detail-row">
+                    <span class="label">Settlement Date</span>
+                    <span class="value">${formatDateTime(settlement.settlement_date)}</span>
+                </div>
+                ${settlement.notes ? `
+                    <div class="detail-row">
+                        <span class="label">Notes</span>
+                        <span class="value">${escapeHtml(settlement.notes)}</span>
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+function printSettlement() {
+    const content = document.getElementById('settlementDetailsBody').innerHTML;
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    printWindow.document.write(`
+        <html><head><title>Settlement Details</title>
+        <style>
+            body { font-family: 'Inter', sans-serif; padding: 40px; }
+            .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+            .detail-section { margin-bottom: 20px; }
+            .detail-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee; }
+            .label { color: #666; }
+            .value { font-weight: 500; }
+            .full-width { grid-column: 1 / -1; }
+            h4 { margin: 0 0 10px 0; color: #1a1f36; border-bottom: 2px solid #4f46e5; padding-bottom: 6px; }
+        </style>
+        </head><body>
+        <h1>Settlement Details</h1>
+        ${content}
+        <script>window.print();</script>
+        </body></html>
+    `);
+    printWindow.document.close();
+}
+
+// ==================== PAGINATION CONTROLS ====================
+function changePage(direction) {
+    if (direction === 'prev' && state.currentPage > 1) {
+        state.currentPage--;
+    } else if (direction === 'next' && state.currentPage < state.totalPages) {
+        state.currentPage++;
+    }
+    loadSettlement();
+}
+
+// ==================== FILTERS ====================
+function applyFilters() {
+    state.filters.status = document.getElementById('filterStatus')?.value || '';
+    state.filters.date_from = document.getElementById('filterDateFrom')?.value || '';
+    state.filters.date_to = document.getElementById('filterDateTo')?.value || '';
+    state.filters.search = document.getElementById('filterSearch')?.value || '';
+    state.currentPage = 1;
+    loadSettlement();
+}
+
+function clearFilters() {
+    const statusInput = document.getElementById('filterStatus');
+    const dateFromInput = document.getElementById('filterDateFrom');
+    const dateToInput = document.getElementById('filterDateTo');
+    const searchInput = document.getElementById('filterSearch');
+    
+    if (statusInput) statusInput.value = '';
+    if (dateFromInput) dateFromInput.value = '';
+    if (dateToInput) dateToInput.value = '';
+    if (searchInput) searchInput.value = '';
+    
+    state.filters = { status: '', date_from: '', date_to: '', search: '' };
+    state.currentPage = 1;
+    loadSettlement();
+}
+
+// ==================== MARK SETTLEMENT AS PAID ====================
+async function markSettlementAsPaid(settlementId) {
+    if (!confirm('Are you sure you want to mark this settlement as paid?')) return;
+    
+    try {
+        const response = await fetch('../backend/client/mark_settlement_paid.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ settlement_id: settlementId })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('Settlement marked as paid successfully', 'success');
+            loadSettlement();
+        } else {
+            showToast(data.message || 'Failed to mark settlement as paid', 'error');
+        }
+    } catch (error) {
+        console.error('Error marking settlement as paid:', error);
+        showToast('An error occurred. Please try again.', 'error');
+    }
+}
+
+// ==================== CLOSE MODAL ====================
+function closeSettlementDetailsModal() {
+    document.getElementById('settlementDetailsModal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+// Close modal on outside click
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('settlementDetailsModal');
+    if (e.target === modal) {
+        closeSettlementDetailsModal();
+    }
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const modal = document.getElementById('settlementDetailsModal');
+        if (modal.style.display === 'flex') {
+            closeSettlementDetailsModal();
+        }
+    }
+});
+
 // ==================== ACTION MODAL ====================
 function openActionModal(requestId, action) {
     selectedRequestId = requestId;
@@ -297,7 +834,6 @@ function openActionModal(requestId, action) {
     const declineReasonContainer = document.getElementById('declineReasonContainer');
     const declineReason = document.getElementById('declineReason');
 
-    // Find the request from the DOM
     const card = document.querySelector(`.settlement-card[data-request-id="${escapeCssIdentifier(requestId)}"]`);
     if (!card) {
         showToast('Request not found', 'error');
@@ -370,7 +906,7 @@ async function confirmApprove() {
         if (data.success) {
             showToast('Settlement change approved successfully!', 'success');
             closeActionModal();
-            loadPendingRequests(); // Refresh list
+            loadPendingRequests();
         } else {
             showToast(data.message || 'Failed to approve', 'error');
         }
@@ -418,7 +954,7 @@ async function confirmDecline() {
         if (data.success) {
             showToast('Settlement change declined.', 'info');
             closeActionModal();
-            loadPendingRequests(); // Refresh list
+            loadPendingRequests();
         } else {
             showToast(data.message || 'Failed to decline', 'error');
         }
@@ -431,28 +967,41 @@ async function confirmDecline() {
     }
 }
 
-// ==================== CLOSE MODAL ON OUTSIDE CLICK ====================
-document.addEventListener('click', function(e) {
-    const modal = document.getElementById('actionModal');
-    if (e.target === modal) {
-        closeActionModal();
-    }
-});
-
-// ==================== CLOSE MODAL ON ESCAPE KEY ====================
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        if (document.getElementById('actionModal').style.display === 'flex') {
-            closeActionModal();
-        }
-    }
-});
-
 // ==================== UTILITY FUNCTIONS ====================
+function formatNumber(value) {
+    if (!value) return '0.00';
+    return new Intl.NumberFormat('en-NG').format(value);
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatPercent(value) {
+    if (!value && value !== 0) return '0%';
+    return value + '%';
+}
+
 function escapeHtml(text) {
-    if (text === null || text === undefined) return '';
+    if (!text) return '';
     const div = document.createElement('div');
-    div.textContent = String(text);
+    div.textContent = text;
     return div.innerHTML;
 }
 
@@ -460,21 +1009,19 @@ function escapeAttribute(text) {
     return escapeHtml(text).replace(/"/g, '&quot;');
 }
 
+function escapeCssIdentifier(value) {
+    return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 function toNumber(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number : 0;
 }
 
-function formatPercent(value) {
-    return `${toNumber(value).toFixed(2)}%`;
-}
-
-function escapeCssIdentifier(value) {
-    return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
 function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
+    if (!container) return;
+    
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     

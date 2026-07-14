@@ -352,6 +352,37 @@
     cursor: not-allowed;
     transform: none;
 }
+.btn-icon {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    color: #6b7280;
+}
+.btn-view {
+    color: #4f46e5;
+}
+.btn-icon {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    color: #6b7280;
+}
 
 /* ==================== MODAL ==================== */
 .modal {
@@ -486,6 +517,407 @@
 
 .empty-state p {
     margin: 0;
+}
+
+/* ==================== SETTLEMENT TABLE ==================== */
+.settlement-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.settlement-table thead {
+    background: #f8fafc;
+}
+
+.settlement-table th {
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: #1a1f36;
+    border-bottom: 2px solid #eef2f7;
+    white-space: nowrap;
+}
+
+.settlement-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+}
+
+.settlement-table tbody tr:hover {
+    background: #fafbfc;
+}
+
+/* ==================== TABLE CELLS ==================== */
+.property-cell {
+    display: flex;
+    flex-direction: column;
+}
+
+.property-cell .property-name {
+    font-weight: 500;
+    color: #0a0a1a;
+}
+
+.property-cell .property-code {
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+.tenant-cell {
+    display: flex;
+    flex-direction: column;
+}
+
+.tenant-cell .tenant-name {
+    font-weight: 500;
+    color: #0a0a1a;
+}
+
+.tenant-cell .tenant-code {
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+.amount {
+    font-weight: 600;
+    color: #0a0a1a;
+}
+
+.amount.share {
+    color: #4f46e5;
+}
+
+.share-percentage {
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 400;
+}
+
+/* ==================== STATUS GROUP ==================== */
+.status-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.badge-warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.badge-success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.badge-danger {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.badge-info {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-secondary {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.badge-paid {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.badge-unpaid {
+    background: #fef3c7;
+    color: #92400e;
+}
+/* ==================== SETTLEMENT DETAILS MODAL ==================== */
+.modal-content.modal-lg {
+    max-width: 720px;
+}
+
+/* Settlement Details Grid */
+.details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px 24px;
+}
+
+.detail-section {
+    background: #fafbfc;
+    border-radius: 8px;
+    padding: 14px 16px;
+    border: 1px solid #eef2f7;
+}
+
+.detail-section h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1f36;
+    margin: 0 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #eef2f7;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.detail-section h4 i {
+    color: #4f46e5;
+    font-size: 14px;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid #f8fafc;
+    font-size: 13px;
+}
+
+.detail-row:last-child {
+    border-bottom: none;
+}
+
+.detail-row .label {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.detail-row .value {
+    font-weight: 500;
+    color: #1a1f36;
+    text-align: right;
+}
+
+.detail-row .value.amount {
+    color: #4f46e5;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.detail-row .value.share {
+    color: #10b981;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.detail-row .value.status-badge {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.detail-row .value.status-badge.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.detail-row .value.status-badge.status-completed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.detail-row .value.status-badge.status-failed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.detail-row .value.status-badge.status-processing {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.full-width {
+    grid-column: 1 / -1;
+}
+
+/* Modal Footer */
+.modal-footer .btn {
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-footer .btn-secondary {
+    background: #f3f4f6;
+    color: #1a1f36;
+    border: 1px solid #e5e7eb;
+}
+
+.modal-footer .btn-secondary:hover {
+    background: #e5e7eb;
+}
+
+.modal-footer .btn-primary {
+    background: #4f46e5;
+    color: white;
+    border: none;
+}
+
+.modal-footer .btn-primary:hover {
+    background: #4338ca;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+    transform: translateY(-1px);
+}
+
+/* Loading State in Modal */
+.loading-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #64748b;
+}
+
+.loading-state .spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid #eef2f7;
+    border-top: 3px solid #4f46e5;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 12px;
+}
+
+/* Empty State in Modal */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #64748b;
+}
+
+.empty-state i {
+    font-size: 36px;
+    color: #d1d5db;
+    display: block;
+    margin-bottom: 12px;
+}
+
+.empty-state p {
+    margin: 0;
+}
+
+/* ==================== MODAL RESPONSIVE ==================== */
+@media (max-width: 768px) {
+    .details-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    
+    .detail-section {
+        padding: 12px 14px;
+    }
+    
+    .detail-row {
+        font-size: 12px;
+    }
+    
+    .modal-content.modal-lg {
+        max-width: 95%;
+        margin: 10px;
+    }
+    
+    .modal-footer {
+        flex-direction: column;
+    }
+    
+    .modal-footer .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .modal-content.modal-lg {
+        max-width: 100%;
+        margin: 0;
+        border-radius: 0;
+        max-height: 100vh;
+        height: 100vh;
+    }
+    
+    .modal-header {
+        border-radius: 0;
+    }
+    
+    .modal-footer {
+        border-radius: 0;
+    }
+    
+    .detail-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+    }
+    
+    .detail-row .value {
+        text-align: left;
+        width: 100%;
+    }
+}
+
+/* ==================== TABLE RESPONSIVE ==================== */
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+    .settlement-table {
+        font-size: 12px;
+    }
+    
+    .settlement-table th,
+    .settlement-table td {
+        padding: 8px 10px;
+    }
+    
+    .settlement-table .amount {
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .settlement-table {
+        font-size: 11px;
+    }
+    
+    .settlement-table th,
+    .settlement-table td {
+        padding: 6px 8px;
+    }
+    
+    .badge {
+        font-size: 9px;
+        padding: 2px 6px;
+    }
 }
 
 /* ==================== TOAST ==================== */

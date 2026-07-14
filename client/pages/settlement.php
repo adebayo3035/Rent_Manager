@@ -25,6 +25,10 @@ $settlementContent = <<<'HTML'
             <i class="fas fa-history"></i>
             <span>History</span>
         </button>
+        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-tab="settlements" onclick="switchTab('settlements')">
+            <i class="fas fa-money"></i>
+            <span>My Settlements</span>
+        </button>
     </div>
 
     <div id="pendingSection" class="tab-content active" role="tabpanel">
@@ -44,6 +48,42 @@ $settlementContent = <<<'HTML'
             </div>
         </div>
     </div>
+
+    <div id="settlementSection" class="tab-content" role="tabpanel">
+        <div id="settlementRecords">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading settlement Records...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settlement Details Modal -->
+<!-- ==================== SETTLEMENT DETAILS MODAL ==================== -->
+<div id="settlementDetailsModal" class="modal" style="display:none;">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3><i class="fas fa-file-invoice-dollar"></i> Settlement Details</h3>
+            <button class="modal-close" onclick="closeSettlementDetailsModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="settlementDetailsBody">
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading settlement details...</p>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeSettlementDetailsModal()">
+                <i class="fas fa-times"></i> Close
+            </button>
+            <button class="btn btn-primary" onclick="printSettlement()">
+                <i class="fas fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+</div>
 </section>
 
 <div id="actionModal" class="modal" style="display:none;" aria-hidden="true">
