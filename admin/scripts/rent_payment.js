@@ -25,8 +25,14 @@ let currentPage = 1;
             // Load data
             if (tab === 'pending') {
                 loadPendingVerifications();
+                document.getElementById('searchInput').style.display = "none";
+                document.getElementById('statusFilter').style.display = "none";
+                document.getElementById('searchBtn').style.display = "none";
             } else {
                 loadPaymentHistory();
+                document.getElementById('searchInput').style.display = "block";
+                document.getElementById('statusFilter').style.display = "block";
+                document.getElementById('searchBtn').style.display = "block";
             }
         }
 

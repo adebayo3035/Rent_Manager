@@ -24,7 +24,7 @@
                     <option value="paid">Paid</option>
                     <option value="failed">Failed</option>
                 </select>
-                <button class="btn btn-outline" onclick="applyFilters()">
+                <button class="btn btn-outline" id = "searchBtn" onclick="applyFilters()">
                     <i class="fas fa-search"></i> Search
                 </button>
             </div>

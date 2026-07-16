@@ -97,10 +97,10 @@ body {
     font-weight: 700;
 }
 
-.form-control {
+/* .form-control {
     width: 100%;
     min-height: 40px;
-    padding: 9px 11px;
+     padding: 14px 16px;
     border: 1px solid var(--history-border);
     border-radius: 7px;
     background: #ffffff;
@@ -109,7 +109,7 @@ body {
     font-size: 14px;
     outline: none;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
+} */
 
 .form-control:focus {
     border-color: var(--history-primary);

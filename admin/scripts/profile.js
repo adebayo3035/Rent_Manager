@@ -84,7 +84,7 @@ function renderProfile(data) {
             </div>
         `;
   }
-
+  
   // Update personal information section with new fields
   const personalInfo = document.getElementById("personalInfo");
   personalInfo.innerHTML = `
@@ -133,7 +133,7 @@ function renderProfile(data) {
             <div class="info-value">${data.updated_at_formatted || "--"}</div>
         </div>
     `;
-
+document.getElementById('lastUpdated').textContent = data.updated_at_formatted;
   // Update stats section
   const statsSection = document.getElementById("statsSection");
   statsSection.innerHTML = `
