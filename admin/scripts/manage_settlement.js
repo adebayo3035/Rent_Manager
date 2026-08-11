@@ -26,13 +26,17 @@ async function loadProperties() {
         const response = await fetch('../backend/settlement/manage_settlement.php?action=get_properties');
         const data = await response.json();
 
+
+
         if (data.success && Array.isArray(data.message)) {
             properties = data.message;
             renderTable(properties);
             updateRowCount(properties.length);
+            document.body.style.visibility = 'visible';
         } 
         else if(data.responseCode = "403"){
             window.location.replace("../pages/unauthorized.php")
+            
         }
         else {
             showToast(data.data || 'Failed to load properties', 'error');
@@ -45,6 +49,7 @@ async function loadProperties() {
                 </tr>
             `;
         }
+
     } catch (error) {
         console.error('Error loading properties:', error);
         showToast('Network error. Please try again.', 'error');

@@ -20,6 +20,9 @@
             text-transform: uppercase;
             display: inline-block;
         }
+        body{
+            visibility: hidden;
+        }
         
         .status-pending {
             background-color: #fff3cd;

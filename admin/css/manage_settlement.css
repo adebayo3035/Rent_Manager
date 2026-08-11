@@ -1,6 +1,9 @@
 /* settlement.css - Property Settlement Management Styles */
 
 /* ==================== CONTAINER ==================== */
+body{
+    visibility: hidden;
+}
 .settlement-container {
     max-width: 1400px;
     margin: 0 auto;

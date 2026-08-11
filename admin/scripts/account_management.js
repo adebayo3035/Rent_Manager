@@ -88,8 +88,11 @@ class AccountReactivationManager {
             
             const response = await fetch(`../backend/utilities/fetch_account_reactivation_requests.php?${params}`);
             if(response.status === 403){
-                window.location.href = '../pages/unauthorized.php';
+                window.location.replace ('../pages/unauthorized.php');
                 return;
+            }
+            else{
+                document.body.style.visibility = 'visible';
             }
             
             if (!response.ok) {
