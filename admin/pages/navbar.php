@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,8 +12,10 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet" />
 </head>
+
 <body>
     <nav class="navbar">
         <div class="nav-container">
@@ -58,7 +61,7 @@
                                 <i class="fas fa-wrench"></i> Maintenance Requests
                             </a>
                         </div>
-                        
+
                         <!-- ==================== COLUMN 2: TENANT & PAYMENTS ==================== -->
                         <div class="dropdown-column">
                             <span class="dropdown-title"><i class="fas fa-users"></i> Tenant & Payments</span>
@@ -78,10 +81,11 @@
                                 <i class="fas fa-door-open"></i> Tenant Evacuation
                             </a>
                         </div>
-                        
+
                         <!-- ==================== COLUMN 3: FINANCE & SETTLEMENTS ==================== -->
                         <div class="dropdown-column">
-                            <span class="dropdown-title"><i class="fas fa-hand-holding-usd"></i> Finance & Settlements</span>
+                            <span class="dropdown-title"><i class="fas fa-hand-holding-usd"></i> Finance &
+                                Settlements</span>
                             <a href="client.php" class="dropdown-item">
                                 <i class="fas fa-user-tie"></i> Clients
                             </a>
@@ -98,12 +102,15 @@
                                 <i class="fas fa-file-alt"></i> Reports
                             </a>
                         </div>
-                        
+
                         <!-- ==================== COLUMN 4: ADMINISTRATION ==================== -->
                         <div class="dropdown-column">
                             <span class="dropdown-title"><i class="fas fa-cogs"></i> Administration</span>
                             <a href="staff.php" class="dropdown-item">
                                 <i class="fas fa-user-shield"></i> Staff Portal
+                            </a>
+                            <a href="agent_properties.php" class="dropdown-item">
+                                <i class="fas fa-user-tie"></i> Agent's Portfolio
                             </a>
                             <a href="account_management.php" class="dropdown-item">
                                 <i class="fas fa-history"></i> Account Management
@@ -206,7 +213,8 @@
                         <div class="mobile-accordion-content">
                             <!-- ==================== PROPERTY MANAGEMENT ==================== -->
                             <div class="mobile-module-group">
-                                <span class="mobile-group-title"><i class="fas fa-building"></i> Property Management</span>
+                                <span class="mobile-group-title"><i class="fas fa-building"></i> Property
+                                    Management</span>
                                 <a href="property.php" class="mobile-nav-link sub">
                                     <i class="fas fa-building"></i> Properties
                                 </a>
@@ -246,7 +254,8 @@
 
                             <!-- ==================== FINANCE & SETTLEMENTS ==================== -->
                             <div class="mobile-module-group">
-                                <span class="mobile-group-title"><i class="fas fa-hand-holding-usd"></i> Finance & Settlements</span>
+                                <span class="mobile-group-title"><i class="fas fa-hand-holding-usd"></i> Finance &
+                                    Settlements</span>
                                 <a href="client.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-tie"></i> Clients
                                 </a>
@@ -269,6 +278,9 @@
                                 <span class="mobile-group-title"><i class="fas fa-cogs"></i> Administration</span>
                                 <a href="staff.php" class="mobile-nav-link sub">
                                     <i class="fas fa-user-shield"></i> Staff Portal
+                                </a>
+                                <a href="agent_properties.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-user-tie"></i> Agent's Portfolio
                                 </a>
                                 <a href="account_management.php" class="mobile-nav-link sub">
                                     <i class="fas fa-history"></i> Account Management
@@ -308,4 +320,5 @@
     <script src="../scripts/navbar.js"></script>
     <!-- <script src="../../ui.js"></script>  -->
 </body>
+
 </html>

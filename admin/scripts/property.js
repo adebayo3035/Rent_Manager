@@ -340,6 +340,15 @@ $("#edit_city").val(property.city).trigger("change");
     onInit: function () {
       console.log("Property Manager Initialized");
       window.propertyManager = this;
+
+      const propertyCode = new URLSearchParams(window.location.search).get("property_code");
+      if (propertyCode) {
+        const searchInput = document.getElementById("propertyLiveSearch");
+        if (searchInput) {
+          searchInput.value = propertyCode;
+          setTimeout(() => this.filterTable(), 300);
+        }
+      }
     },
   });
 

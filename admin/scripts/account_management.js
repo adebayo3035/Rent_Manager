@@ -341,13 +341,13 @@ class AccountReactivationManager {
         };
         
         const currentStatus = request.user_current_status;
-        const currentStatusDisplay = currentStatus === '0' ? 'Active' : 
-                                   currentStatus === '1' ? 'Inactive' : 
+        const currentStatusDisplay = currentStatus === '0' ? 'Inctive' : 
+                                   currentStatus === '1' ? 'Active' : 
                                    currentStatus === '2' ? 'Suspended' : 
                                    currentStatus || 'Unknown';
         
-        const currentStatusClass = currentStatus === '0' ? 'status-approved' : 
-                                 currentStatus === '1' ? 'status-rejected' : 
+        const currentStatusClass = currentStatus === '0' ? 'status-rejected' : 
+                                 currentStatus === '1' ? 'status-approved' : 
                                  currentStatus === '2' ? 'status-expired' : 
                                  'status-pending';
         

@@ -32,8 +32,8 @@ try {
     // -----------------------------------------------------
     //  PAGINATION INPUTS
     // -----------------------------------------------------
-    $page  = isset($_GET['page']) ? (int) $_GET['page'] : 1;
-    $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 10;
+    $page  = max(1, (int) ($_GET['page'] ?? 1));
+    $limit = min(100, max(1, (int) ($_GET['limit'] ?? 10)));
     $offset = ($page - 1) * $limit;
 
     logActivity("Pagination Parsed | Page: {$page} | Limit: {$limit} | Offset: {$offset}");
@@ -54,6 +54,7 @@ try {
     // -----------------------------------------------------
     $gender = isset($_GET['gender']) ? trim($_GET['gender']) : null;
     $status = isset($_GET['status']) ? trim($_GET['status']) : null;
+    $search = isset($_GET['search']) ? trim($_GET['search']) : null;
 
     $allowedGender = ['Male', 'Female'];
     $allowedStatus = ['0', '1'];
@@ -78,6 +79,16 @@ try {
         $whereClauses[] = "agents.status = ?";
         $params[] = $status;
         $types .= 's';
+    }
+
+    if ($search !== null && $search !== '') {
+        $whereClauses[] = "(agents.firstname LIKE ? OR agents.lastname LIKE ? OR agents.email LIKE ? OR agents.agent_code LIKE ?)";
+        $searchParam = "%{$search}%";
+        $params[] = $searchParam;
+        $params[] = $searchParam;
+        $params[] = $searchParam;
+        $params[] = $searchParam;
+        $types .= 'ssss';
     }
 
     $whereSQL = count($whereClauses) ? "WHERE " . implode(" AND ", $whereClauses) : "";
@@ -109,10 +120,49 @@ try {
 
 
     // -----------------------------------------------------
+    //  SUMMARY QUERY
+    // -----------------------------------------------------
+    $summaryQuery = "SELECT
+                        COUNT(*) AS total_agents,
+                        SUM(CASE WHEN agents.status = 1 THEN 1 ELSE 0 END) AS active_agents,
+                        SUM(CASE WHEN agents.status = 0 THEN 1 ELSE 0 END) AS inactive_agents,
+                        SUM(CASE WHEN agents.gender = 'Male' THEN 1 ELSE 0 END) AS male_agents,
+                        SUM(CASE WHEN agents.gender = 'Female' THEN 1 ELSE 0 END) AS female_agents
+                     FROM agents {$whereSQL}";
+
+    $summaryStmt = $conn->prepare($summaryQuery);
+    if (!$summaryStmt) {
+        throw new Exception("Failed to prepare agents summary query: " . $conn->error);
+    }
+
+    if (!empty($params)) {
+        $summaryStmt->bind_param($types, ...$params);
+    }
+
+    $summaryStmt->execute();
+    $summaryResult = $summaryStmt->get_result();
+    $summaryRow = $summaryResult->fetch_assoc() ?: [];
+    $summaryStmt->close();
+
+    $summary = [
+        'total_agents' => (int)($summaryRow['total_agents'] ?? 0),
+        'active_agents' => (int)($summaryRow['active_agents'] ?? 0),
+        'inactive_agents' => (int)($summaryRow['inactive_agents'] ?? 0),
+        'male_agents' => (int)($summaryRow['male_agents'] ?? 0),
+        'female_agents' => (int)($summaryRow['female_agents'] ?? 0)
+    ];
+
+
+    // -----------------------------------------------------
     //  AGENTS QUERY
     // -----------------------------------------------------
     $query = "SELECT 
-                agents.*
+                agents.*,
+                (
+                    SELECT COUNT(*)
+                    FROM properties p
+                    WHERE p.agent_code = agents.agent_code
+                ) AS property_count
               FROM 
                 agents
               {$whereSQL}
@@ -142,7 +192,7 @@ try {
 
     $agents = [];
     while ($row = $result->fetch_assoc()) {
-        $row['status_display'] = ($row['status'] === '1') ? 'Deactivated' : 'Activated';
+        $row['status_display'] = ((int)$row['status'] === 1) ? 'Activated' : 'Deactivated';
         $agents[] = $row;
     }
 
@@ -156,6 +206,7 @@ try {
     echo json_encode([
         "success" => true,
         "agents" => $agents,
+        "summary" => $summary,
          'pagination' => [
             'page' => $page,
             'limit' => $limit,
