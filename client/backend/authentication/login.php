@@ -129,6 +129,16 @@ class LoginSecurity
         return false;
     }
 
+    public function checkSecretChangeRequired($user)
+    {
+        // Check if has_secret_set flag exists and is 0
+        if ((isset($user['has_secret_set']) && ($user['has_secret_set'] == 0 || $user['has_secret_set'] == NULL ))) {
+            $this->log("Secret Question and Answer change required for user: {$user['client_code']}");
+            return true;
+        }
+        return false;
+    }
+
     public function checkLockoutStatus($userId)
     {
         $this->log("Checking lockout status for user: {$userId}");
@@ -350,10 +360,10 @@ class LoginSecurity
 
         // Step 6: Check if password change is required (first login)
         $needsPasswordChange = $this->checkPasswordChangeRequired($user);
-
+        $needsSecretChange = $this->checkSecretChangeRequired($user);
         // If password change is required, store token in database and return early
-        if ($needsPasswordChange) {
-            $this->log("Password change required for user: {$userId}");
+        if ($needsPasswordChange || $needsSecretChange) {
+            $this->log("Password/Secret Question and Answer change required for user: {$userId}");
 
             // Generate a temporary token
             $tempToken = bin2hex(random_bytes(32));
