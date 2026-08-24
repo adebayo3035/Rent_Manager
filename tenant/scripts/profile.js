@@ -109,6 +109,10 @@ function renderProfile() {
                     ${renderResetSecretTab()}
                 </div>
 
+                <div id="tenantRatingsTab" class="tab-content">
+                    ${renderRatingsTab()}
+                </div>
+
                 ${showSecretTab ? renderSecretTab() : renderSecretAlreadySetTab()}
             </div>
         </div>`;
@@ -121,7 +125,8 @@ function getTabsHtml(showSecretTab) {
         <div class="tabs">
             <button class="tab-btn active" data-tab="personal">Personal Information</button>
             <button class="tab-btn" data-tab="security">Security</button>
-            <button class="tab-btn" data-tab="resetSecret">Reset Secret Details</button>`;
+            <button class="tab-btn" data-tab="resetSecret">Reset Secret Details</button>
+            <button class="tab-btn" data-tab="tenantRatings">View Your Ratings</button>`;
 
   if (showSecretTab) {
     tabsHtml += ` <button class="tab-btn" data-tab="secret">Secret Question</button>`;
@@ -295,18 +300,224 @@ function renderSecretAlreadySetTab() {
         </div>`;
 }
 
+function renderRatingsTab() {
+    const ratings = currentUser.ratings || { summary: { total_ratings: 0, average_rating: 0 }, recent: [] };
+    const summary = ratings.summary || {};
+    const recent = ratings.recent || [];
+    
+    // Calculate star percentage for rating bar
+    const totalRatings = summary.total_ratings || 0;
+    const averageRating = summary.average_rating || 0;
+    
+    // Generate star rating HTML
+    function getStarRating(rating) {
+        const fullStars = Math.floor(rating);
+        const hasHalfStar = (rating - fullStars) >= 0.5;
+        let starsHtml = '';
+        
+        for (let i = 1; i <= 5; i++) {
+            if (i <= fullStars) {
+                starsHtml += '<i class="fas fa-star"></i>';
+            } else if (i === fullStars + 1 && hasHalfStar) {
+                starsHtml += '<i class="fas fa-star-half-alt"></i>';
+            } else {
+                starsHtml += '<i class="far fa-star"></i>';
+            }
+        }
+        return starsHtml;
+    }
+    
+    // Get rating bar width percentage
+    function getRatingPercentage(category) {
+        if (!totalRatings) return 0;
+        const count = summary.rating_distribution?.[category] || 0;
+        return (count / totalRatings) * 100;
+    }
+    
+    // Category labels and icons
+    const categoryIcons = {
+        payment: 'fa-money-bill-wave',
+        behavior: 'fa-user-check',
+        cleanliness: 'fa-broom',
+        maintenance: 'fa-tools',
+        overall: 'fa-star'
+    };
+    
+    const categoryLabels = {
+        payment: 'Payment',
+        behavior: 'Behavior',
+        cleanliness: 'Cleanliness',
+        maintenance: 'Maintenance',
+        overall: 'Overall'
+    };
+    
+    // Get rating color based on score
+    function getRatingColor(rating) {
+        if (rating >= 4.5) return '#28a745';
+        if (rating >= 3.5) return '#ffc107';
+        if (rating >= 2.5) return '#fd7e14';
+        if (rating >= 1.5) return '#dc3545';
+        return '#6c757d';
+    }
+    
+    // Format date
+    function formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+    
+    return `
+        <div class="ratings-container">
+            <!-- Rating Overview Card -->
+            <div class="ratings-overview">
+                <div class="rating-summary-card">
+                    <div class="rating-score">
+                        <div class="rating-number">${averageRating.toFixed(1)}</div>
+                        <div class="rating-stars">${getStarRating(averageRating)}</div>
+                        <div class="rating-total">Based on ${totalRatings} ${totalRatings === 1 ? 'rating' : 'ratings'}</div>
+                    </div>
+                    <div class="rating-distribution">
+                        ${[5, 4, 3, 2, 1].map(star => `
+                            <div class="rating-bar-row">
+                                <div class="rating-label">
+                                    <span>${star}</span>
+                                    <i class="fas fa-star" style="color: #ffc107; font-size: 14px;"></i>
+                                </div>
+                                <div class="rating-bar-track">
+                                    <div class="rating-bar-fill" style="width: ${getRatingPercentage(star + '_star')}%; background: ${getRatingColor(star)};"></div>
+                                </div>
+                                <div class="rating-count">${summary.rating_distribution?.[star + '_star'] || 0}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                
+                <!-- Category Ratings -->
+                <div class="category-ratings">
+                    <h3 class="section-title">
+                        <i class="fas fa-chart-pie"></i> 
+                        Rating Breakdown
+                    </h3>
+                    <div class="category-grid">
+                        ${['payment', 'behavior', 'cleanliness', 'maintenance', 'overall'].map(category => {
+                            const rating = summary[category + '_rating'] || 0;
+                            return `
+                                <div class="category-item" style="border-left: 4px solid ${getRatingColor(rating)};">
+                                    <div class="category-header">
+                                        <div class="category-icon">
+                                            <i class="fas ${categoryIcons[category]}"></i>
+                                        </div>
+                                        <div class="category-info">
+                                            <div class="category-name">${categoryLabels[category]}</div>
+                                            <div class="category-rating">
+                                                ${rating > 0 ? rating.toFixed(1) : 'N/A'}
+                                                ${rating > 0 ? getStarRating(rating) : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Ratings -->
+            <div class="recent-ratings">
+                <div class="recent-header">
+                    <h3 class="section-title">
+                        <i class="fas fa-clock"></i> 
+                        Recent Reviews
+                        <span class="badge">${recent.length}</span>
+                    </h3>
+                </div>
+                
+                ${recent.length > 0 ? `
+                    <div class="ratings-list">
+                        ${recent.map(rating => `
+                            <div class="rating-item">
+                                <div class="rating-item-header">
+                                    <div class="rating-user">
+                                        <div class="user-avatar">
+                                            <i class="fas fa-user-circle"></i>
+                                        </div>
+                                        <div class="user-info">
+                                            <div class="user-name">${escapeHtml(rating.client_name || 'Anonymous')}</div>
+                                            <div class="user-category">
+                                                <span class="category-tag ${rating.category}">
+                                                    <i class="fas ${categoryIcons[rating.category] || 'fa-tag'}"></i>
+                                                    ${categoryLabels[rating.category] || rating.category}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="rating-meta">
+                                        <div class="rating-stars-small">${getStarRating(rating.rating)}</div>
+                                        <div class="rating-date">${formatDate(rating.created_at)}</div>
+                                    </div>
+                                </div>
+                                ${rating.comment ? `
+                                    <div class="rating-comment">
+                                        <i class="fas fa-quote-left quote-icon"></i>
+                                        <p>${escapeHtml(rating.comment)}</p>
+                                    </div>
+                                ` : `
+                                    <div class="rating-comment empty">
+                                        <em>No comment provided</em>
+                                    </div>
+                                `}
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : `
+                    <div class="empty-state">
+                        <div class="empty-icon">
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                        </div>
+                        <h4>No Ratings Yet</h4>
+                        <p>You haven't received any ratings yet. Continue to be a great tenant!</p>
+                    </div>
+                `}
+            </div>
+        </div>
+    `;
+}
+
+
 function attachTabListeners() {
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const tab = btn.dataset.tab;
+      
+      // Remove active class from all tabs and contents
       document
         .querySelectorAll(".tab-btn")
         .forEach((b) => b.classList.remove("active"));
       document
         .querySelectorAll(".tab-content")
         .forEach((c) => c.classList.remove("active"));
+      
+      // Add active class to current tab and content
       btn.classList.add("active");
-      document.getElementById(`${tab}Tab`).classList.add("active");
+      
+      // Handle special case for secret tab
+      if (tab === 'secret') {
+        document.getElementById('secretTab')?.classList.add('active');
+      } else {
+        const contentElement = document.getElementById(`${tab}Tab`);
+        if (contentElement) {
+          contentElement.classList.add('active');
+        }
+      }
     });
   });
 }

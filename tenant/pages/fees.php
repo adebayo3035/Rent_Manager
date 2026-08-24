@@ -49,8 +49,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" onclick="closeModal('paymentModal')">Cancel</button>
-                <button class="btn-primary" onclick="processFeePayment()">Confirm Payment</button>
+                <button class="btn btn-secondary" onclick="closeModal('paymentModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="processFeePayment()">Confirm Payment</button>
             </div>
         </div>
     </div>

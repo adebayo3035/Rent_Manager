@@ -24,6 +24,7 @@ async function initializeFees() {
             await loadTenantFees();
         });
 
+        // Fallback if event doesn't fire
         setTimeout(async () => {
             if (!window.currentUser && !currentUser) {
                 await loadFeeTypes();
@@ -41,8 +42,7 @@ async function loadApplicableFees() {
         const data = await response.json();
 
         if (data.success) {
-            applicableFees =
-                data.data?.applicable_fees || data.message?.applicable_fees || [];
+            applicableFees = data.data?.applicable_fees || [];
             console.log("Applicable fees loaded:", applicableFees);
         }
     } catch (error) {
@@ -64,43 +64,47 @@ function openApplicableFeesModal() {
             </div>
         `;
     } else {
-        // Group fees by type
-        const mandatoryFees = applicableFees.filter((f) => f.is_mandatory === true);
-        const optionalFees = applicableFees.filter((f) => f.is_mandatory === false);
+        // ✅ Group fees by type AND activity status
+        const activeMandatoryFees = applicableFees.filter((f) => f.is_mandatory === true && f.is_active_in_property === true);
+        const activeOptionalFees = applicableFees.filter((f) => f.is_mandatory === false && f.is_active_in_property === true);
+        const inactiveMandatoryFees = applicableFees.filter((f) => f.is_mandatory === true && f.is_active_in_property === false);
+        const inactiveOptionalFees = applicableFees.filter((f) => f.is_mandatory === false && f.is_active_in_property === false);
+        
+        const totalActive = activeMandatoryFees.length + activeOptionalFees.length;
+        const totalInactive = inactiveMandatoryFees.length + inactiveOptionalFees.length;
 
-        let html = "";
-
-        // Summary section
-        html += `
+        let html = `
             <div class="applicable-fees-summary" style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">
                     <div style="text-align: center;">
                         <div style="font-size: 24px; font-weight: 700; color: #1a1f36;">${applicableFees.length}</div>
                         <div style="font-size: 12px; color: #666;">Total Fees</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 24px; font-weight: 700; color: #dc2626;">${mandatoryFees.length}</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #dc2626;">${activeMandatoryFees.length + inactiveMandatoryFees.length}</div>
                         <div style="font-size: 12px; color: #666;">Mandatory</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 24px; font-weight: 700; color: #3b82f6;">${optionalFees.length}</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #3b82f6;">${activeOptionalFees.length + inactiveOptionalFees.length}</div>
                         <div style="font-size: 12px; color: #666;">Optional</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #ef4444;">${totalInactive}</div>
+                        <div style="font-size: 12px; color: #666;">Deactivated</div>
                     </div>
                 </div>
             </div>
         `;
 
-        // Mandatory Fees
-        if (mandatoryFees.length > 0) {
+        // ==================== ACTIVE MANDATORY FEES ====================
+        if (activeMandatoryFees.length > 0) {
             html += `
                 <div class="fee-type-section" style="margin-bottom: 20px;">
                     <h4 style="color: #dc2626; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
                         <i class="fas fa-exclamation-circle"></i> Mandatory Fees
-                        <span style="font-size: 12px; font-weight: normal; color: #666; margin-left: 8px;">(${mandatoryFees.length})</span>
+                        <span style="font-size: 12px; font-weight: normal; color: #666; margin-left: 8px;">(${activeMandatoryFees.length} active)</span>
                     </h4>
-                    ${mandatoryFees
-                    .map(
-                        (fee) => `
+                    ${activeMandatoryFees.map(fee => `
                         <div class="applicable-fee-item" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                                 <div>
@@ -108,44 +112,64 @@ function openApplicableFeesModal() {
                                     <div style="font-size: 12px; color: #666; margin-top: 2px;">
                                         <span>${escapeHtml(fee.fee_code || "")}</span>
                                         ${fee.is_recurring ? `<span style="margin-left: 10px; background: #dbeafe; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #3b82f6;">${escapeHtml(fee.recurrence_period || "Recurring")}</span>` : ""}
+                                        <span style="margin-left: 10px; background: #dcfce7; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #16a34a;">Active</span>
                                     </div>
                                 </div>
                                 <div style="text-align: right;">
                                     <div style="font-weight: 700; color: #dc2626;">₦${formatNumber(fee.amount || 0)}</div>
-                                    ${fee.description ? `<div style="font-size: 11px; color: #666;">${escapeHtml(fee.description.substring(0, 50))}${fee.description.length > 50 ? "..." : ""}</div>` : ""}
                                 </div>
-                            </div>
-                            ${fee.description && fee.description.length > 50
-                                ? `
-                                <div style="font-size: 12px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #fecaca;">
-                                    ${escapeHtml(fee.description)}
-                                </div>
-                            `
-                                : ""
-                            }
-                            <div style="margin-top: 8px; display: flex; gap: 10px; font-size: 12px; color: #6b7280; flex-wrap: wrap;">
-                                <span><i class="fas fa-calculator"></i> Calculation: ${escapeHtml(fee.calculation_type || "Fixed")}</span>
-                                ${fee.recurrence_period ? `<span><i class="fas fa-clock"></i> ${escapeHtml(fee.recurrence_period)}</span>` : ""}
                             </div>
                         </div>
-                    `,
-                    )
-                    .join("")}
+                    `).join("")}
                 </div>
             `;
         }
 
-        // Optional Fees
-        if (optionalFees.length > 0) {
+        // ==================== INACTIVE MANDATORY FEES ====================
+        if (inactiveMandatoryFees.length > 0) {
+            html += `
+                <div class="fee-type-section" style="margin-bottom: 20px;">
+                    <h4 style="color: #ef4444; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-exclamation-triangle"></i> Inactive Mandatory Fees
+                        <span style="font-size: 12px; font-weight: normal; color: #666; margin-left: 8px;">(${inactiveMandatoryFees.length} deactivated)</span>
+                    </h4>
+                    ${inactiveMandatoryFees.map(fee => `
+                        <div class="applicable-fee-item" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; opacity: 0.7;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <div style="font-weight: 600; color: #6b7280; text-decoration: line-through;">${escapeHtml(fee.fee_name)}</div>
+                                    <div style="font-size: 12px; color: #6b7280; margin-top: 2px;">
+                                        <span>${escapeHtml(fee.fee_code || "")}</span>
+                                        ${fee.is_recurring ? `<span style="margin-left: 10px; background: #f3f4f6; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #6b7280;">${escapeHtml(fee.recurrence_period || "Recurring")}</span>` : ""}
+                                        <span style="margin-left: 10px; background: #fee2e2; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #dc2626;">
+                                            <i class="fas fa-ban"></i> Deactivated
+                                        </span>
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-weight: 700; color: #9ca3af;">₦${formatNumber(fee.amount || 0)}</div>
+                                </div>
+                            </div>
+                            ${fee.effective_to ? `
+                                <div style="font-size: 11px; color: #ef4444; margin-top: 6px; padding-top: 6px; border-top: 1px solid #fecaca;">
+                                    <i class="fas fa-calendar-times"></i> Deactivated since: ${formatDate(fee.effective_to)}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join("")}
+                </div>
+            `;
+        }
+
+        // ==================== ACTIVE OPTIONAL FEES ====================
+        if (activeOptionalFees.length > 0) {
             html += `
                 <div class="fee-type-section" style="margin-bottom: 20px;">
                     <h4 style="color: #3b82f6; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
                         <i class="fas fa-info-circle"></i> Optional Fees
-                        <span style="font-size: 12px; font-weight: normal; color: #666; margin-left: 8px;">(${optionalFees.length})</span>
+                        <span style="font-size: 12px; font-weight: normal; color: #666; margin-left: 8px;">(${activeOptionalFees.length} active)</span>
                     </h4>
-                    ${optionalFees
-                    .map(
-                        (fee) => `
+                    ${activeOptionalFees.map(fee => `
                         <div class="applicable-fee-item" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                                 <div>
@@ -153,29 +177,64 @@ function openApplicableFeesModal() {
                                     <div style="font-size: 12px; color: #666; margin-top: 2px;">
                                         <span>${escapeHtml(fee.fee_code || "")}</span>
                                         ${fee.is_recurring ? `<span style="margin-left: 10px; background: #dbeafe; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #3b82f6;">${escapeHtml(fee.recurrence_period || "Recurring")}</span>` : ""}
+                                        <span style="margin-left: 10px; background: #dcfce7; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #16a34a;">Active</span>
                                     </div>
                                 </div>
                                 <div style="text-align: right;">
                                     <div style="font-weight: 700; color: #3b82f6;">₦${formatNumber(fee.amount || 0)}</div>
-                                    ${fee.description ? `<div style="font-size: 11px; color: #666;">${escapeHtml(fee.description.substring(0, 50))}${fee.description.length > 50 ? "..." : ""}</div>` : ""}
                                 </div>
-                            </div>
-                            ${fee.description && fee.description.length > 50
-                                ? `
-                                <div style="font-size: 12px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #bfdbfe;">
-                                    ${escapeHtml(fee.description)}
-                                </div>
-                            `
-                                : ""
-                            }
-                            <div style="margin-top: 8px; display: flex; gap: 10px; font-size: 12px; color: #6b7280; flex-wrap: wrap;">
-                                <span><i class="fas fa-calculator"></i> Calculation: ${escapeHtml(fee.calculation_type || "Fixed")}</span>
-                                ${fee.recurrence_period ? `<span><i class="fas fa-clock"></i> ${escapeHtml(fee.recurrence_period)}</span>` : ""}
                             </div>
                         </div>
-                    `,
-                    )
-                    .join("")}
+                    `).join("")}
+                </div>
+            `;
+        }
+
+        // ==================== INACTIVE OPTIONAL FEES ====================
+        if (inactiveOptionalFees.length > 0) {
+            html += `
+                <div class="fee-type-section" style="margin-bottom: 20px;">
+                    <h4 style="color: #ef4444; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-exclamation-triangle"></i> Inactive Optional Fees
+                        <span style="font-size: 12px; font-weight: normal; color: #666; margin-left: 8px;">(${inactiveOptionalFees.length} deactivated)</span>
+                    </h4>
+                    ${inactiveOptionalFees.map(fee => `
+                        <div class="applicable-fee-item" style="background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; opacity: 0.7;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <div style="font-weight: 600; color: #6b7280; text-decoration: line-through;">${escapeHtml(fee.fee_name)}</div>
+                                    <div style="font-size: 12px; color: #6b7280; margin-top: 2px;">
+                                        <span>${escapeHtml(fee.fee_code || "")}</span>
+                                        ${fee.is_recurring ? `<span style="margin-left: 10px; background: #f3f4f6; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #6b7280;">${escapeHtml(fee.recurrence_period || "Recurring")}</span>` : ""}
+                                        <span style="margin-left: 10px; background: #fee2e2; padding: 2px 8px; border-radius: 12px; font-size: 10px; color: #dc2626;">
+                                            <i class="fas fa-ban"></i> Deactivated
+                                        </span>
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-weight: 700; color: #9ca3af;">₦${formatNumber(fee.amount || 0)}</div>
+                                </div>
+                            </div>
+                            ${fee.effective_to ? `
+                                <div style="font-size: 11px; color: #ef4444; margin-top: 6px; padding-top: 6px; border-top: 1px solid #d1d5db;">
+                                    <i class="fas fa-calendar-times"></i> Deactivated since: ${formatDate(fee.effective_to)}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join("")}
+                </div>
+            `;
+        }
+
+        // ==================== SHOW MESSAGE WHEN NO ACTIVE FEES ====================
+        if (totalActive === 0 && applicableFees.length > 0) {
+            html += `
+                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; text-align: center;">
+                    <i class="fas fa-exclamation-triangle" style="color: #f59e0b; font-size: 20px; display: block; margin-bottom: 8px;"></i>
+                    <p style="color: #92400e; margin: 0;">
+                        <strong>All fees are currently deactivated.</strong><br>
+                        No active fees are available for this apartment at this time.
+                    </p>
                 </div>
             `;
         }
@@ -193,7 +252,7 @@ async function loadFeeTypes() {
         const data = await response.json();
 
         if (data.success) {
-            feeTypes = data.data?.fee_types || data.message?.fee_types || [];
+            feeTypes = data.data?.fee_types || [];
         }
     } catch (error) {
         console.error("Error loading fee types:", error);
@@ -203,15 +262,42 @@ async function loadFeeTypes() {
 // ==================== LOAD TENANT FEES ====================
 async function loadTenantFees() {
     try {
-        const response = await fetch(
-            `../backend/fees/fetch_tenant_fees.php?status=${currentFilter}`,
-        );
-        const data = await response.json();
+        // Build query parameters
+        const params = new URLSearchParams();
+        
+        // Only add status filter if it's not 'all'
+        if (currentFilter && currentFilter !== 'all') {
+            params.append('status', currentFilter);
+        }
+        
+        // Add tab filter (is_recurring)
+        if (currentTab && currentTab !== 'all') {
+            if (currentTab === 'recurring') {
+                params.append('is_recurring', '1');
+            } else if (currentTab === 'one-time') {
+                params.append('is_recurring', '0');
+            }
+        }
 
+        const url = `../backend/fees/fetch_tenant_fees.php${params.toString() ? '?' + params.toString() : ''}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
         console.log("Tenant fees response:", data);
 
         if (data.success) {
-            tenantFees = data.data?.fees || data.message?.fees || [];
+            // Get fees from the response
+            tenantFees = data.data?.fees || [];
+            
+            // Update summary if available
+            if (data.data?.summary) {
+                updateSummary(data.data.summary);
+            }
+            
             renderFeesPage();
         } else {
             throw new Error(data.message || "Failed to load fees");
@@ -219,10 +305,20 @@ async function loadTenantFees() {
     } catch (error) {
         console.error("Error loading tenant fees:", error);
         if (window.showToast) {
-            window.showToast("Failed to load fees", "error");
+            window.showToast(error.message || "Failed to load fees", "error");
         }
         showEmptyState();
     }
+}
+
+// ==================== UPDATE SUMMARY ====================
+function updateSummary(apiSummary) {
+    if (!apiSummary) return;
+    
+    console.log('Summary from API:', apiSummary);
+    
+    // Update any summary elements in the page
+    // This will be called during renderFeesPage as well
 }
 
 // ==================== RENDER FEES PAGE ====================
@@ -230,7 +326,7 @@ function renderFeesPage() {
     const contentArea = document.getElementById("contentArea");
     if (!contentArea) return;
 
-    // Calculate summary
+    // Calculate summary from the actual tenantFees data
     const totalPending = tenantFees
         .filter((f) => f.status === "pending")
         .reduce((sum, f) => sum + parseFloat(f.amount), 0);
@@ -243,14 +339,15 @@ function renderFeesPage() {
     const totalFees = tenantFees.reduce((sum, f) => sum + parseFloat(f.amount), 0);
 
     // Filter fees based on current tab
-    let filteredFees = tenantFees;
+    let filteredFees = [...tenantFees];
+    
     if (currentTab === "recurring") {
-        filteredFees = tenantFees.filter((f) => f.is_recurring === true);
+        filteredFees = filteredFees.filter((f) => f.is_recurring === true);
     } else if (currentTab === "one-time") {
-        filteredFees = tenantFees.filter((f) => f.is_recurring === false);
+        filteredFees = filteredFees.filter((f) => f.is_recurring === false);
     }
 
-    // Apply status filter
+    // Apply status filter (this overrides any API filtering for display)
     if (currentFilter !== "all") {
         filteredFees = filteredFees.filter((f) => f.status === currentFilter);
     }
@@ -259,6 +356,9 @@ function renderFeesPage() {
     const allCount = tenantFees.length;
     const recurringCount = tenantFees.filter(f => f.is_recurring === true).length;
     const oneTimeCount = tenantFees.filter(f => f.is_recurring === false).length;
+    const overdueCount = tenantFees.filter(f => f.status === "overdue").length;
+    const pendingCount = tenantFees.filter(f => f.status === "pending").length;
+    const paidCount = tenantFees.filter(f => f.status === "paid").length;
 
     const html = `
         <div class="fees-container">
@@ -290,7 +390,7 @@ function renderFeesPage() {
                 <div class="summary-card pending">
                     <div class="card-top">
                         <div class="card-icon"><i class="fas fa-clock"></i></div>
-                        <span class="card-sub">${tenantFees.filter(f => f.status === "pending" || f.status === "overdue").length} items</span>
+                        <span class="card-sub">${pendingCount} items</span>
                     </div>
                     <div class="card-label">Pending</div>
                     <div class="card-amount">₦${formatNumber(totalPending)}</div>
@@ -298,7 +398,7 @@ function renderFeesPage() {
                 <div class="summary-card paid">
                     <div class="card-top">
                         <div class="card-icon"><i class="fas fa-check-circle"></i></div>
-                        <span class="card-sub">${tenantFees.filter(f => f.status === "paid").length} items</span>
+                        <span class="card-sub">${paidCount} items</span>
                     </div>
                     <div class="card-label">Paid</div>
                     <div class="card-amount">₦${formatNumber(totalPaid)}</div>
@@ -306,7 +406,7 @@ function renderFeesPage() {
                 <div class="summary-card overdue">
                     <div class="card-top">
                         <div class="card-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                        <span class="card-sub">${tenantFees.filter(f => f.status === "overdue").length} items</span>
+                        <span class="card-sub">${overdueCount} items</span>
                     </div>
                     <div class="card-label">Overdue</div>
                     <div class="card-amount">₦${formatNumber(totalOverdue)}</div>
@@ -333,7 +433,7 @@ function renderFeesPage() {
             <div class="fee-filters">
                 <div class="filter-group">
                     <label><i class="fas fa-filter"></i> Filter by Status</label>
-                    <select class="filter-select" id="statusFilter" onchange="filterByStatus()">
+                    <select class="filter-select" id="statusFilter" onchange="applyStatusFilter()">
                         <option value="all" ${currentFilter === "all" ? "selected" : ""}>All</option>
                         <option value="pending" ${currentFilter === "pending" ? "selected" : ""}>Pending</option>
                         <option value="paid" ${currentFilter === "paid" ? "selected" : ""}>Paid</option>
@@ -409,13 +509,6 @@ function renderFeesPage() {
                                         <span class="fee-detail-value">${escapeHtml(fee.receipt_number)}</span>
                                     </div>
                                 ` : ''}
-                                <div class="fee-detail-item">
-                                    <span class="fee-detail-label">Fee Status</span>
-                                    <span class="status-badge ${fee.is_active_in_property ? 'status-active' : 'status-inactive'}">
-                                        <span class="status-dot"></span>
-                                        ${fee.is_active_in_property ? 'Active' : 'Inactive'}
-                                    </span>
-                                </div>
                             </div>
                             
                             <!-- Fee Actions -->
@@ -450,12 +543,29 @@ function renderFeesPage() {
     contentArea.innerHTML = html;
 }
 
-// Helper function to clear filters
+// ==================== CLEAR FILTERS ====================
 function clearFilters() {
     currentFilter = "all";
-    document.getElementById("statusFilter").value = "all";
-    renderFeesPage();
+    const statusFilter = document.getElementById("statusFilter");
+    if (statusFilter) statusFilter.value = "all";
+    loadTenantFees();
 }
+
+// ==================== APPLY STATUS FILTER ====================
+function applyStatusFilter() {
+    const statusFilter = document.getElementById("statusFilter");
+    if (statusFilter) {
+        currentFilter = statusFilter.value;
+        loadTenantFees();
+    }
+}
+
+// ==================== SWITCH FEE TAB ====================
+function switchFeeTab(tab) {
+    currentTab = tab;
+    loadTenantFees();
+}
+
 // ==================== SHOW EMPTY STATE ====================
 function showEmptyState() {
     const contentArea = document.getElementById("contentArea");
@@ -484,16 +594,11 @@ function showEmptyState() {
 // ==================== DOWNLOAD RECEIPT ====================
 async function downloadReceiptByFeeId(tenantFeeId) {
     try {
-        const response = await fetch(
-            `../backend/fees/get_payment_by_fee_id.php?tenant_fee_id=${tenantFeeId}`,
-        );
+        const response = await fetch(`../backend/fees/get_payment_by_fee_id.php?tenant_fee_id=${tenantFeeId}`);
         const data = await response.json();
 
-        if (data.success && data.data.payment_id) {
-            window.open(
-                `../backend/fees/download_fee_receipt.php?payment_id=${data.data.payment_id}`,
-                "_blank",
-            );
+        if (data.success && data.data?.payment_id) {
+            window.open(`../backend/fees/download_fee_receipt.php?payment_id=${data.data.payment_id}`, "_blank");
         } else {
             throw new Error("Receipt not found");
         }
@@ -505,97 +610,89 @@ async function downloadReceiptByFeeId(tenantFeeId) {
     }
 }
 
-// ==================== SWITCH FEE TAB ====================
-function switchFeeTab(tab) {
-    currentTab = tab;
-    renderFeesPage();
-}
-
-// ==================== FILTER BY STATUS ====================
-function filterByStatus() {
-    const statusFilter = document.getElementById("statusFilter");
-    if (statusFilter) {
-        currentFilter = statusFilter.value;
-        loadTenantFees();
-    }
-}
-
 // ==================== VIEW FEE DETAILS ====================
-async function viewFeeDetails(feeId) {
+function viewFeeDetails(feeId) {
     const fee = tenantFees.find((f) => f.tenant_fee_id === feeId);
     if (!fee) return;
 
     const modalBody = document.getElementById("feeDetailsBody");
+    if (!modalBody) return;
+
     modalBody.innerHTML = `
-        <div class="fee-detail-section">
-            <div class="detail-row">
-                <span class="detail-label">Fee Name:</span>
-                <span class="detail-value">${escapeHtml(fee.fee_name)}</span>
+    <div class="fee-detail-section">
+        <!-- Fee Header -->
+        <div class="fee-name-header">
+            <div class="fee-icon">
+                <i class="fas ${fee.is_recurring ? 'fa-sync-alt' : 'fa-file-invoice'}"></i>
             </div>
-            <div class="detail-row">
-                <span class="detail-label">Amount:</span>
-                <span class="detail-value">₦${formatNumber(fee.amount)}</span>
+            <div class="fee-title">
+                <h4>${escapeHtml(fee.fee_name)}</h4>
+                <span class="fee-code">${escapeHtml(fee.fee_code || '')}</span>
             </div>
+            <span class="fee-status-badge status-${fee.status}">
+                <i class="fas ${fee.status === 'paid' ? 'fa-check-circle' : fee.status === 'overdue' ? 'fa-exclamation-circle' : 'fa-clock'}"></i>
+                ${fee.status.toUpperCase()}
+            </span>
+        </div>
+
+        <!-- Amount -->
+        <div class="detail-row">
+            <span class="detail-label"><i class="fas fa-money-bill-wave"></i> Amount</span>
+            <span class="detail-value amount ${fee.status}">₦${formatNumber(fee.amount)}</span>
+        </div>
+
+        <!-- Due Date -->
+        <div class="detail-row">
+            <span class="detail-label"><i class="fas fa-calendar-alt"></i> Due Date</span>
+            <span class="detail-value">${formatDate(fee.due_date)}</span>
+        </div>
+
+        <!-- Divider -->
+        <div class="detail-divider"></div>
+
+        <!-- Recurrence -->
+        ${fee.is_recurring ? `
             <div class="detail-row">
-                <span class="detail-label">Due Date:</span>
-                <span class="detail-value">${formatDate(fee.due_date)}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">Status:</span>
+                <span class="detail-label"><i class="fas fa-clock"></i> Recurrence</span>
                 <span class="detail-value">
-                    <span class="fee-status status-${fee.status}">${fee.status.toUpperCase()}</span>
+                    <span class="recurring-badge">
+                        <i class="fas fa-sync-alt"></i> ${fee.recurrence_period || "Monthly"}
+                    </span>
                 </span>
             </div>
-            ${fee.is_recurring
-            ? `
-                <div class="detail-row">
-                    <span class="detail-label">Recurrence:</span>
-                    <span class="detail-value">${fee.recurrence_period || "Monthly"}</span>
-                </div>
-            `
-            : ""
-        }
+        ` : `
             <div class="detail-row">
-                <span class="detail-label">Fee Type:</span>
-                <span class="detail-value">${fee.is_recurring ? "Recurring Fee" : "One-time Fee"}</span>
+                <span class="detail-label"><i class="fas fa-clock"></i> Fee Type</span>
+                <span class="detail-value">
+                    <span class="one-time-badge">
+                        <i class="fas fa-file-invoice"></i> One-time
+                    </span>
+                </span>
             </div>
-            ${fee.notes
-            ? `
-                <div class="detail-row">
-                    <span class="detail-label">Notes:</span>
-                    <span class="detail-value">${escapeHtml(fee.notes)}</span>
-                </div>
-            `
-            : ""
-        }
-        </div>
-    `;
+        `}
 
-    // Add styles for detail rows
-    const style = document.createElement("style");
-    style.textContent = `
-        .fee-detail-section {
-            margin-top: 10px;
-        }
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-        .detail-row:last-child {
-            border-bottom: none;
-        }
-        .detail-label {
-            font-weight: 500;
-            color: #666;
-        }
-        .detail-value {
-            color: #1a1f36;
-            font-weight: 500;
-        }
-    `;
-    document.head.appendChild(style);
+        <!-- Fee Type (Recurring/One-time) -->
+        <div class="detail-row">
+            <span class="detail-label"><i class="fas ${fee.is_recurring ? 'fa-infinity' : 'fa-stopwatch'}"></i> Type</span>
+            <span class="detail-value">${fee.is_recurring ? "Recurring Fee" : "One-time Fee"}</span>
+        </div>
+
+        <!-- Fee Status on property_apartment_type_fee table (Active/Inactive) -->
+        <div class="detail-row">
+            <span class="detail-label"><i class="fas ${fee.is_active_in_property ? 'fa-lock-open' : 'fa-lock'}"></i> Fee Status</span>
+            <span class="detail-value">${fee.is_active_in_property ? "Active-Can Pay" : "Inactive - Unavailable"}</span>
+        </div>
+
+        <!-- Notes -->
+        ${fee.notes ? `
+            <div class="detail-divider"></div>
+            <div class="detail-row notes">
+                <span class="detail-label"><i class="fas fa-sticky-note"></i> Notes</span>
+                <span class="detail-value">${escapeHtml(fee.notes)}</span>
+            </div>
+        ` : ''}
+    </div>
+`;
 
     openModal("feeDetailsModal");
 }
@@ -610,8 +707,7 @@ function openPaymentModal(feeId) {
     currentPaymentFeeId = feeId;
 
     document.getElementById("modalFeeName").value = fee.fee_name;
-    document.getElementById("modalFeeAmount").value =
-        `₦${formatNumber(fee.amount)}`;
+    document.getElementById("modalFeeAmount").value = `₦${formatNumber(fee.amount)}`;
     document.getElementById("modalDueDate").value = formatDate(fee.due_date);
     document.getElementById("paymentMethod").value = "";
     document.getElementById("referenceNumber").value = "";
@@ -627,13 +723,13 @@ function openPaymentModal(feeId) {
             referenceInput.style.background = "#f0f0f0";
         } else {
             referenceInput.value = "";
-            referenceInput.readOnly = true;
+            referenceInput.readOnly = false;
             referenceInput.style.background = "white";
         }
     };
 
     referenceInput.value = "";
-    referenceInput.readOnly = true;
+    referenceInput.readOnly = false;
     referenceInput.style.background = "white";
 
     openModal("paymentModal");
@@ -641,14 +737,10 @@ function openPaymentModal(feeId) {
 
 // ==================== GENERATE REFERENCE NUMBER ====================
 function generateReferenceNumber(paymentMethod) {
-    const prefix =
-        paymentMethod === "card"
-            ? "CARD"
-            : paymentMethod === "bank_transfer"
-                ? "BNK"
-                : paymentMethod === "cash"
-                    ? "CSH"
-                    : "REF";
+    const prefix = paymentMethod === "card" ? "CARD" 
+        : paymentMethod === "bank_transfer" ? "BNK" 
+        : paymentMethod === "cash" ? "CSH" 
+        : "REF";
 
     const date = new Date();
     const year = date.getFullYear();
@@ -743,15 +835,12 @@ function showPaymentSuccessModal(paymentData) {
                             <span class="detail-label">Payment Date:</span>
                             <span class="detail-value">${formatDateTime(paymentData.payment_date)}</span>
                         </div>
-                        ${paymentData.next_fee_created
-            ? `
+                        ${paymentData.next_fee_created ? `
                             <div class="detail-row">
                                 <span class="detail-label">Next Due Date:</span>
                                 <span class="detail-value">${formatDate(paymentData.next_due_date)}</span>
                             </div>
-                        `
-            : ""
-        }
+                        ` : ""}
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -772,13 +861,12 @@ function showPaymentSuccessModal(paymentData) {
 // ==================== DOWNLOAD RECEIPT ====================
 async function downloadReceipt(receiptNumber, paymentId) {
     try {
-        window.open(
-            `../backend/fees/download_fee_receipt.php?payment_id=${paymentId}`,
-            "_blank",
-        );
+        window.open(`../backend/fees/download_fee_receipt.php?payment_id=${paymentId}`, "_blank");
     } catch (error) {
         console.error("Error downloading receipt:", error);
-        showToast("Failed to download receipt", "error");
+        if (window.showToast) {
+            window.showToast("Failed to download receipt", "error");
+        }
     }
 }
 

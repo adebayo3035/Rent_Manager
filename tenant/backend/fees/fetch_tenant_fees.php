@@ -53,7 +53,6 @@ try {
             a.apartment_type_id,
             p.name as property_name,
             p.property_code,
-            -- Check if fee is active in property_apartment_type_fees
             COALESCE(patf.is_active, 0) as is_active_in_property,
             patf.amount as configured_amount,
             patf.effective_from,
@@ -72,10 +71,21 @@ try {
     $params = [$tenant_code];
     $types = "s";
 
+    // ==================== FIXED STATUS FILTERING ====================
+    // Instead of filtering on tf.status, we filter on the calculated status
     if ($status && in_array($status, ['pending', 'paid', 'overdue', 'waived'])) {
-        $query .= " AND tf.status = ?";
-        $params[] = $status;
-        $types .= "s";
+        if ($status === 'overdue') {
+            // For overdue: status is pending AND due_date < NOW()
+            $query .= " AND tf.status = 'pending' AND tf.due_date < NOW()";
+        } elseif ($status === 'pending') {
+            // For pending: status is pending AND due_date >= NOW()
+            $query .= " AND tf.status = 'pending' AND tf.due_date >= NOW()";
+        } else {
+            // For paid or waived: just filter by status
+            $query .= " AND tf.status = ?";
+            $params[] = $status;
+            $types .= "s";
+        }
     }
 
     if ($fee_type_id) {
@@ -93,27 +103,37 @@ try {
     $query .= " ORDER BY tf.due_date ASC, tf.created_at DESC";
 
     $stmt = $conn->prepare($query);
-    $stmt->bind_param($types, ...$params);
+    
+    // Only bind if we have parameters
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
+    
     $stmt->execute();
     $result = $stmt->get_result();
     
     $fees = [];
+    $today = new DateTime();
+    
     while ($row = $result->fetch_assoc()) {
         // Calculate if overdue
         $due_date = new DateTime($row['due_date']);
-        $today = new DateTime();
         $is_overdue = ($row['status'] === 'pending' && $due_date < $today);
         
-        // If overdue and status is still pending, update in memory
+        // Determine the actual status to display
+        $display_status = $row['status'];
         if ($is_overdue && $row['status'] === 'pending') {
-            $row['status'] = 'overdue';
+            $display_status = 'overdue';
         }
         
-        // Determine if fee can be paid (must be active in property config)
-        $can_pay = ($row['is_active_in_property'] == 1 && $row['status'] !== 'paid' && $row['status'] !== 'waived');
-        $is_active = ($row['is_active_in_property'] == 1);
+        // Determine if fee can be paid
+        $can_pay = (
+            $row['is_active_in_property'] == 1 && 
+            $display_status !== 'paid' && 
+            $display_status !== 'waived'
+        );
         
-        // Check if fee is within effective date range
+        // Check effective date range
         $is_within_effective_range = true;
         if ($row['effective_from'] && $row['effective_from'] > date('Y-m-d')) {
             $is_within_effective_range = false;
@@ -122,7 +142,6 @@ try {
             $is_within_effective_range = false;
         }
         
-        // If not within effective range, cannot pay
         if (!$is_within_effective_range) {
             $can_pay = false;
         }
@@ -135,7 +154,7 @@ try {
             'amount' => (float)$row['amount'],
             'configured_amount' => $row['configured_amount'] ? (float)$row['configured_amount'] : null,
             'due_date' => $row['due_date'],
-            'status' => $is_overdue ? 'overdue' : $row['status'],
+            'status' => $display_status,
             'is_mandatory' => (bool)$row['is_mandatory'],
             'is_recurring' => (bool)$row['is_recurring'],
             'recurrence_period' => $row['recurrence_period'],
@@ -145,8 +164,7 @@ try {
             'notes' => $row['notes'],
             'apartment_number' => $row['apartment_number'],
             'property_name' => $row['property_name'],
-            // Property fee configuration status
-            'is_active_in_property' => (bool)$is_active,
+            'is_active_in_property' => (bool)$row['is_active_in_property'],
             'can_pay' => (bool)$can_pay,
             'is_within_effective_range' => (bool)$is_within_effective_range,
             'effective_from' => $row['effective_from'],
@@ -156,16 +174,31 @@ try {
     }
     $stmt->close();
 
-    // ==================== GET SUMMARY STATISTICS ====================
+    // ==================== GET SUMMARY STATISTICS (with proper overdue calculation) ====================
     $summary_query = "
         SELECT 
             COUNT(*) as total_fees,
-            SUM(CASE WHEN tf.status = 'pending' OR (tf.status = 'pending' AND tf.due_date < CURDATE()) THEN tf.amount ELSE 0 END) as total_pending,
-            SUM(CASE WHEN tf.status = 'paid' THEN tf.amount ELSE 0 END) as total_paid,
-            SUM(CASE WHEN tf.status = 'overdue' OR (tf.status = 'pending' AND tf.due_date < CURDATE()) THEN tf.amount ELSE 0 END) as total_overdue,
-            COUNT(CASE WHEN tf.status = 'pending' OR (tf.status = 'pending' AND tf.due_date < CURDATE()) THEN 1 END) as pending_count,
-            COUNT(CASE WHEN tf.status = 'paid' THEN 1 END) as paid_count,
-            COUNT(CASE WHEN tf.status = 'overdue' OR (tf.status = 'pending' AND tf.due_date < CURDATE()) THEN 1 END) as overdue_count
+            SUM(CASE 
+                WHEN tf.status = 'paid' THEN tf.amount 
+                ELSE 0 
+            END) as total_paid,
+            SUM(CASE 
+                WHEN tf.status = 'pending' THEN tf.amount 
+                ELSE 0 
+            END) as total_pending,
+            SUM(CASE 
+                WHEN tf.status = 'pending' AND tf.due_date < CURDATE() THEN tf.amount 
+                ELSE 0 
+            END) as total_overdue,
+            COUNT(CASE 
+                WHEN tf.status = 'paid' THEN 1 
+            END) as paid_count,
+            COUNT(CASE 
+                WHEN tf.status = 'pending' AND tf.due_date >= CURDATE() THEN 1 
+            END) as pending_count,
+            COUNT(CASE 
+                WHEN tf.status = 'pending' AND tf.due_date < CURDATE() THEN 1 
+            END) as overdue_count
         FROM tenant_fees tf
         WHERE tf.tenant_code = ?
     ";
@@ -177,7 +210,7 @@ try {
     $summary = $summary_result->fetch_assoc();
     $summary_stmt->close();
 
-    // ==================== GET ACTIVE FEE TYPES FROM PROPERTY CONFIG ====================
+    // ==================== GET ACTIVE FEE TYPES ====================
     $active_fees_query = "
         SELECT 
             patf.fee_type_id,
@@ -217,6 +250,7 @@ try {
 
     $conn->close();
 
+    // ==================== RESPONSE ====================
     $response_data = [
         'fees' => $fees,
         'active_fee_types' => $active_fee_types,
@@ -237,4 +271,3 @@ try {
     logActivity("Error in fetch_tenant_fees: " . $e->getMessage());
     json_error("Failed to fetch tenant fees", 500);
 }
-?>

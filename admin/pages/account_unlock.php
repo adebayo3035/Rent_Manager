@@ -78,6 +78,9 @@
                 <button id="exportBtn" class="btn btn-info">
                     <i class="fas fa-download"></i> Export CSV
                 </button>
+                <button id="viewLockHistory" class="btn btn-view">
+                    <i class="fas fa-eye"></i> View Account Lock History
+                </button>
             </div>
         </div>
 
@@ -234,6 +237,133 @@
             </div>
         </div>
     </div>
+
+    <!-- Lock History Modal -->
+<div id="lockHistoryModal" class="modal" style="display: none;">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h2><i class="fas fa-history"></i> Account Lock History</h2>
+            <button class="close-modal">&times;</button>
+        </div>
+        
+        <div class="modal-body">
+            <!-- Statistics -->
+            <div class="history-stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="historyTotalLocks">0</div>
+                    <div class="stat-label">Total Locks</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="historyLoginAttempts">0</div>
+                    <div class="stat-label">Login Attempts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="historyManualLocks">0</div>
+                    <div class="stat-label">Manual Locks</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="historyUnlocked">0</div>
+                    <div class="stat-label">Unlocked</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="historyStillLocked">0</div>
+                    <div class="stat-label">Still Locked</div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="history-filters">
+                <div class="filter-group">
+                    <select id="historyUserTypeFilter" class="filter-select">
+                        <option value="all">All User Types</option>
+                        <option value="admin">Administrators</option>
+                        <option value="tenant">Tenants</option>
+                        <option value="agent">Agents</option>
+                        <option value="client">Clients</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <select id="historyActionTypeFilter" class="filter-select">
+                        <option value="all">All Actions</option>
+                        <option value="login_attempts">Failed Logins</option>
+                        <option value="manual_lock">Manual Locks</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <select id="historyStatusFilter" class="filter-select">
+                        <option value="all">All Status</option>
+                        <option value="locked">Locked</option>
+                        <option value="unlocked">Unlocked</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <input type="text" id="historySearchInput" placeholder="Search by name or email...">
+                </div>
+                
+                <div class="filter-group">
+                    <label>From:</label>
+                    <input type="date" id="historyDateFrom" class="filter-date">
+                </div>
+                
+                <div class="filter-group">
+                    <label>To:</label>
+                    <input type="date" id="historyDateTo" class="filter-date">
+                </div>
+                
+                <div class="filter-actions">
+                    <button id="applyHistoryFilters" class="btn btn-primary btn-sm">
+                        <i class="fas fa-filter"></i> Apply Filters
+                    </button>
+                    <button id="resetHistoryFilters" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-undo"></i> Reset
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>User ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Lock Type</th>
+                            <th>Lock Reason</th>
+                            <th>Locked At</th>
+                            <th>Unlocked At</th>
+                            <th>Unlocked By</th>
+                            <th>Unlock Method</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lockHistoryBody">
+                        <tr id="historyLoadingRow">
+                            <td colspan="11" style="text-align: center; padding: 30px;">
+                                <div class="spinner"></div>
+                                <p>Loading history...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Empty State -->
+            <div id="historyEmptyState" style="display: none; text-align: center; padding: 40px;">
+                <i class="fas fa-history" style="font-size: 48px; color: #ccc;"></i>
+                <h3>No Lock History Found</h3>
+                <p>No lock history records match your current filters.</p>
+            </div>
+
+            <!-- Pagination -->
+            <div id="lockHistoryPagination" class="pagination-container"></div>
+        </div>
+    </div>
+</div>
 
      <!-- UI Library -->
     <div id="toastContainer"></div>

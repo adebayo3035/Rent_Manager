@@ -150,7 +150,8 @@ body {
     gap: 8px;
     transition: all 0.3s ease;
 }
-.btn-unlock{
+
+.btn-unlock {
     padding: 5px 10px;
     border: none;
     border-radius: 3px;
@@ -197,6 +198,16 @@ body {
     color: white;
 }
 
+.btn-view {
+    background: #000;
+    color: white;
+}
+
+.btn-view:hover {
+    background: #333;
+    color: white;
+}
+
 .btn-info:hover {
     background: #138496;
 }
@@ -213,6 +224,11 @@ body {
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
 }
 
 /* Table Container */
@@ -394,6 +410,7 @@ body {
     justify-content: center;
     gap: 10px;
     border-top: 1px solid #eee;
+    flex-wrap: wrap;
 }
 
 .page-btn {
@@ -416,7 +433,15 @@ body {
     border-color: #667eea;
 }
 
-/* Modals */
+.page-info {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    color: #666;
+    font-size: 14px;
+}
+
+/* ==================== MODAL STYLES ==================== */
 .modal {
     display: none;
     position: fixed;
@@ -432,7 +457,7 @@ body {
 }
 
 .modal.show {
-    display: flex;
+    display: flex !important;
 }
 
 .modal-content {
@@ -443,6 +468,23 @@ body {
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        transform: translateY(-30px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-lg {
+    max-width: 95%;
+    width: 1200px;
 }
 
 .modal-header {
@@ -453,6 +495,7 @@ body {
     align-items: center;
 }
 
+.modal-header h2,
 .modal-header h3 {
     font-size: 20px;
     color: #333;
@@ -464,7 +507,7 @@ body {
 .close-modal {
     background: none;
     border: none;
-    font-size: 24px;
+    font-size: 28px;
     color: #666;
     cursor: pointer;
     line-height: 1;
@@ -492,6 +535,148 @@ body {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+}
+
+/* ==================== LOCK HISTORY STYLES ==================== */
+.history-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.history-stats .stat-card {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+    border-left: 3px solid #3498db;
+    margin: 0;
+}
+
+.history-stats .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.history-stats .stat-label {
+    font-size: 12px;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.history-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    align-items: center;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.filter-select,
+.filter-group input[type="text"],
+.filter-group input[type="date"] {
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    background: white;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+/* Table styles for history */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table thead {
+    background: #f8f9fa;
+}
+
+.table th {
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 2px solid #dee2e6;
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+.table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+    font-size: 13px;
+}
+
+.table-striped tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+.table-striped tbody tr:hover {
+    background-color: #e9ecef;
+}
+
+.pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 0;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.pagination-container .page-btn {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.pagination-container .page-btn:hover {
+    background: #f0f0f0;
+}
+
+.pagination-container .page-btn.active {
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
+}
+
+/* Spinner */
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 /* Account Info in Modal */
@@ -610,7 +795,43 @@ body {
     margin-bottom: 0;
 }
 
-/* Responsive Design */
+.text-muted {
+    color: #6c757d;
+    font-size: 12px;
+}
+
+/* User Type Filter */
+.user-type-filter {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 15px;
+}
+
+.user-type-filter label {
+    color: #666;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.user-type-select {
+    padding: 8px 12px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.3s;
+}
+
+.user-type-select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+/* Responsive */
 @media (max-width: 992px) {
     .controls {
         flex-direction: column;
@@ -624,6 +845,16 @@ body {
     .action-buttons {
         width: 100%;
         justify-content: flex-end;
+    }
+    
+    .history-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .filter-actions {
+        margin-left: 0;
+        justify-content: center;
     }
 }
 
@@ -650,5 +881,26 @@ body {
     .accounts-table th,
     .accounts-table td {
         padding: 10px;
+    }
+    
+    .history-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .modal-lg {
+        max-width: 100%;
+        width: 100%;
+        margin: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    .action-buttons {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .btn {
+        justify-content: center;
     }
 }

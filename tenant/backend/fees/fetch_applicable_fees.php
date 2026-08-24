@@ -8,75 +8,57 @@ require_once __DIR__ . '/../utilities/utils.php';
 
 session_start();
 
-// Generate unique request ID for tracking
 $requestId = uniqid('fetch_applicable_fees_', true);
-logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ========== START ==========");
-logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Request Time: " . date('Y-m-d H:i:s'));
-logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Request Method: " . $_SERVER['REQUEST_METHOD']);
+logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] START");
 
 try {
-    // ==================== STEP 1: CHECK AUTHENTICATION ====================
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Step 1: Checking authentication");
-    
+    // Check authentication
     if (!isset($_SESSION['tenant_code'])) {
-        logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ERROR: Not logged in - tenant_code not in session");
         json_error("Not logged in", 401);
     }
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Step 1: tenant_code found in session");
 
     if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'Tenant') {
-        $role = $_SESSION['role'] ?? 'not set';
-        logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ERROR: Unauthorized access - Role: {$role}");
         json_error("Unauthorized access", 403);
     }
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Step 1: Role validated - Tenant");
 
     $tenant_code = $_SESSION['tenant_code'];
     logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Tenant Code: {$tenant_code}");
 
-    // ==================== STEP 2: GET TENANT APARTMENT ====================
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Step 2: Fetching tenant apartment details");
-    
+    // ==================== GET TENANT APARTMENT DETAILS ====================
     $apartmentQuery = "
-        SELECT apartment_code 
-        FROM tenants 
-        WHERE tenant_code = ? AND status = 1
+        SELECT 
+            t.tenant_code,
+            t.apartment_code,
+            a.apartment_type_id,
+            a.property_code
+        FROM tenants t
+        LEFT JOIN apartments a ON t.apartment_code = a.apartment_code
+        WHERE t.tenant_code = ? AND t.status = 1
         LIMIT 1
     ";
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Apartment Query: {$apartmentQuery}");
     
     $stmt = $conn->prepare($apartmentQuery);
-    if (!$stmt) {
-        logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ERROR: Failed to prepare apartment query: " . $conn->error);
-        json_error("Database prepare error", 500);
-    }
-    
     $stmt->bind_param("s", $tenant_code);
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Apartment query bound with tenant_code: {$tenant_code}");
-    
-    if (!$stmt->execute()) {
-        logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ERROR: Failed to execute apartment query: " . $stmt->error);
-        $stmt->close();
-        json_error("Database execute error", 500);
-    }
-    
+    $stmt->execute();
     $result = $stmt->get_result();
     $tenantData = $result->fetch_assoc();
     $stmt->close();
-    
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Tenant data retrieved: " . json_encode($tenantData));
 
     if (!$tenantData || !$tenantData['apartment_code']) {
-        logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ERROR: No apartment assigned to tenant");
         json_error("No apartment assigned to this tenant", 400);
     }
 
-    $apartment_code = $tenantData['apartment_code'];
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Apartment Code: {$apartment_code}");
-
-    // ==================== STEP 3: FETCH APPLICABLE FEES ====================
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Step 3: Fetching applicable fees");
+    $property_code = $tenantData['property_code'] ?? null;
+    $apartment_type_id = $tenantData['apartment_type_id'] ?? null;
     
+    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Property: {$property_code}, Apartment Type: {$apartment_type_id}");
+
+    // ==================== FETCH CONFIGURED FEES ====================
+    // ✅ CORRECT: Based on the fee configuration logic document
+    // - Start from property_apartment_type_fees (existing configurations)
+    // - Join fee_types for fee details
+    // - Only show fees that are active for this property (is_active = 1)
+    // - fee_types.status does NOT filter existing configurations
     $query = "
         SELECT 
             ft.fee_type_id,
@@ -87,48 +69,39 @@ try {
             ft.calculation_type,
             ft.is_recurring,
             ft.recurrence_period,
-            ft.amount as default_amount,
             ft.display_order,
-            CASE 
-                WHEN ft.amount IS NOT NULL AND ft.amount > 0 THEN ft.amount
-                ELSE 0
-            END as amount,
+            patf.amount,
+            patf.is_active as is_active_in_property,
+            patf.effective_from,
+            patf.effective_to,
             CASE 
                 WHEN ft.is_recurring = 1 THEN 'Recurring'
                 ELSE 'One-time'
             END as fee_type_display
-        FROM fee_types ft
-        WHERE ft.status = 1
-        AND (ft.is_mandatory = 1 OR ft.is_optional = 1)
+        FROM property_apartment_type_fees patf
+        INNER JOIN fee_types ft 
+            ON patf.fee_type_id = ft.fee_type_id
+        WHERE patf.property_code = ?
+        AND patf.apartment_type_id = ?
+        
+        AND (patf.effective_from IS NULL OR patf.effective_from <= CURDATE())
+        AND (patf.effective_to IS NULL OR patf.effective_to >= CURDATE())
         ORDER BY 
             ft.is_mandatory DESC,
             ft.display_order ASC,
             ft.fee_name ASC
     ";
 
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Fee Types Query: {$query}");
+    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Query: {$query}");
 
-    $result = $conn->query($query);
-    
-    if (!$result) {
-        logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ERROR: Fee types query failed: " . $conn->error);
-        json_error("Failed to fetch fee types", 500);
-    }
-    
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Fee types query returned " . $result->num_rows . " rows");
-
-    // ==================== STEP 4: PROCESS RESULTS ====================
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Step 4: Processing fee types results");
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("si", $property_code, $apartment_type_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
     
     $applicable_fees = [];
-    $row_count = 0;
-    
     while ($row = $result->fetch_assoc()) {
-        $row_count++;
-        
-        logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Processing row {$row_count} - Fee: {$row['fee_name']}");
-        
-        $fee_entry = [
+        $applicable_fees[] = [
             'fee_type_id' => (int)$row['fee_type_id'],
             'fee_code' => $row['fee_code'],
             'fee_name' => $row['fee_name'],
@@ -139,24 +112,20 @@ try {
             'recurrence_period' => $row['recurrence_period'],
             'amount' => (float)$row['amount'],
             'display_order' => (int)$row['display_order'],
-            'fee_type_display' => $row['fee_type_display']
+            'fee_type_display' => $row['fee_type_display'],
+            'is_active_in_property' => (bool)$row['is_active_in_property'],
+            'effective_from' => $row['effective_from'],
+            'effective_to' => $row['effective_to']
         ];
-        
-        $applicable_fees[] = $fee_entry;
-        
-        logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Fee added: {$row['fee_name']} - Amount: {$row['amount']} - Mandatory: {$row['is_mandatory']}");
     }
     
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Total applicable fees processed: " . count($applicable_fees));
+    $stmt->close();
 
-    // ==================== STEP 5: BUILD RESPONSE ====================
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Step 5: Building response");
-    
+    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Found " . count($applicable_fees) . " applicable fees");
+
     $mandatory_count = count(array_filter($applicable_fees, function($fee) { return $fee['is_mandatory']; }));
     $optional_count = count(array_filter($applicable_fees, function($fee) { return !$fee['is_mandatory']; }));
-    
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Mandatory fees: {$mandatory_count}, Optional fees: {$optional_count}");
-    
+
     $response_data = [
         'applicable_fees' => $applicable_fees,
         'total_count' => count($applicable_fees),
@@ -164,17 +133,10 @@ try {
         'optional_count' => $optional_count
     ];
 
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ========== SUCCESS ==========");
     json_success($response_data, "Applicable fees retrieved successfully");
     
 } catch (Exception $e) {
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ========== ERROR ==========");
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Error Message: " . $e->getMessage());
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Error Code: " . $e->getCode());
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Error File: " . $e->getFile());
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Error Line: " . $e->getLine());
-    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] Stack Trace: " . $e->getTraceAsString());
-    
+    logActivity("[FETCH_APPLICABLE_FEES] [ID:{$requestId}] ERROR: " . $e->getMessage());
     json_error("Failed to fetch applicable fees: " . $e->getMessage(), 500);
 }
 ?>

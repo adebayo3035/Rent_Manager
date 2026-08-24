@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 
 session_start();
 
@@ -359,7 +360,8 @@ try {
             'next_due_date' => $next_fee_created ? $next_due_date : null,
             'receipt_url' => "../backend/tenant/download_fee_receipt.php?payment_id={$payment_id}"
         ];
-
+        //Create Notification
+        createFeeNotification($conn, $tenant_code, $fee['fee_name'], $amount, $next_due_date, 'paid');
         logActivity("[FEE_PAYMENT] [ID:{$requestId}] Step 15 - Response prepared successfully");
         logActivity("[FEE_PAYMENT] [ID:{$requestId}] ========== END - SUCCESS ==========");
 
