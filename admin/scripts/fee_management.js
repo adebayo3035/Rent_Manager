@@ -8,6 +8,16 @@ const state = {
   confirmResolve: null,
 };
 
+// ==================== PAGINATION STATE ====================
+let currentPage = 1;
+const itemsPerPage = 20;
+let totalRecords = 0;
+let totalPages = 0;
+let currentFilters = {
+    status: '',
+    search: ''
+};
+
 // ==================== DOM ELEMENTS CACHE ====================
 const dom = {
   get feeTypesGrid() {
@@ -34,10 +44,12 @@ const dom = {
 };
 
 // ==================== INITIALIZATION ====================
+// ==================== INITIALIZE EVENT LISTENERS ====================
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   loadFeeTypes();
   loadDeactivatedFeeTypes();
+  initEventListeners(); // Call it here
 });
 
 function initTabs() {
@@ -48,6 +60,18 @@ function initTabs() {
     });
   });
 }
+function initEventListeners() {
+    // Reset to page 1 when filters change
+    dom.tenantFeeStatusFilter?.addEventListener('change', () => {
+        loadTenantFees(1);
+    });
+
+    dom.tenantSearch?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            loadTenantFees(1);
+        }
+    });
+}
 
 function switchTab(tab) {
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -57,8 +81,12 @@ function switchTab(tab) {
     
     if (tab === "fee-types") loadFeeTypes();
     if (tab === "property-fees") loadProperties();
-    if (tab === "tenant-fees") loadTenantFees();
-    if (tab === "deactivated-fees") loadDeactivatedFeeTypes(); // Add this line
+    if (tab === "tenant-fees") {
+        // Reset to page 1 when switching to tenant fees tab
+        currentPage = 1;
+        loadTenantFees(1);
+    }
+    if (tab === "deactivated-fees") loadDeactivatedFeeTypes();
 }
 
 // ==================== FEE TYPES CRUD ====================
@@ -1350,61 +1378,177 @@ async function savePropertyFees() {
 }
 
 // ==================== TENANT FEES ====================
-async function loadTenantFees() {
-  const status = dom.tenantFeeStatusFilter?.value || "";
-  const search = dom.tenantSearch?.value || "";
+// ==================== TENANT FEES ====================
+async function loadTenantFees(page = 1) {
+    const status = dom.tenantFeeStatusFilter?.value || "";
+    const search = dom.tenantSearch?.value || "";
 
-  const params = new URLSearchParams();
-  if (status) params.append("status", status);
-  if (search) params.append("search", search);
+    // Update current filters and page
+    currentFilters = { status, search };
+    currentPage = page;
 
-  try {
-    const response = await fetch(
-      `../backend/fee_management/fetch_tenant_fees.php?${params}`,
-    );
-    const data = await response.json();
-    if (data.success) {
-      renderTenantFees(data.message?.fees || []);
+    const params = new URLSearchParams();
+    if (status) params.append("status", status);
+    if (search) params.append("search", search);
+    params.append("page", page);
+    params.append("limit", itemsPerPage);
+
+    try {
+        const response = await fetch(
+            `../backend/fee_management/fetch_tenant_fees.php?${params}`
+        );
+        const data = await response.json();
+        
+        if (data.success) {
+            // Store pagination data
+            if (data.message.pagination) {
+                totalRecords = data.message.pagination.total_records;
+                totalPages = data.message.pagination.total_pages;
+            }
+            
+            renderTenantFees(data.message.fees, data.message.pagination);
+        } else {
+            showToast(data.message || "Error loading tenant fees", "error");
+        }
+    } catch (error) {
+        console.error("Error loading tenant fees:", error);
+        showToast("Failed to load tenant fees", "error");
     }
-  } catch (error) {
-    console.error("Error loading tenant fees:", error);
-  }
 }
 
-function renderTenantFees(fees) {
-  const container = dom.tenantFeesContent;
-  if (!container) return;
+function renderTenantFees(fees, pagination) {
+    const container = dom.tenantFeesContent;
+    if (!container) return;
 
-  if (!fees || fees.length === 0) {
-    container.innerHTML = `<div class="empty-state"><i class="fas fa-receipt"></i><p>No tenant fees found</p></div>`;
-    return;
-  }
+    if (!fees || fees.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-receipt"></i>
+                <p>No tenant fees found</p>
+            </div>
+        `;
+        return;
+    }
 
-  container.innerHTML = `
+    container.innerHTML = `
         <div class="table-responsive">
             <table class="data-table">
-                <thead><tr><th>Tenant</th><th>Fee Type</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>Tenant</th>
+                        <th>Fee Type</th>
+                        <th>Amount</th>
+                        <th>Due Date</th>
+                        <th>Fee Status</th>
+                        <th>Payment Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
                 <tbody>
-                    ${fees
-                      .map(
-                        (fee) => `
+                    ${fees.map((fee) => `
                         <tr>
                             <td>${escapeHtml(fee.tenant_name || fee.tenant_code || "N/A")}</td>
                             <td>${escapeHtml(fee.fee_name)}</td>
                             <td>₦${formatNumber(fee.amount)}</td>
                             <td>${formatDate(fee.due_date)}</td>
                             <td><span class="status-badge status-${fee.status}">${fee.status.toUpperCase()}</span></td>
+                            <td><span class="status-badge status-${fee.status_label}">${fee.status_label.toUpperCase()}</span></td>
                             <td>
-                                <button class="btn-icon" onclick="viewTenantFee(${fee.tenant_fee_id})" title="View"><i class="fas fa-eye"></i></button>
-                                <button class="btn-icon" onclick="markFeeAsPaid(${fee.tenant_fee_id})" title="Mark as Paid"><i class="fas fa-check-circle"></i></button>
+                                <button class="btn-icon" onclick="viewTenantFee(${fee.tenant_fee_id})" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                ${fee.status && fee.status.toLowerCase() !== 'paid' 
+                                    ? `<button class="btn-icon" onclick="markFeeAsPaid(${fee.tenant_fee_id})" title="Mark as Paid">
+                                        <i class="fas fa-check-circle"></i>
+                                       </button>` 
+                                    : ''}
                             </td>
                         </tr>
-                    `,
-                      )
-                      .join("")}
+                    `).join('')}
                 </tbody>
             </table>
-        </div>`;
+        </div>
+        ${renderPagination(pagination)}
+    `;
+}
+
+// ==================== PAGINATION RENDER ====================
+function renderPagination(pagination) {
+    if (!pagination || pagination.total_pages <= 1) {
+        return '';
+    }
+
+    const { current_page, total_pages, has_previous, has_next, previous_page, next_page } = pagination;
+
+    let html = `
+        <div class="pagination-container">
+            <div class="pagination-info">
+                Showing ${pagination.start_offset} - ${pagination.end_offset} of ${pagination.total_records} records
+            </div>
+            <div class="pagination-controls">
+    `;
+
+    // First button
+    html += `
+        <button class="pagination-btn" onclick="loadTenantFees(1)" ${current_page <= 1 ? 'disabled' : ''}>
+            <i class="fas fa-angle-double-left"></i>
+        </button>
+    `;
+
+    // Previous button
+    html += `
+        <button class="pagination-btn" onclick="loadTenantFees(${previous_page || 1})" ${!has_previous ? 'disabled' : ''}>
+            <i class="fas fa-angle-left"></i>
+        </button>
+    `;
+
+    // Page numbers
+    const startPage = Math.max(1, current_page - 2);
+    const endPage = Math.min(total_pages, current_page + 2);
+
+    if (startPage > 1) {
+        html += `<button class="pagination-btn" onclick="loadTenantFees(1)">1</button>`;
+        if (startPage > 2) {
+            html += `<span class="pagination-ellipsis">...</span>`;
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        const activeClass = i === current_page ? 'active' : '';
+        html += `
+            <button class="pagination-btn ${activeClass}" onclick="loadTenantFees(${i})">
+                ${i}
+            </button>
+        `;
+    }
+
+    if (endPage < total_pages) {
+        if (endPage < total_pages - 1) {
+            html += `<span class="pagination-ellipsis">...</span>`;
+        }
+        html += `<button class="pagination-btn" onclick="loadTenantFees(${total_pages})">${total_pages}</button>`;
+    }
+
+    // Next button
+    html += `
+        <button class="pagination-btn" onclick="loadTenantFees(${next_page || total_pages})" ${!has_next ? 'disabled' : ''}>
+            <i class="fas fa-angle-right"></i>
+        </button>
+    `;
+
+    // Last button
+    html += `
+        <button class="pagination-btn" onclick="loadTenantFees(${total_pages})" ${current_page >= total_pages ? 'disabled' : ''}>
+            <i class="fas fa-angle-double-right"></i>
+        </button>
+    `;
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    return html;
 }
 
 // ==================== VIEW FEE DETAILS ====================
@@ -1469,7 +1613,8 @@ function renderTenantFeeDetails(fee, tenantFeeId) {
                 <div class="detail-row"><span class="detail-label">Fee Code:</span><span class="detail-value">${escapeHtml(fee.fee_code)}</span></div>
                 <div class="detail-row"><span class="detail-label">Amount:</span><span class="detail-value amount-value">₦${formatNumber(fee.amount)}</span></div>
                 <div class="detail-row"><span class="detail-label">Due Date:</span><span class="detail-value">${formatDate(fee.due_date)}</span></div>
-                <div class="detail-row"><span class="detail-label">Status:</span><span class="detail-value"><span class="status-badge status-${fee.status}">${fee.status.toUpperCase()}</span></span></div>
+                <div class="detail-row"><span class="detail-label">Fee Status:</span><span class="detail-value"><span class="status-badge status-${fee.status}">${fee.status.toUpperCase()}</span></span></div>
+                <div class="detail-row"><span class="detail-label">Payment Status:</span><span class="detail-value"><span class="status-badge status-${fee.status_label}">${fee.display_status.toUpperCase()}</span></span></div>
                 ${fee.is_recurring ? `<div class="detail-row"><span class="detail-label">Recurrence:</span><span class="detail-value">${fee.recurrence_period || "Monthly"}</span></div>` : ""}
             </div>
             <div class="detail-section">
@@ -1777,8 +1922,10 @@ function closeCustomConfirmModal() {
   if (window._confirmCleanup) window._confirmCleanup();
 }
 
+// ==================== SEARCH TENANT FEES ====================
 function searchTenantFees() {
-  loadTenantFees();
+    // Reset to first page when searching
+    loadTenantFees(1);
 }
 
 // ==================== MODAL FUNCTIONS ====================

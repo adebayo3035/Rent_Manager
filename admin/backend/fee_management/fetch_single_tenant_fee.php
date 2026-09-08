@@ -6,8 +6,9 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
- if (!isset($_SESSION)) session_start();
- rateLimiter();
+
+if (!isset($_SESSION)) session_start();
+rateLimiter();
 
 try {
     // Check authentication
@@ -73,6 +74,42 @@ try {
     $fee = $result->fetch_assoc();
     $stmt->close();
     
+    // Calculate display status
+    $today = new DateTime();
+    $today->setTime(0, 0, 0);
+    $due_date = new DateTime($fee['due_date']);
+    $due_date->setTime(0, 0, 0);
+    
+    $display_status = $fee['status'];
+    $is_overdue = false;
+    $days_until_due = 0;
+    $status_message = '';
+    
+    // Calculate days difference
+    $diff = $today->diff($due_date);
+    $days_until_due = $diff->days;
+    
+    if ($today < $due_date) {
+        $status_message = "Due in {$days_until_due} days";
+    } elseif ($today > $due_date) {
+        $status_message = "Overdue by {$days_until_due} days";
+    } else {
+        $status_message = "Due today!";
+    }
+    
+    // Determine display status
+    if ($fee['status'] === 'paid') {
+        $display_status = 'settled';
+        $status_message = "Paid on " . date('F j, Y', strtotime($fee['payment_date']));
+    } elseif ($fee['status'] === 'pending') {
+        if ($due_date < $today) {
+            $display_status = 'overdue';
+            $is_overdue = true;
+        } else {
+            $display_status = 'pending';
+        }
+    }
+    
     // Format the response
     $response = [
         'tenant_fee_id' => (int)$fee['tenant_fee_id'],
@@ -90,7 +127,9 @@ try {
         'fee_description' => $fee['fee_description'],
         'amount' => (float)$fee['amount'],
         'due_date' => $fee['due_date'],
-        'status' => $fee['status'],
+        'status' => $fee['status'], // Original DB status
+        'display_status' => $display_status, // Calculated display status
+        'is_overdue' => $is_overdue,
         'is_mandatory' => (bool)$fee['is_mandatory'],
         'is_recurring' => (bool)$fee['is_recurring'],
         'recurrence_period' => $fee['recurrence_period'],
@@ -102,7 +141,11 @@ try {
         'lease_start_date' => $fee['lease_start_date'],
         'lease_end_date' => $fee['lease_end_date'],
         'created_at' => $fee['created_at'],
-        'updated_at' => $fee['updated_at']
+        'updated_at' => $fee['updated_at'],
+        'status_message' => $status_message,
+        'days_until_due' => $days_until_due,
+        'status_label' => getStatusLabel($display_status),
+        'status_color' => getStatusColor($display_status)
     ];
     
     // Add formatted dates
@@ -113,15 +156,35 @@ try {
         $response['payment_date_formatted'] = date('F j, Y g:i A', strtotime($fee['payment_date']));
     }
     
-    // Check if fee is overdue
-    $today = new DateTime();
-    $due_date = new DateTime($fee['due_date']);
-    $response['is_overdue'] = ($fee['status'] === 'pending' && $due_date < $today);
-    
     json_success(['fee' => $response], "Tenant fee retrieved successfully");
     
 } catch (Exception $e) {
     logActivity("Error in fetch_single_tenant_fee: " . $e->getMessage());
     json_error("Failed to fetch tenant fee: " . $e->getMessage(), 500);
 }
-?>
+
+// ==================== HELPER FUNCTIONS ====================
+
+function getStatusLabel($status) {
+    $labels = [
+        'pending' => 'Pending',
+        'overdue' => 'Overdue',
+        'paid' => 'Settled',
+        'settled' => 'Settled',
+        'waived' => 'Waived',
+        'cancelled' => 'Cancelled'
+    ];
+    return $labels[$status] ?? ucfirst($status);
+}
+
+function getStatusColor($status) {
+    $colors = [
+        'pending' => '#f59e0b',  // Amber/Warning
+        'overdue' => '#ef4444',  // Red/Danger
+        'paid' => '#10b981',     // Green/Success
+        'settled' => '#10b981',  // Green/Success
+        'waived' => '#6b7280',   // Gray
+        'cancelled' => '#6b7280' // Gray
+    ];
+    return $colors[$status] ?? '#6b7280';
+}

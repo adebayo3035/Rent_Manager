@@ -6,6 +6,7 @@ let currentTab = 'all'; // all, recurring, one-time
 let currentProperty = '';
 let feeTypes = [];
 let properties = [];
+let currentSummary = {}; // Store summary data
 
 document.addEventListener('DOMContentLoaded', function() {
     initializeFees();
@@ -74,7 +75,9 @@ async function loadClientFees() {
         if (data.success) {
             clientFees = data.data?.fees || [];
             properties = data.data?.properties || properties;
-            renderFeesPage(data.data?.summary || {});
+            // Store summary data
+            currentSummary = data.data?.summary || {};
+            renderFeesPage(currentSummary);
         } else {
             throw new Error(data.message || 'Failed to load fees');
         }
@@ -91,10 +94,13 @@ function renderFeesPage(summary) {
     const contentArea = document.getElementById('contentArea');
     if (!contentArea) return;
     
-    // Calculate summary if not provided
-    const totalPending = summary.total_pending || clientFees.filter(f => f.status === 'pending').reduce((sum, f) => sum + parseFloat(f.amount), 0);
-    const totalPaid = summary.total_paid || clientFees.filter(f => f.status === 'paid').reduce((sum, f) => sum + parseFloat(f.amount), 0);
-    const totalOverdue = summary.total_overdue || clientFees.filter(f => f.status === 'overdue').reduce((sum, f) => sum + parseFloat(f.amount), 0);
+    // Use provided summary or stored summary or calculate from clientFees
+    const summaryData = summary || currentSummary || {};
+    
+    // Calculate summary if not provided or empty
+    const totalPending = summaryData.total_pending || clientFees.filter(f => f.status === 'pending' || f.status === 'overdue').reduce((sum, f) => sum + parseFloat(f.amount), 0);
+    const totalPaid = summaryData.total_paid || clientFees.filter(f => f.status === 'paid').reduce((sum, f) => sum + parseFloat(f.amount), 0);
+    const totalOverdue = summaryData.total_overdue || clientFees.filter(f => f.status === 'overdue').reduce((sum, f) => sum + parseFloat(f.amount), 0);
     
     // Filter fees based on current tab
     let filteredFees = clientFees;
@@ -266,7 +272,8 @@ function filterByStatus() {
 
 function switchFeeTab(tab) {
     currentTab = tab;
-    renderFeesPage();
+    // Pass the stored summary to renderFeesPage
+    renderFeesPage(currentSummary);
 }
 
 async function viewFeeDetails(feeId) {

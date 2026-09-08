@@ -23,7 +23,7 @@
                 <button class="btn btn-primary" onclick="openInitiatePaymentModal()">
                     <i class="fas fa-plus"></i> Record Payment
                 </button>
-                <button class="btn btn-success" onclick="openCreatePaymentModal()">
+                <button class="btn btn-success" onclick="openCreateInvoiceModal()">
                     <i class="fas fa-file-invoice-dollar"></i> Create Invoice
                 </button>
                 <button class="btn btn-outline" onclick="exportPayments()">
