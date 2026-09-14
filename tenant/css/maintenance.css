@@ -629,6 +629,307 @@
 .custom-btn-confirm.success:hover {
     background: #059669;
 }
+/* Pending Acceptance - Amber/Warning */
+.pending-acceptance {
+    color: #f59e0b;
+    font-size: 11px;
+    font-weight: 500;
+    font-style: italic;
+    background: #fef3c7;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+}
+
+/* Rejected - Red/Danger */
+.rejected-status {
+    color: #ef4444;
+    font-size: 11px;
+    font-weight: 500;
+    font-style: italic;
+    background: #fee2e2;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+}
+
+/* Optional: Status badge colors for pending_reassignment */
+.request-status.status-pending_reassignment {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.request-status.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
+/* ============================================
+   MAINTENANCE REQUEST DETAILS MODAL
+   ============================================ */
+
+/* Timeline */
+.timeline {
+    margin: 20px 0;
+    position: relative;
+    padding-left: 30px;
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 20px;
+    border-left: 2px solid #e5e7eb;
+    padding-left: 20px;
+    margin-left: 10px;
+}
+
+.timeline-item:last-child {
+    border-left: 2px solid transparent;
+    padding-bottom: 0;
+}
+
+.timeline-item::before {
+    content: "";
+    position: absolute;
+    left: -8px;
+    top: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #667eea;
+    border: 2px solid white;
+}
+
+.timeline-date {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.timeline-title {
+    font-weight: 600;
+    color: #1a1f36;
+    margin-bottom: 5px;
+}
+
+.timeline-description {
+    font-size: 13px;
+    color: #666;
+}
+
+.timeline-user {
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px;
+}
+
+/* ============================================
+   MODAL ACTION BUTTONS
+   ============================================ */
+.btn-danger {
+    background: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-danger:hover {
+    background: #fecaca;
+    transform: translateY(-1px);
+}
+
+.btn-success {
+    background: #d1fae5;
+    color: #10b981;
+    border: 1px solid #a7f3d0;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-success:hover {
+    background: #a7f3d0;
+    transform: translateY(-1px);
+}
+
+.btn-warning {
+    background: #fed7aa;
+    color: #f59e0b;
+    border: 1px solid #fde68a;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-warning:hover {
+    background: #fde68a;
+    transform: translateY(-1px);
+}
+
+/* ============================================
+   DETAIL SECTIONS IN MODAL
+   ============================================ */
+.detail-section {
+    margin-bottom: 20px;
+}
+
+.detail-section h4 {
+    font-size: 16px;
+    color: #1a1f36;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 2px solid #f0f0f0;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #f5f5f5;
+}
+
+.detail-label {
+    font-weight: 500;
+    color: #666;
+}
+
+.detail-value {
+    color: #1a1f36;
+}
+
+/* ============================================
+   RATING STARS (for Confirm Modal)
+   ============================================ */
+.rating-stars {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin: 15px 0;
+}
+
+.rating-stars i {
+    font-size: 32px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #d1d5db;
+}
+
+.rating-stars i.active,
+.rating-stars i.hover {
+    color: #fbbf24;
+    transform: scale(1.1);
+}
+
+/* ============================================
+   STATUS INDICATORS (Pending Acceptance, Rejected)
+   ============================================ */
+.pending-acceptance {
+    color: #f59e0b;
+    font-size: 11px;
+    font-weight: 500;
+    font-style: italic;
+    background: #fef3c7;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+    display: inline-block;
+}
+
+.rejected-status {
+    color: #ef4444;
+    font-size: 11px;
+    font-weight: 500;
+    font-style: italic;
+    background: #fee2e2;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+    display: inline-block;
+}
+
+/* ============================================
+   RESPONSIVE - MODAL DETAILS
+   ============================================ */
+@media (max-width: 768px) {
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .btn-danger,
+    .btn-success,
+    .btn-warning {
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+    
+    .timeline {
+        padding-left: 15px;
+    }
+    
+    .timeline-item {
+        padding-left: 15px;
+        margin-left: 5px;
+    }
+    
+    .timeline-item::before {
+        left: -7px;
+        width: 10px;
+        height: 10px;
+    }
+    
+    .rating-stars i {
+        font-size: 28px;
+    }
+}
+
+@media (max-width: 480px) {
+    .detail-section h4 {
+        font-size: 14px;
+    }
+    
+    .detail-item {
+        font-size: 13px;
+    }
+    
+    .btn-danger,
+    .btn-success,
+    .btn-warning {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+    
+    .rating-stars i {
+        font-size: 24px;
+    }
+}
 
 @keyframes fadeIn {
     from { opacity: 0; }

@@ -38,7 +38,7 @@ try {
     $params = [$tenant_code];
     $types = "s";
 
-    if ($status && in_array($status, ['pending', 'in_progress', 'resolved', 'cancelled'])) {
+    if ($status && in_array($status, ['pending', 'in_progress', 'resolved', 'cancelled', 'pending_reassignment'])) {
         $where_clauses[] = "mr.status = ?";
         $params[] = $status;
         $types .= "s";
@@ -97,6 +97,7 @@ try {
             a.apartment_code,
             CONCAT(ad.firstname, ' ', ad.lastname) as assigned_to_name,
             mr.assigned_admin_id,
+            mr.assigned_to,
             CASE 
                 WHEN mr.priority = 'emergency' THEN 'danger'
                 WHEN mr.priority = 'high' THEN 'warning'
@@ -174,7 +175,8 @@ try {
             'estimated_resolution_days' => $estimated_days,
             'resolution_notes' => $row['resolution_notes'],
             'images' => $row['images'] ? json_decode($row['images'], true) : [],
-            'assigned_to' => $row['assigned_admin_id'],
+            'assigned_admin' => $row['assigned_admin_id'],
+            'assigned_to' => $row['assigned_to'],
             'assigned_to_name' => $row['assigned_to_name'] ?? 'Not assigned yet',
             'apartment_info' => [
                 'apartment_code' => $row['apartment_code'],

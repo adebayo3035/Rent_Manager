@@ -46,6 +46,9 @@ try {
         case 'get_statistics':
             getRentStatistics($conn);
             break;
+        case 'fetch_outstanding':
+            fetchOutstandingPayment($conn);
+            break;
         default:
             echo json_encode(["success" => false, "message" => "Invalid action."]);
     }
@@ -255,6 +258,329 @@ function fetchPaymentHistory($conn)
             "total_pages" => ceil($total / $limit)
         ]
     ]);
+}
+
+/**
+ * Fetch outstanding payments for tenants with overdue status
+ * This shows payments that are pending and have passed their due date
+ */
+function fetchOutstandingPayment($conn)
+{
+    logActivity("Fetching outstanding payments");
+
+    try {
+        $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+        $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 20;
+        $offset = ($page - 1) * $limit;
+        $search = isset($_GET['search']) ? trim($_GET['search']) : null;
+        $property_code = isset($_GET['property_code']) ? trim($_GET['property_code']) : null;
+        $apartment_code = isset($_GET['apartment_code']) ? trim($_GET['apartment_code']) : null;
+        $filter = isset($_GET['filter']) ? trim($_GET['filter']) : 'all'; // all, overdue, upcoming, completed
+
+        // Build WHERE clause
+        $whereClauses = [];
+        $params = [];
+        $types = '';
+
+        // Base condition: payments with balance > 0 OR specific statuses
+        switch ($filter) {
+            case 'overdue':
+                // Show only truly overdue payments
+                $whereClauses[] = "rp.status IN ('pending', 'ongoing')";
+                $whereClauses[] = "rp.due_date < CURDATE()";
+                $whereClauses[] = "rp.balance > 0";
+                break;
+
+            case 'upcoming':
+                // Show payments due in the future
+                $whereClauses[] = "rp.status IN ('pending', 'ongoing')";
+                $whereClauses[] = "rp.due_date >= CURDATE()";
+                $whereClauses[] = "rp.balance > 0";
+                break;
+
+            case 'completed':
+                // Show only completed payments
+                $whereClauses[] = "rp.status = 'completed'";
+                break;
+
+            case 'all':
+            default:
+                // Show all outstanding payments (with balance > 0)
+                $whereClauses[] = "rp.status IN ('pending', 'ongoing')";
+                $whereClauses[] = "rp.balance > 0";
+                break;
+        }
+
+        if ($search) {
+            $whereClauses[] = "(t.firstname LIKE ? OR t.lastname LIKE ? OR t.email LIKE ? OR t.tenant_code LIKE ? OR rp.receipt_number LIKE ?)";
+            $searchTerm = "%$search%";
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+            $types .= 'sssss';
+        }
+
+        if ($property_code) {
+            $whereClauses[] = "p.property_code = ?";
+            $params[] = $property_code;
+            $types .= 's';
+        }
+
+        if ($apartment_code) {
+            $whereClauses[] = "a.apartment_code = ?";
+            $params[] = $apartment_code;
+            $types .= 's';
+        }
+
+        $whereSQL = "WHERE " . implode(" AND ", $whereClauses);
+
+        // Count query
+        $countQuery = "
+            SELECT COUNT(DISTINCT rp.payment_id) as total
+            FROM rent_payments rp
+            JOIN tenants t ON rp.tenant_code = t.tenant_code
+            LEFT JOIN apartments a ON rp.apartment_code = a.apartment_code
+            LEFT JOIN properties p ON a.property_code = p.property_code
+            $whereSQL
+        ";
+
+        $countStmt = $conn->prepare($countQuery);
+        if (!$countStmt) {
+            logActivity("Count prepare error: " . $conn->error);
+            echo json_encode(["success" => false, "message" => "Database error: " . $conn->error]);
+            return;
+        }
+
+        if (!empty($params)) {
+            $countStmt->bind_param($types, ...$params);
+        }
+        $countStmt->execute();
+        $total = $countStmt->get_result()->fetch_assoc()['total'] ?? 0;
+        $countStmt->close();
+
+        // Main data query
+        $query = "
+            SELECT 
+                rp.payment_id,
+                rp.rent_payment_id,
+                rp.tenant_code,
+                rp.apartment_code,
+                rp.amount,
+                rp.amount_paid,
+                rp.balance,
+                rp.payment_date,
+                rp.payment_method,
+                rp.payment_period,
+                rp.period_start_date,
+                rp.period_end_date,
+                rp.due_date,
+                rp.reference_number,
+                rp.status,
+                rp.payment_type,
+                rp.receipt_number,
+                rp.notes,
+                rp.created_at,
+                rp.updated_at,
+                rp.agreed_rent_amount,
+                rp.payment_amount_per_period,
+                rp.admin_notes,
+                rp.settlement_status,
+                CONCAT(t.firstname, ' ', t.lastname) as tenant_name,
+                t.email as tenant_email,
+                t.phone as tenant_phone,
+                t.lease_start_date,
+                t.lease_end_date,
+                t.temp_lease_end_date,
+                a.apartment_number,
+                a.apartment_code as apt_code,
+                p.name as property_name,
+                p.property_code,
+                (
+                    SELECT COUNT(*) 
+                    FROM rent_payment_tracker 
+                    WHERE rent_payment_id = rp.rent_payment_id 
+                    AND status != 'paid'
+                ) as remaining_periods,
+                (
+                    SELECT COUNT(*) 
+                    FROM rent_payment_tracker 
+                    WHERE rent_payment_id = rp.rent_payment_id 
+                    AND status = 'pending_verification'
+                ) as pending_verifications
+            FROM rent_payments rp
+            JOIN tenants t ON rp.tenant_code = t.tenant_code
+            LEFT JOIN apartments a ON rp.apartment_code = a.apartment_code
+            LEFT JOIN properties p ON a.property_code = p.property_code
+            $whereSQL
+            ORDER BY rp.due_date ASC, rp.created_at DESC
+            LIMIT ? OFFSET ?
+        ";
+
+        $stmt = $conn->prepare($query);
+        if (!$stmt) {
+            logActivity("Query prepare error: " . $conn->error);
+            echo json_encode(["success" => false, "message" => "Database error: " . $conn->error]);
+            return;
+        }
+
+        $paramsWithPagination = $params;
+        $paramsWithPagination[] = $limit;
+        $paramsWithPagination[] = $offset;
+        $stmtTypes = $types . 'ii';
+
+        if (!empty($paramsWithPagination)) {
+            $stmt->bind_param($stmtTypes, ...$paramsWithPagination);
+        }
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        $outstandingPayments = [];
+        $today = new DateTime();
+        $today->setTime(0, 0, 0);
+
+        while ($row = $result->fetch_assoc()) {
+            // Calculate days overdue
+            $dueDate = new DateTime($row['due_date']);
+            $dueDate->setTime(0, 0, 0);
+
+            $daysOverdue = $today->diff($dueDate)->days;
+            $isOverdue = ($dueDate < $today);
+
+            // Determine default status
+            $defaultStatus = 'on_track';
+            $defaultMessage = 'On Track';
+            $defaultColor = '#10b981';
+
+            if ($isOverdue) {
+                if ($daysOverdue <= 7) {
+                    $defaultStatus = 'at_risk';
+                    $defaultMessage = 'At Risk (1-7 days overdue)';
+                    $defaultColor = '#f59e0b';
+                } elseif ($daysOverdue <= 30) {
+                    $defaultStatus = 'overdue';
+                    $defaultMessage = 'Overdue (8-30 days)';
+                    $defaultColor = '#ef4444';
+                } else {
+                    $defaultStatus = 'critical';
+                    $defaultMessage = 'Critical (30+ days overdue)';
+                    $defaultColor = '#dc2626';
+                }
+            }
+
+            // Check if payment has settlement issues
+            $settlementIssue = false;
+            $settlementMessage = '';
+            if ($row['settlement_status'] === 'failed') {
+                $settlementIssue = true;
+                $settlementMessage = 'Settlement Failed';
+            } elseif ($row['settlement_status'] === 'processing') {
+                $settlementIssue = true;
+                $settlementMessage = 'Settlement in Progress';
+            }
+
+            $row['tenant_name'] = $row['tenant_name'] ?? $row['tenant_code'];
+            $row['period_display'] = $row['period_start_date'] && $row['period_end_date']
+                ? formatPeriodDisplay($row['period_start_date'], $row['period_end_date'])
+                : $row['payment_period'] ?? 'N/A';
+            $row['amount_formatted'] = '₦' . number_format($row['amount'], 2);
+            $row['balance_formatted'] = '₦' . number_format($row['balance'] ?? 0, 2);
+            $row['amount_paid_formatted'] = '₦' . number_format($row['amount_paid'] ?? 0, 2);
+            $row['due_date_formatted'] = $row['due_date'] ? date('M d, Y', strtotime($row['due_date'])) : 'N/A';
+            $row['payment_date_formatted'] = $row['payment_date'] ? date('M d, Y', strtotime($row['payment_date'])) : 'N/A';
+
+            // Add days overdue info
+            $row['days_overdue'] = $isOverdue ? $daysOverdue : 0;
+            $row['is_overdue'] = $isOverdue;
+
+            // Add default status
+            $row['default_status'] = $defaultStatus;
+            $row['default_message'] = $defaultMessage;
+            $row['default_color'] = $defaultColor;
+            $row['settlement_issue'] = $settlementIssue;
+            $row['settlement_message'] = $settlementMessage;
+            $row['remaining_periods'] = (int) ($row['remaining_periods'] ?? 0);
+            $row['pending_verifications'] = (int) ($row['pending_verifications'] ?? 0);
+
+            // Calculate overdue amount (balance)
+            $row['overdue_amount'] = $isOverdue ? ($row['balance'] ?? $row['amount']) : 0;
+            $row['overdue_amount_formatted'] = '₦' . number_format($row['overdue_amount'], 2);
+
+            // Status badge class
+            $row['status_badge'] = getStatusBadgeClass($row['status']);
+
+            $outstandingPayments[] = $row;
+        }
+        $stmt->close();
+
+        // Get summary statistics based on the same filter
+        $summaryQuery = "
+            SELECT 
+                COUNT(*) as total_outstanding,
+                SUM(rp.balance) as total_balance,
+                SUM(CASE WHEN rp.due_date < CURDATE() AND DATEDIFF(CURDATE(), rp.due_date) <= 7 THEN rp.balance ELSE 0 END) as at_risk_amount,
+                SUM(CASE WHEN rp.due_date < CURDATE() AND DATEDIFF(CURDATE(), rp.due_date) > 7 AND DATEDIFF(CURDATE(), rp.due_date) <= 30 THEN rp.balance ELSE 0 END) as overdue_amount,
+                SUM(CASE WHEN rp.due_date < CURDATE() AND DATEDIFF(CURDATE(), rp.due_date) > 30 THEN rp.balance ELSE 0 END) as critical_amount,
+                COUNT(CASE WHEN rp.due_date < CURDATE() AND DATEDIFF(CURDATE(), rp.due_date) <= 7 THEN 1 END) as at_risk_count,
+                COUNT(CASE WHEN rp.due_date < CURDATE() AND DATEDIFF(CURDATE(), rp.due_date) > 7 AND DATEDIFF(CURDATE(), rp.due_date) <= 30 THEN 1 END) as overdue_count,
+                COUNT(CASE WHEN rp.due_date < CURDATE() AND DATEDIFF(CURDATE(), rp.due_date) > 30 THEN 1 END) as critical_count,
+                COUNT(DISTINCT rp.tenant_code) as tenants_affected
+            FROM rent_payments rp
+            WHERE rp.status IN ('pending', 'ongoing')
+            AND rp.balance > 0
+        ";
+
+        // Add filter conditions to summary if needed
+        if ($filter === 'overdue') {
+            $summaryQuery .= " AND rp.due_date < CURDATE()";
+        } elseif ($filter === 'upcoming') {
+            $summaryQuery .= " AND rp.due_date >= CURDATE()";
+        }
+
+        $summaryResult = $conn->query($summaryQuery);
+        $summary = $summaryResult ? $summaryResult->fetch_assoc() : [
+            'total_outstanding' => 0,
+            'total_balance' => 0,
+            'at_risk_amount' => 0,
+            'overdue_amount' => 0,
+            'critical_amount' => 0,
+            'at_risk_count' => 0,
+            'overdue_count' => 0,
+            'critical_count' => 0,
+            'tenants_affected' => 0
+        ];
+
+        echo json_encode([
+            "success" => true,
+            "payments" => $outstandingPayments,
+            "filter_applied" => $filter,
+            "pagination" => [
+                "total" => $total,
+                "page" => $page,
+                "limit" => $limit,
+                "total_pages" => ceil($total / $limit)
+            ],
+            "summary" => [
+                "total_outstanding" => (int) ($summary['total_outstanding'] ?? 0),
+                "total_balance" => (float) ($summary['total_balance'] ?? 0),
+                "at_risk_amount" => (float) ($summary['at_risk_amount'] ?? 0),
+                "overdue_amount" => (float) ($summary['overdue_amount'] ?? 0),
+                "critical_amount" => (float) ($summary['critical_amount'] ?? 0),
+                "at_risk_count" => (int) ($summary['at_risk_count'] ?? 0),
+                "overdue_count" => (int) ($summary['overdue_count'] ?? 0),
+                "critical_count" => (int) ($summary['critical_count'] ?? 0),
+                "tenants_affected" => (int) ($summary['tenants_affected'] ?? 0)
+            ]
+        ]);
+
+    } catch (Exception $e) {
+        logActivity("ERROR in fetchOutstandingPayment: " . $e->getMessage());
+        echo json_encode([
+            "success" => false,
+            "message" => "Failed to fetch outstanding payments: " . $e->getMessage()
+        ]);
+    }
 }
 /**
  * Update rent payment attempt record (when admin verifies/approves/rejects)
@@ -697,6 +1023,156 @@ function verifyPayment($conn, $adminId)
                 throw new Exception("Payment approval failed: " . $settlementError->getMessage());
             }
             // ==================== END SETTLEMENT PROCESSING ====================
+
+            // ==================== SETTLEMENT PROCESSING COMPLETED ====================
+
+            // ==================== NEW: CHECK AND UPDATE SETTLEMENT STATUS ====================
+            logActivity("Checking settlement completion status for rent_payment_id: {$tracker['rent_payment_id']}");
+
+            try {
+                // Step 1: Check if all settlements for this rent payment are completed
+                $settlementCheckQuery = "
+        SELECT 
+            COUNT(*) as total_settlements,
+            SUM(CASE WHEN settlement_status = 'completed' THEN 1 ELSE 0 END) as completed_settlements,
+            SUM(CASE WHEN settlement_status = 'pending' THEN 1 ELSE 0 END) as pending_settlements,
+            SUM(CASE WHEN settlement_status = 'failed' THEN 1 ELSE 0 END) as failed_settlements,
+            COALESCE(SUM(CASE WHEN settlement_status = 'completed' THEN admin_share ELSE 0 END), 0) as total_admin_share,
+            COALESCE(SUM(CASE WHEN settlement_status = 'completed' THEN agent_share ELSE 0 END), 0) as total_agent_share,
+            COALESCE(SUM(CASE WHEN settlement_status = 'completed' THEN client_share ELSE 0 END), 0) as total_client_share,
+            COALESCE(SUM(CASE WHEN settlement_status = 'completed' THEN total_rent_amount ELSE 0 END), 0) as total_settled_amount
+        FROM settlement_transactions
+        WHERE rent_payment_id = ?
+    ";
+
+                $settlementCheckStmt = $conn->prepare($settlementCheckQuery);
+                if (!$settlementCheckStmt) {
+                    logActivity("Failed to prepare settlement check query: " . $conn->error);
+                    throw new Exception("Database error occurred");
+                }
+
+                $settlementCheckStmt->bind_param("s", $tracker['rent_payment_id']);
+                $settlementCheckStmt->execute();
+                $settlementCheck = $settlementCheckStmt->get_result()->fetch_assoc();
+                $settlementCheckStmt->close();
+
+                logActivity("Settlement check results: " . json_encode([
+                    'total_settlements' => $settlementCheck['total_settlements'],
+                    'completed_settlements' => $settlementCheck['completed_settlements'],
+                    'pending_settlements' => $settlementCheck['pending_settlements'],
+                    'failed_settlements' => $settlementCheck['failed_settlements'],
+                    'total_settled_amount' => $settlementCheck['total_settled_amount']
+                ]));
+
+                // Step 2: Get rent payment details for verification
+                $rentPaymentCheckQuery = "
+        SELECT 
+            payment_id,
+            rent_payment_id,
+            amount,
+            amount_paid,
+            balance,
+            status,
+            settlement_status
+        FROM rent_payments
+        WHERE rent_payment_id = ?
+        LIMIT 1
+    ";
+
+                $rentPaymentCheckStmt = $conn->prepare($rentPaymentCheckQuery);
+                if (!$rentPaymentCheckStmt) {
+                    logActivity("Failed to prepare rent payment check query: " . $conn->error);
+                    throw new Exception("Database error occurred");
+                }
+
+                $rentPaymentCheckStmt->bind_param("s", $tracker['rent_payment_id']);
+                $rentPaymentCheckStmt->execute();
+                $rentPaymentCheck = $rentPaymentCheckStmt->get_result()->fetch_assoc();
+                $rentPaymentCheckStmt->close();
+
+                if (!$rentPaymentCheck) {
+                    logActivity("WARNING: Rent payment not found for ID: {$tracker['rent_payment_id']}");
+                } else {
+                    logActivity("Rent payment check: " . json_encode([
+                        'amount' => $rentPaymentCheck['amount'],
+                        'amount_paid' => $rentPaymentCheck['amount_paid'],
+                        'balance' => $rentPaymentCheck['balance'],
+                        'status' => $rentPaymentCheck['status'],
+                        'settlement_status' => $rentPaymentCheck['settlement_status']
+                    ]));
+
+                    // Step 3: Verify all settlements are completed
+                    $allSettlementsCompleted = (
+                        (int) $settlementCheck['total_settlements'] > 0 &&
+                        (int) $settlementCheck['completed_settlements'] === (int) $settlementCheck['total_settlements'] &&
+                        (int) $settlementCheck['pending_settlements'] === 0 &&
+                        (int) $settlementCheck['failed_settlements'] === 0
+                    );
+
+                    // Step 4: Verify rent is fully paid (amount == amount_paid)
+                    // Using tolerance of 0.01 for floating point comparison
+                    $rentFullyPaid = (
+                        abs((float) $rentPaymentCheck['amount'] - (float) $rentPaymentCheck['amount_paid']) < 0.01 &&
+                        abs((float) $rentPaymentCheck['balance']) < 0.01
+                    );
+
+                    logActivity("Settlement validation - All Settlements Completed: " . ($allSettlementsCompleted ? 'YES' : 'NO'));
+                    logActivity("Settlement validation - Rent Fully Paid: " . ($rentFullyPaid ? 'YES' : 'NO'));
+
+                    // Step 5: If both conditions are met, update settlement_status to 'settled'
+                    if ($allSettlementsCompleted && $rentFullyPaid) {
+                        // Only update if current status is 'pending' or 'processing' (not already 'settled')
+                        if ($rentPaymentCheck['settlement_status'] !== 'settled') {
+                            logActivity("All conditions met - Updating settlement_status to 'settled' for rent_payment_id: {$tracker['rent_payment_id']}");
+
+                            $updateSettlementStatusQuery = "
+                    UPDATE rent_payments 
+                    SET settlement_status = 'settled',
+                        updated_at = NOW()
+                    WHERE rent_payment_id = ?
+                    AND settlement_status != 'settled'
+                ";
+
+                            $updateSettlementStatusStmt = $conn->prepare($updateSettlementStatusQuery);
+                            if (!$updateSettlementStatusStmt) {
+                                logActivity("Failed to prepare settlement status update: " . $conn->error);
+                                throw new Exception("Database error occurred");
+                            }
+
+                            $updateSettlementStatusStmt->bind_param("s", $tracker['rent_payment_id']);
+                            $updateSettlementStatusStmt->execute();
+                            $affectedRows = $updateSettlementStatusStmt->affected_rows;
+                            $updateSettlementStatusStmt->close();
+
+                            if ($affectedRows > 0) {
+                                logActivity("SUCCESS: settlement_status updated to 'settled' for rent_payment_id: {$tracker['rent_payment_id']}");
+                                logActivity("Summary - Total Settled Amount: {$settlementCheck['total_settled_amount']}, Admin: {$settlementCheck['total_admin_share']}, Agent: {$settlementCheck['total_agent_share']}, Client: {$settlementCheck['total_client_share']}");
+                            } else {
+                                logActivity("WARNING: settlement_status update affected 0 rows for rent_payment_id: {$tracker['rent_payment_id']}");
+                            }
+                        } else {
+                            logActivity("Settlement status already 'settled' for rent_payment_id: {$tracker['rent_payment_id']}");
+                        }
+                    } else {
+                        // Log why settlement is not yet complete
+                        $reason = [];
+                        if (!$allSettlementsCompleted) {
+                            $reason[] = "Not all settlements completed ({$settlementCheck['completed_settlements']}/{$settlementCheck['total_settlements']})";
+                        }
+                        if (!$rentFullyPaid) {
+                            $reason[] = "Rent not fully paid (Amount: {$rentPaymentCheck['amount']}, Paid: {$rentPaymentCheck['amount_paid']}, Balance: {$rentPaymentCheck['balance']})";
+                        }
+                        logActivity("Settlement not yet complete for rent_payment_id: {$tracker['rent_payment_id']}. Reason: " . implode(', ', $reason));
+                    }
+                }
+
+            } catch (Exception $settlementStatusError) {
+                logActivity("SETTLEMENT STATUS CHECK ERROR: " . $settlementStatusError->getMessage());
+                // Don't throw - this is a secondary check, shouldn't fail the whole payment verification
+                // But log it clearly for investigation
+                logActivity("WARNING: Settlement status check failed but payment verification will continue");
+            }
+            // ==================== END: CHECK AND UPDATE SETTLEMENT STATUS ====================
 
             // Check if all periods are paid
             $remainingQuery = "

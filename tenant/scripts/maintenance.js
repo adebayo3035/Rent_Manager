@@ -76,6 +76,7 @@ function renderMaintenanceRequests(requests, pagination) {
                 <select class="filter-select" id="statusFilter" onchange="filterByStatus()">
                     <option value="">All Requests</option>
                     <option value="pending" ${currentStatus === 'pending' ? 'selected' : ''}>Pending</option>
+                    <option value="pending_reassignment" ${currentStatus === 'pending_reassignment' ? 'selected' : ''}>Pending Reassignment</option>
                     <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>In Progress</option>
                     <option value="resolved" ${currentStatus === 'resolved' ? 'selected' : ''}>Resolved</option>
                     <option value="cancelled" ${currentStatus === 'cancelled' ? 'selected' : ''}>Cancelled</option>
@@ -83,7 +84,66 @@ function renderMaintenanceRequests(requests, pagination) {
             </div>
             
             <div class="requests-grid">
-                ${requests.map(request => `
+                ${requests.map(request => {
+                    // ==================== ASSIGNED TO RENDERING LOGIC ====================
+                    let assignedDisplay = '';
+                    
+                    switch (request.status) {
+                        case 'pending':
+                            // Admin assigned but not yet accepted
+                            if (request.assigned_admin_name) {
+                                assignedDisplay = `${escapeHtml(request.assigned_admin_name)} <span class="pending-acceptance">(Pending Acceptance)</span>`;
+                            }
+                            break;
+                            
+                        case 'pending_reassignment':
+                            // Admin rejected - show who rejected and awaiting reassignment
+                            if (request.assigned_admin_name) {
+                                assignedDisplay = `${escapeHtml(request.assigned_admin_name)} <span class="rejected-status">- Rejected (Pending Reassignment)</span>`;
+                            } else {
+                                assignedDisplay = `<span class="rejected-status">Pending Reassignment</span>`;
+                            }
+                            break;
+                            
+                        case 'in_progress':
+                            // Admin accepted and working on it
+                            if (request.assigned_to_name) {
+                                assignedDisplay = escapeHtml(request.assigned_to_name);
+                            } else if (request.assigned_admin_name) {
+                                assignedDisplay = escapeHtml(request.assigned_admin_name);
+                            }
+                            break;
+                            
+                        case 'resolved':
+                            // Resolved - show who resolved it
+                            if (request.assigned_to_name) {
+                                assignedDisplay = escapeHtml(request.assigned_to_name);
+                            } else if (request.assigned_admin_name) {
+                                assignedDisplay = escapeHtml(request.assigned_admin_name);
+                            }
+                            break;
+                            
+                        case 'cancelled':
+                            // Cancelled - show who was assigned (if any)
+                            if (request.assigned_to_name) {
+                                assignedDisplay = escapeHtml(request.assigned_to_name);
+                            } else if (request.assigned_admin_name) {
+                                assignedDisplay = escapeHtml(request.assigned_admin_name);
+                            }
+                            break;
+                            
+                        default:
+                            // Fallback for any other status
+                            if (request.assigned_to_name) {
+                                assignedDisplay = escapeHtml(request.assigned_to_name);
+                            } else if (request.assigned_admin_name) {
+                                assignedDisplay = escapeHtml(request.assigned_admin_name);
+                            }
+                            break;
+                    }
+                    // ==================== END ASSIGNED TO RENDERING ====================
+                    
+                    return `
                     <div class="request-card" onclick="viewRequestDetails(${request.request_id})">
                         <div class="request-header">
                             <div class="request-title">${escapeHtml(request.issue_type)}</div>
@@ -97,8 +157,8 @@ function renderMaintenanceRequests(requests, pagination) {
                         <div class="request-meta">
                             <span><i class="fas fa-calendar"></i> Created: ${formatDate(request.created_at)}</span>
                             ${request.updated_at && request.updated_at !== request.created_at ? `<span><i class="fas fa-edit"></i> Updated: ${formatDate(request.updated_at)}</span>` : ''}
-                            ${request.resolved_at ? `<span><i class="fas fa-check-circle"></i> Resolved: ${formatDate(request.resolved_at)}</span>` : ''}
-                            ${request.assigned_to_name ? `<span><i class="fas fa-user"></i> Assigned to: ${escapeHtml(request.assigned_to_name)}</span>` : ''}
+                            ${request.resolved_at ? `<span><i class="fas fa-check-circle"></i> Resolved On: ${formatDate(request.resolved_at)}</span>` : ''}
+                            ${assignedDisplay ? `<span><i class="fas fa-user"></i> Assigned to: ${assignedDisplay}</span>` : ''}
                         </div>
                         ${request.can_cancel ? `
                             <div class="request-actions" style="margin-top: 10px; text-align: right;">
@@ -108,7 +168,7 @@ function renderMaintenanceRequests(requests, pagination) {
                             </div>
                         ` : ''}
                     </div>
-                `).join('')}
+                `}).join('')}
             </div>
             
             ${renderPagination(pagination)}
@@ -117,7 +177,6 @@ function renderMaintenanceRequests(requests, pagination) {
     
     contentArea.innerHTML = html;
 }
-
 // Add cancel button styles
 const style = document.createElement('style');
 style.textContent = `
@@ -251,146 +310,80 @@ function showRequestDetailsModal(details) {
                     <!-- Content will be populated here -->
                 </div>
                 <div class="modal-footer" id="modalFooterButtons">
-                    <button class="btn-secondary" onclick="closeRequestDetailsModal()">Close</button>
-                    ${request.can_cancel ? `<button class="btn-danger" onclick="cancelRequestFromModal(${request.request_id})">Cancel Request</button>` : ''}
+                    <!-- Buttons will be populated here -->
                 </div>
             </div>
         `;
         document.body.appendChild(modal);
-        
-        // Add styles for timeline and rating
-        const modalStyle = document.createElement('style');
-        modalStyle.textContent = `
-            .timeline {
-                margin: 20px 0;
-                position: relative;
-                padding-left: 30px;
-            }
-            .timeline-item {
-                position: relative;
-                padding-bottom: 20px;
-                border-left: 2px solid #e5e7eb;
-                padding-left: 20px;
-                margin-left: 10px;
-            }
-            .timeline-item:last-child {
-                border-left: 2px solid transparent;
-            }
-            .timeline-item::before {
-                content: "";
-                position: absolute;
-                left: -8px;
-                top: 0;
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                background: #667eea;
-                border: 2px solid white;
-            }
-            .timeline-date {
-                font-size: 12px;
-                color: #666;
-                margin-bottom: 5px;
-            }
-            .timeline-title {
-                font-weight: 600;
-                color: #1a1f36;
-                margin-bottom: 5px;
-            }
-            .timeline-description {
-                font-size: 13px;
-                color: #666;
-            }
-            .btn-danger {
-                background: #fee2e2;
-                color: #dc2626;
-                border: 1px solid #fecaca;
-                padding: 8px 16px;
-                border-radius: 6px;
-                cursor: pointer;
-                transition: all 0.2s;
-            }
-            .btn-danger:hover {
-                background: #fecaca;
-            }
-            .btn-success {
-                background: #d1fae5;
-                color: #10b981;
-                border: 1px solid #a7f3d0;
-                padding: 8px 16px;
-                border-radius: 6px;
-                cursor: pointer;
-                transition: all 0.2s;
-            }
-            .btn-success:hover {
-                background: #a7f3d0;
-            }
-            .btn-warning {
-                background: #fed7aa;
-                color: #f59e0b;
-                border: 1px solid #fde68a;
-                padding: 8px 16px;
-                border-radius: 6px;
-                cursor: pointer;
-                transition: all 0.2s;
-            }
-            .btn-warning:hover {
-                background: #fde68a;
-            }
-            .detail-section {
-                margin-bottom: 20px;
-            }
-            .detail-section h4 {
-                font-size: 16px;
-                color: #1a1f36;
-                margin-bottom: 10px;
-                padding-bottom: 5px;
-                border-bottom: 2px solid #f0f0f0;
-            }
-            .detail-grid {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 12px;
-            }
-            .detail-item {
-                display: flex;
-                justify-content: space-between;
-                padding: 8px 0;
-                border-bottom: 1px solid #f5f5f5;
-            }
-            .detail-label {
-                font-weight: 500;
-                color: #666;
-            }
-            .detail-value {
-                color: #1a1f36;
-            }
-            /* Rating Stars */
-            .rating-stars {
-                display: flex;
-                gap: 8px;
-                justify-content: center;
-                margin: 15px 0;
-            }
-            .rating-stars i {
-                font-size: 32px;
-                cursor: pointer;
-                transition: all 0.2s;
-                color: #d1d5db;
-            }
-            .rating-stars i.active,
-            .rating-stars i.hover {
-                color: #fbbf24;
-                transform: scale(1.1);
-            }
-            @media (max-width: 768px) {
-                .detail-grid {
-                    grid-template-columns: 1fr;
-                }
-            }
-        `;
-        document.head.appendChild(modalStyle);
     }
+    
+    // ==================== ASSIGNED TO RENDERING LOGIC ====================
+    let assignedDisplay = '';
+    
+    switch (request.status) {
+        case 'pending':
+            // Admin assigned but not yet accepted
+            if (request.assigned_admin_name) {
+                assignedDisplay = `${escapeHtml(request.assigned_admin_name)} <span class="pending-acceptance">(Pending Acceptance)</span>`;
+            } else {
+                assignedDisplay = 'Not yet assigned';
+            }
+            break;
+            
+        case 'pending_reassignment':
+            // Admin rejected - show who rejected and awaiting reassignment
+            if (request.assigned_admin_name) {
+                assignedDisplay = `${escapeHtml(request.assigned_admin_name)} <span class="rejected-status">- Rejected (Pending Reassignment)</span>`;
+            } else {
+                assignedDisplay = '<span class="rejected-status">Pending Reassignment</span>';
+            }
+            break;
+            
+        case 'in_progress':
+            // Admin accepted and working on it
+            if (request.assigned_to_name) {
+                assignedDisplay = escapeHtml(request.assigned_to_name);
+            } else if (request.assigned_admin_name) {
+                assignedDisplay = escapeHtml(request.assigned_admin_name);
+            } else {
+                assignedDisplay = 'Not yet assigned';
+            }
+            break;
+            
+        case 'resolved':
+            // Resolved - show who resolved it
+            if (request.assigned_to_name) {
+                assignedDisplay = escapeHtml(request.assigned_to_name);
+            } else if (request.assigned_admin_name) {
+                assignedDisplay = escapeHtml(request.assigned_admin_name);
+            } else {
+                assignedDisplay = 'N/A';
+            }
+            break;
+            
+        case 'cancelled':
+            // Cancelled - show who was assigned (if any)
+            if (request.assigned_to_name) {
+                assignedDisplay = escapeHtml(request.assigned_to_name);
+            } else if (request.assigned_admin_name) {
+                assignedDisplay = escapeHtml(request.assigned_admin_name);
+            } else {
+                assignedDisplay = 'N/A';
+            }
+            break;
+            
+        default:
+            // Fallback for any other status
+            if (request.assigned_to_name) {
+                assignedDisplay = escapeHtml(request.assigned_to_name);
+            } else if (request.assigned_admin_name) {
+                assignedDisplay = escapeHtml(request.assigned_admin_name);
+            } else {
+                assignedDisplay = 'N/A';
+            }
+            break;
+    }
+    // ==================== END ASSIGNED TO RENDERING ====================
     
     // Populate modal content
     const body = document.getElementById('requestDetailsBody');
@@ -426,12 +419,10 @@ function showRequestDetailsModal(details) {
                     <span class="detail-label">Apartment:</span>
                     <span class="detail-value">${escapeHtml(request.apartment_info?.apartment_number || 'N/A')}</span>
                 </div>
-                ${request.assigned_to_name ? `
                 <div class="detail-item">
                     <span class="detail-label">Assigned To:</span>
-                    <span class="detail-value">${escapeHtml(request.assigned_to_name)}</span>
+                    <span class="detail-value">${assignedDisplay}</span>
                 </div>
-                ` : ''}
                 ${request.resolved_at ? `
                 <div class="detail-item">
                     <span class="detail-label">Resolved:</span>
@@ -462,7 +453,7 @@ function showRequestDetailsModal(details) {
                         <div class="timeline-date">${formatDateTime(item.date)}</div>
                         <div class="timeline-title">${escapeHtml(item.action)}</div>
                         <div class="timeline-description">${escapeHtml(item.description)}</div>
-                        <div class="timeline-user" style="font-size: 11px; color: #999; margin-top: 4px;">By: ${escapeHtml(item.user)}</div>
+                        <div class="timeline-user">By: ${escapeHtml(item.user)}</div>
                     </div>
                 `).join('')}
             </div>
@@ -500,7 +491,6 @@ function showRequestDetailsModal(details) {
     
     modal.classList.add('active');
 }
-
 function closeRequestDetailsModal() {
     const modal = document.getElementById('requestDetailsModal');
     if (modal) {
