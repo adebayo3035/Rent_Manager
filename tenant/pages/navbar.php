@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,8 +12,10 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet" />
 </head>
+
 <body>
     <div class="tenant-wrapper">
         <aside class="tenant-sidebar" id="tenantSidebar">
@@ -24,8 +27,20 @@
             </div>
             <div class="tenant-info" id="tenantInfo">
                 <div class="tenant-avatar" id="photoElement">
-                    <!-- <i class="fas fa-user-circle"></i> -->
+                    <!-- Photo will be rendered here -->
                 </div>
+                <div class="photo-action-buttons" id="photoActionButtons">
+                    <button class="photo-action-btn" id="uploadPhotoBtn" title="Upload Photo">
+                        <i class="fas fa-pencil-alt"></i>
+                    </button>
+                    <button class="photo-action-btn" id="cameraPhotoBtn" title="Take Photo">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+
+                <!-- Hidden file inputs -->
+                <input type="file" id="photoFileInput" accept="image/jpeg,image/png,image/webp" style="display: none;">
+                <input type="file" id="cameraFileInput" accept="image/*" capture="user" style="display: none;">
                 <div class="tenant-name" id="tenantName">Loading...</div>
                 <div class="tenant-apartment" id="tenantApartment">-</div>
             </div>
@@ -99,6 +114,34 @@
         </main>
     </div>
 
+    <!-- Camera Capture Modal -->
+<div id="cameraCaptureModal" class="camera-modal">
+    <div class="camera-modal-content">
+        <div class="camera-modal-header">
+            <h3><i class="fas fa-camera"></i> Take Photo</h3>
+            <button class="camera-modal-close" id="closeCameraBtn">&times;</button>
+        </div>
+        <div class="camera-modal-body">
+            <video id="cameraVideo" autoplay playsinline muted></video>
+            <canvas id="cameraCanvas" style="display: none;"></canvas>
+            <div class="camera-error" id="cameraError" style="display: none;">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p id="cameraErrorMessage">Unable to access camera</p>
+            </div>
+        </div>
+        <div class="camera-modal-footer">
+            <button class="camera-btn-switch" id="switchCameraBtn" title="Switch Camera">
+                <i class="fas fa-sync-alt"></i> Switch
+            </button>
+            <button class="camera-btn-capture" id="capturePhotoBtn">
+                <i class="fas fa-circle"></i> Capture
+            </button>
+            <button class="camera-btn-cancel" id="cancelCameraBtn">Cancel</button>
+        </div>
+    </div>
+</div>
+
     <script src="../scripts/navbar.js"></script>
 </body>
+
 </html>
