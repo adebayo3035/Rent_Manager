@@ -4,6 +4,8 @@
 let properties = [];
 let selectedPropertyId = null;
 let resetPropertyId = null;
+const TOAST_DURATION = 5000; // 5 seconds default (was 3s)
+let activeToastTimers = new Map(); // Track timers per toast
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', function() {
@@ -455,37 +457,149 @@ function updateRowCount(count) {
 }
 
 // ==================== TOAST SYSTEM ====================
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toastContainer');
+// function showToast(message, type = 'info') {
+//     const container = document.getElementById('toastContainer');
+//     const toast = document.createElement('div');
+//     toast.className = `toast toast-${type}`;
+    
+//     const icons = {
+//         success: 'fa-check-circle',
+//         error: 'fa-exclamation-circle',
+//         warning: 'fa-exclamation-triangle',
+//         info: 'fa-info-circle'
+//     };
+    
+//     toast.innerHTML = `
+//         <i class="fas ${icons[type] || icons.info}"></i>
+//         <span>${escapeHtml(message)}</span>
+//     `;
+    
+//     container.appendChild(toast);
+    
+//     setTimeout(() => {
+//         if (toast && toast.remove) {
+//             toast.style.opacity = '0';
+//             toast.style.transform = 'translateX(100%)';
+//             toast.style.transition = 'all 0.3s ease';
+//             setTimeout(() => {
+//                 if (toast && toast.remove) {
+//                     toast.remove();
+//                 }
+//             }, 3000);
+//         }
+//     }, 3000);
+// }
+
+
+// ==================== TOAST SYSTEM ====================
+
+
+
+/**
+ * Show a toast notification
+ * @param {string} message - The message to display
+ * @param {string} type - 'success' | 'error' | 'warning' | 'info'
+ * @param {number} duration - Optional custom duration in milliseconds
+ */
+function showToast(message, type = 'info', duration = TOAST_DURATION) {
+    // Ensure container exists
+    let container = document.getElementById('toastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+
+    // Remove any existing toast (prevents stacking)
+    container.querySelectorAll('.toast').forEach(t => {
+        clearToastTimer(t);
+        t.remove();
+    });
+
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    
+
     const icons = {
         success: 'fa-check-circle',
         error: 'fa-exclamation-circle',
         warning: 'fa-exclamation-triangle',
         info: 'fa-info-circle'
     };
-    
+
     toast.innerHTML = `
         <i class="fas ${icons[type] || icons.info}"></i>
         <span>${escapeHtml(message)}</span>
+        <button class="toast-close" aria-label="Close">&times;</button>
     `;
-    
+
     container.appendChild(toast);
-    
-    setTimeout(() => {
-        if (toast && toast.remove) {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(100%)';
-            toast.style.transition = 'all 0.3s ease';
-            setTimeout(() => {
-                if (toast && toast.remove) {
-                    toast.remove();
-                }
-            }, 300);
+
+    // Force reflow so the "show" animation plays
+    void toast.offsetWidth;
+
+    // Add visible class to trigger enter animation
+    toast.classList.add('toast-visible');
+
+    // Auto-dismiss
+    const timer = setTimeout(() => {
+        hideToast(toast);
+    }, duration);
+
+    activeToastTimers.set(toast, timer);
+
+    // Pause timer on hover — user is reading
+    toast.addEventListener('mouseenter', () => {
+        const t = activeToastTimers.get(toast);
+        if (t) {
+            clearTimeout(t);
+            activeToastTimers.delete(toast);
         }
-    }, 3000);
+    });
+
+    // Resume timer on mouse leave (with a short re-display window)
+    toast.addEventListener('mouseleave', () => {
+        const resumeTimer = setTimeout(() => {
+            hideToast(toast);
+        }, 1500); // Give them 1.5 more seconds after they stop hovering
+        activeToastTimers.set(toast, resumeTimer);
+    });
+
+    // Click anywhere on the toast to dismiss
+    toast.addEventListener('click', () => {
+        hideToast(toast);
+    });
+}
+
+/**
+ * Hide a toast with smooth animation
+ */
+function hideToast(toast) {
+    if (!toast || !toast.parentElement) return;
+
+    const timer = activeToastTimers.get(toast);
+    if (timer) {
+        clearTimeout(timer);
+        activeToastTimers.delete(toast);
+    }
+
+    toast.classList.remove('toast-visible');
+    toast.classList.add('toast-hiding');
+
+    setTimeout(() => {
+        if (toast && toast.remove) toast.remove();
+    }, 300); // Match CSS transition duration
+}
+
+/**
+ * Clear a toast's timer
+ */
+function clearToastTimer(toast) {
+    const timer = activeToastTimers.get(toast);
+    if (timer) {
+        clearTimeout(timer);
+        activeToastTimers.delete(toast);
+    }
 }
 
 // ==================== UTILITY FUNCTIONS ====================
