@@ -7,11 +7,12 @@ require_once __DIR__ . '/../utilities/auth_guard.php';
 
 try {
     // Authentication check
-    if (!isset($_SESSION['unique_id'])) {
-        logActivity("Unauthorized dashboard access attempt: No session found.");
-        echo json_encode(["success" => false, "message" => "Not logged in."]);
-        exit();
-    }
+    // if (!isset($_SESSION['unique_id'])) {
+    //     logActivity("Unauthorized dashboard access attempt: No session found.");
+    //     echo json_encode(["success" => false, "message" => "Not logged in."]);
+    //     exit();
+    // }
+    requireActiveSession();
 
     $adminId = $_SESSION['unique_id'];
     $userRole = $_SESSION['role'] ?? 'Unknown';

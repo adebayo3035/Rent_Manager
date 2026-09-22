@@ -134,3 +134,74 @@ function consumeCsrfToken(string $formName): void
 
     unset($_SESSION['csrf_tokens'][$formName]);
 }
+
+/**
+ * Check whether the current session is active and has not expired.
+ *
+ * This should be called at the beginning of protected backend endpoints.
+ */
+function requireActiveSession($timeout = 900)
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    // No authenticated session
+    if (!isset($_SESSION['unique_id'])) {
+        http_response_code(401);
+
+        echo json_encode([
+            "success" => false,
+            "message" => "Not logged in"
+        ]);
+
+        exit();
+    }
+
+    // last_activity should be set when the user logs in
+    if (!isset($_SESSION['last_activity'])) {
+        http_response_code(401);
+
+        echo json_encode([
+            "success" => false,
+            "message" => "Session expired"
+        ]);
+
+        exit();
+    }
+
+    // Check inactivity
+    if ((time() - $_SESSION['last_activity']) >= $timeout) {
+
+        // Clear session
+        $_SESSION = [];
+
+        // Remove session cookie
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+
+            setcookie(
+                session_name(),
+                '',
+                time() - 42000,
+                $params['path'],
+                $params['domain'],
+                $params['secure'],
+                $params['httponly']
+            );
+        }
+
+        session_destroy();
+
+        http_response_code(401);
+
+        echo json_encode([
+            "success" => false,
+            "message" => "Session expired"
+        ]);
+
+        exit();
+    }
+
+    return true;
+}

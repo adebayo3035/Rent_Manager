@@ -60,6 +60,7 @@
                     <div id="propertyFeesContent">
                         <div class="loading-spinner">
                             <div class="spinner"></div>
+                            Select a Property to load Data...
                         </div>
                     </div>
                 </div>

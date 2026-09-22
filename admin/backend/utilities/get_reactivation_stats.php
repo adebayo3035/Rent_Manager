@@ -10,16 +10,17 @@ try {
     // -----------------------------------------------------
     //  AUTHENTICATION CHECK
     // -----------------------------------------------------
-    if (!isset($_SESSION['unique_id'])) {
-        logActivity("Unauthorized access attempt to stats | No session | IP: " . getClientIP());
-        http_response_code(401);
-        echo json_encode([
-            "success" => false, 
-            "message" => "Not logged in. Please login again.",
-            "code" => 401
-        ]);
-        exit();
-    }
+    // if (!isset($_SESSION['unique_id'])) {
+    //     logActivity("Unauthorized access attempt to stats | No session | IP: " . getClientIP());
+    //     http_response_code(401);
+    //     echo json_encode([
+    //         "success" => false, 
+    //         "message" => "Not logged in. Please login again.",
+    //         "code" => 401
+    //     ]);
+    //     exit();
+    // }
+    requireActiveSession();
 
     $adminId = $_SESSION['unique_id'];
     $loggedInUserRole = $_SESSION['role'] ?? 'Unknown';

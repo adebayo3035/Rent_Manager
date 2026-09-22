@@ -22,12 +22,13 @@ $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $userId = $_SESSION['unique_id'] ?? 'guest';
 
 // Check authentication
-if (!isset($_SESSION['unique_id']) || !isset($_SESSION['role'])) {
-    logActivity("[EXCEL_EXPORT_UNAUTH] [ID:{$requestId}] [IP:{$ipAddress}] Unauthenticated export attempt");
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-    exit();
-}
+// if (!isset($_SESSION['unique_id']) || !isset($_SESSION['role'])) {
+//     logActivity("[EXCEL_EXPORT_UNAUTH] [ID:{$requestId}] [IP:{$ipAddress}] Unauthenticated export attempt");
+//     http_response_code(401);
+//     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+//     exit();
+// }
+requireActiveSession();
 
 $userRole = $_SESSION['role'];
 $allowedRoles = ['Super Admin', 'Admin'];

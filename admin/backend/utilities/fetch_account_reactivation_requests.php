@@ -3,7 +3,8 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 
-session_start();
+// session_start();
+requireActiveSession();
 
 // Initialize variables to avoid undefined errors
 $countStmt = null;

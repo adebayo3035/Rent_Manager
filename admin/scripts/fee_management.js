@@ -951,7 +951,7 @@ function onApartmentTypeChange() {
     ${availableFeeTypes
       .map(
         (f) => `
-        <option value="${f.fee_type_id}">${escapeHtml(f.fee_name)}${parseInt(f.is_mandatory) === 1 ? " (Mandatory)" : " (Optional)"}</option>
+        <option value="${f.fee_type_id}">${escapeHtml(f.fee_name)}${parseInt(f.is_mandatory) === 1 ? " (Mandatory) - " : " (Optional) - " } ${escapeHtml(f.recurrence_period).toUpperCase()}</option>
       `,
       )
       .join("")}
@@ -1613,6 +1613,7 @@ function renderTenantFeeDetails(fee, tenantFeeId) {
                 <div class="detail-row"><span class="detail-label">Fee Code:</span><span class="detail-value">${escapeHtml(fee.fee_code)}</span></div>
                 <div class="detail-row"><span class="detail-label">Amount:</span><span class="detail-value amount-value">₦${formatNumber(fee.amount)}</span></div>
                 <div class="detail-row"><span class="detail-label">Due Date:</span><span class="detail-value">${formatDate(fee.due_date)}</span></div>
+                <div class="detail-row"><span class="detail-label">Payment Date:</span><span class="detail-value">${formatDate(fee.payment_date)}</span></div>
                 <div class="detail-row"><span class="detail-label">Fee Status:</span><span class="detail-value"><span class="status-badge status-${fee.status}">${fee.status.toUpperCase()}</span></span></div>
                 <div class="detail-row"><span class="detail-label">Payment Status:</span><span class="detail-value"><span class="status-badge status-${fee.status_label}">${fee.display_status.toUpperCase()}</span></span></div>
                 ${fee.is_recurring ? `<div class="detail-row"><span class="detail-label">Recurrence:</span><span class="detail-value">${fee.recurrence_period || "Monthly"}</span></div>` : ""}
@@ -1956,8 +1957,16 @@ function formatNumber(value) {
 }
 
 function formatDate(dateString) {
-  if (!dateString) return "N/A";
-  return new Date(dateString).toLocaleDateString("en-US");
+    if (!dateString) return "N/A";
+
+    return new Date(dateString).toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+    }).replace(",", "");
 }
 
 function formatDateTime(dateString) {
