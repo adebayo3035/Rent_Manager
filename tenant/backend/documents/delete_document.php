@@ -16,7 +16,7 @@ define('UPLOAD_DIR', __DIR__ . '/../tenant_documents/');
 try {
     // Step 1: Check authentication
     logActivity("Step 1: Checking authentication");
-    
+
     if (!isset($_SESSION['tenant_code'])) {
         logActivity("ERROR: No tenant code in session");
         json_error("Not logged in", 401);
@@ -30,10 +30,10 @@ try {
 
     $tenant_code = $_SESSION['tenant_code'];
     logActivity("Step 2 - Tenant authenticated: {$tenant_code}");
-
+    $cannotDeleteType = ['INVOICE'];
     // Step 3: Get and validate input
     $input = json_decode(file_get_contents('php://input'), true);
-    $document_id = isset($input['document_id']) ? (int)$input['document_id'] : 0;
+    $document_id = isset($input['document_id']) ? (int) $input['document_id'] : 0;
 
     if ($document_id <= 0) {
         logActivity("ERROR: Invalid document ID: {$document_id}");
@@ -43,9 +43,9 @@ try {
 
     // Step 4: Get document details to verify ownership and get file path
     logActivity("Step 4: Fetching document details from database");
-    
+
     $query = "
-        SELECT document_id, file_name, tenant_code, document_name, original_file_name
+        SELECT document_id, file_name, tenant_code, document_name, document_type, original_file_name
         FROM tenant_documents
         WHERE document_id = ? AND is_deleted = 0
     ";
@@ -65,12 +65,20 @@ try {
 
     // Step 5: Verify ownership
     logActivity("Step 5: Verifying document ownership");
-    
+
     if ($document['tenant_code'] !== $tenant_code) {
         logActivity("ERROR: Unauthorized delete attempt - Tenant: {$tenant_code}, Document Owner: {$document['tenant_code']}");
         json_error("Unauthorized access", 403);
     }
     logActivity("Step 5 - Ownership verified");
+
+    // check if document allowed to be deleted
+    if (in_array($document['document_type'], $cannotDeleteType)) {
+        logActivity("ERROR: Unauthorized delete attempt - Tenant: {$tenant_code}, Cannot delete document of type {$document['document_type']}");
+        json_error("You are not allowed to delete this type of document - {$document['document_type']} ", 403);
+    }
+
+    logActivity("Step 5.1 - Document Delete Access verified successfully");
 
     // Step 6: Get the physical file path
     $file_path = UPLOAD_DIR . $document['file_name'];
@@ -80,7 +88,7 @@ try {
     $file_deleted = false;
     if (file_exists($file_path)) {
         logActivity("Step 7: Attempting to delete physical file");
-        
+
         if (unlink($file_path)) {
             $file_deleted = true;
             logActivity("Step 7 - Physical file deleted successfully: {$document['file_name']}");
@@ -93,7 +101,7 @@ try {
 
     // Step 8: Soft delete the document record in database
     logActivity("Step 8: Updating database record (soft delete)");
-    
+
     $delete_query = "
         UPDATE tenant_documents 
         SET is_deleted = 1, 

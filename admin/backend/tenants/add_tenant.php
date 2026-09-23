@@ -1329,6 +1329,50 @@ try {
 
     logActivity("Transaction committed successfully");
 
+
+        // ==================== GENERATE ONBOARDING INVOICE (OUTSIDE TRANSACTION) ====================
+    logActivity("Step 3.10: Generating onboarding invoice (outside transaction)");
+    
+    try {
+        require_once __DIR__ . '/../utilities/invoice_helper.php';
+        
+        $invoice_data = [
+            'tenant_code'               => $tenant_code,
+            'tenant_name'               => $inputs['firstname'] . ' ' . $inputs['lastname'],
+            // 'tenant_email'              => $inputs['email'],
+            'tenant_email'              => "adebayoabdulrahmon@gmail.com",
+            'property_code'             => $inputs['property_code'],
+            'property_name'             => $property_name ?? $inputs['property_code'],
+            'apartment_code'            => $inputs['apartment_code'],
+            'apartment_number'          => $apartment_number ?? $inputs['apartment_code'],
+            'rent_payment_id'           => $rent_payment_id,
+            'annual_rent'               => $annual_rent,
+            'security_deposit'          => $security_deposit,
+            'payment_amount_per_period' => $payment_amount_per_period,
+            'balance'                   => $balance,
+            'payment_frequency'         => $inputs['payment_frequency'],
+            'period_start'              => $rent_period_start,
+            'period_end'                => $rent_period_end,
+            'due_date'                  => $due_date,
+            'reference_number'          => $reference_number,
+            'receipt_number'            => $receipt_number,
+            'created_by'                => $userId
+        ];
+        
+        $invoice_result = generateOnboardingInvoice($conn, $invoice_data);
+        
+        if ($invoice_result && $invoice_result['success']) {
+            logActivity("Onboarding invoice generated: " . json_encode($invoice_result));
+        } else {
+            logActivity("WARNING: Invoice generation returned false - check [INVOICE] logs above");
+        }
+        
+    } catch (Exception $invoiceError) {
+        // Don't fail onboarding — just log
+        logActivity("WARNING: Invoice generation failed (onboarding still succeeded): " . $invoiceError->getMessage());
+    }
+    // ==================== END INVOICE GENERATION ====================
+
     // Log success
     logActivity("Tenant {$tenant_code} ({$inputs['firstname']} {$inputs['lastname']}) onboarded successfully by user {$userId}");
     logActivity("Rent Payment ID: {$rent_payment_id}");

@@ -6,7 +6,7 @@ use PHPMailer\PHPMailer\Exception;
 require_once __DIR__ . '/../../../vendor/autoload.php';
 function sendEmailWithGmailSMTP($to, $body, $subject, $attachments = []) {
     $mail = new PHPMailer(true);
-     $config = include __DIR__ . '/../secrets.php';
+     $config = include __DIR__ . '/../../../secrets.php';
     try {
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
