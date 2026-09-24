@@ -62,7 +62,7 @@
         <div class="modal-content">
             <span class="close" id="addTenantClose">&times;</span>
             <h2>Add New Tenant</h2>
-            <form id="addTenantForm" name = "add_tenant_form" enctype="multipart/form-data">
+            <form id="addTenantForm" name="add_tenant_form" enctype="multipart/form-data">
 
                 <!-- PERSONAL INFORMATION -->
                 <h3 class="section-title">Personal Information</h3>
@@ -96,10 +96,11 @@
 
                 <div class="form-group">
                     <label for="phone">Phone Number</label>
-                    <input type="number" id="phone" name="phone" class="validate" data-type="phone" maxlength="11" required>
+                    <input type="number" id="phone" name="phone" class="validate" data-type="phone" maxlength="11"
+                        required>
                 </div>
 
-               
+
 
                 <!-- EMERGENCY CONTACT -->
                 <h3 class="section-title">Emergency Contact</h3>
@@ -137,7 +138,8 @@
 
                 <div class="form-group">
                     <label for="employer_contact">Employer Contact</label>
-                    <input type="number" id="employer_contact" name="employer_contact" class="validate" data-type="text">
+                    <input type="number" id="employer_contact" name="employer_contact" class="validate"
+                        data-type="text">
                 </div>
 
                 <!-- PROPERTY ALLOCATION -->
@@ -188,7 +190,7 @@
                     <input type="date" id="lease_end_date" name="lease_end_date" class="validate" data-type="date">
                 </div>
 
-                
+
                 <!-- REFEREE -->
                 <h3 class="section-title">Referee Information</h3>
 
@@ -251,6 +253,7 @@
 
     <div id="uiLoaderOverlay">
         <div class="ui-loader"></div>
+        <div class="ui-loader-message">Processing your request...</div>
     </div>
 
     <script src="../scripts/tenant.js"></script>

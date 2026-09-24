@@ -279,24 +279,9 @@
 
     <div id="uiLoaderOverlay">
         <div class="ui-loader"></div>
+        <div class="ui-loader-message">Processing your request...</div>
     </div>
 
-    <!-- Custom Confirm Modal -->
-    <!-- <div id="customConfirmModal" class="custom-modal">
-        <div class="custom-modal-content">
-            <div class="custom-modal-header">
-                <h3 id="confirmTitle">Confirm Action</h3>
-                <button class="custom-modal-close" onclick="closeConfirmModal()">&times;</button>
-            </div>
-            <div class="custom-modal-body">
-                <p id="confirmMessage">Are you sure?</p>
-            </div>
-            <div class="custom-modal-footer">
-                <button class="custom-btn-cancel" id="confirmCancelBtn">Cancel</button>
-                <button class="custom-btn-confirm" id="confirmConfirmBtn">Confirm</button>
-            </div>
-        </div>
-    </div> -->
     <!-- Toast Container -->
     <div id="toastContainer"></div>
 

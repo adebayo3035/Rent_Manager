@@ -76,7 +76,7 @@ class DataManager {
         `${this.config.csrfTokenEndpoint}?form=${this.config.csrfTokenName}`,
         {
           credentials: "include",
-        }
+        },
       );
       const data = await response.json();
 
@@ -102,7 +102,7 @@ class DataManager {
   initModalControls() {
     // Close buttons for modals
     const addModalClose = document.querySelector(
-      `#${this.config.addModalId} .close`
+      `#${this.config.addModalId} .close`,
     );
     if (addModalClose) {
       addModalClose.addEventListener("click", () => {
@@ -111,7 +111,7 @@ class DataManager {
     }
 
     const viewModalClose = document.querySelector(
-      `#${this.config.modalId} .close`
+      `#${this.config.modalId} .close`,
     );
     if (viewModalClose) {
       viewModalClose.addEventListener("click", () => {
@@ -209,6 +209,7 @@ class DataManager {
   // }
 
   /** ------------------------- Form Submission (UPDATED) ------------------------- **/
+  /** ------------------------- Form Submission ------------------------- **/
   setupAddForm() {
     const form = document.getElementById(this.config.formId);
     if (!form) return;
@@ -224,95 +225,98 @@ class DataManager {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
+      // Guard: prevent double-submission while loader is active
+      if (UI.loader.isActive()) return;
+
       // Validate CSRF token exists
-      if ((!this.csrfToken) && (!this.config.csrfTokenName)) {
+      if (!this.csrfToken && !this.config.csrfTokenName) {
         UI.toast("Security token missing. Please refresh the page.", "danger");
-        await this.fetchCsrfToken(); // Try to get token
+        await this.fetchCsrfToken();
         return;
       }
 
       UI.confirm(
         `Are you sure you want to add a new ${this.config.itemName}?`,
         async () => {
-          try {
-            // Create FormData
-            const formData = new FormData(form);
+          await this.runWithLoader(
+            `Creating ${this.config.itemName}...`,
+            async () => {
+              try {
+                // Build FormData
+                const formData = new FormData(form);
+                formData.append("csrf_token", this.csrfToken);
+                formData.append("token_id", this.config.csrfTokenName);
 
-            // ADD CSRF TOKEN to FormData
-            formData.append("csrf_token", this.csrfToken);
-            formData.append("token_id", this.config.csrfTokenName);
+                const response = await fetch(this.config.addUrl, {
+                  method: "POST",
+                  body: formData,
+                  credentials: "include",
+                });
 
-            const response = await fetch(this.config.addUrl, {
-              method: "POST",
-              body: formData,
-              // Important: Include credentials for sessions
-              credentials: "include",
-            });
+                const data = await response.json();
 
-            const data = await response.json();
+                if (data.success) {
+                  this.showSuccessMessage(
+                    messageDiv,
+                    `New ${this.config.itemName} has been successfully added!`,
+                  );
+                  UI.toast(
+                    `New ${this.config.itemName} added successfully!`,
+                    "success",
+                  );
 
-            if (data.success) {
-              this.showSuccessMessage(
-                messageDiv,
-                `New ${this.config.itemName} has been successfully added!`
-              );
-              UI.toast(
-                `New ${this.config.itemName} added successfully!`,
-                "success"
-              );
+                  // Reset form
+                  form.reset();
+                  messageDiv.textContent = "";
+                  if (photoPreview) {
+                    photoPreview.innerHTML = `<span style="font-size:12px;color:#777;">No image</span>`;
+                  }
 
-              // Reset form
-              form.reset();
-              messageDiv.textContent = "";
-              if (photoPreview) {
-                photoPreview.innerHTML = `<span style="font-size:12px;color:#777;">No image</span>`;
+                  // Close modal
+                  document.getElementById(
+                    this.config.addModalId,
+                  ).style.display = "none";
+
+                  // Refresh CSRF token (one-time tokens)
+                  await this.fetchCsrfToken();
+
+                  // Refresh table
+                  this.fetchData();
+                } else if (
+                  response.status === 403 &&
+                  data.message &&
+                  data.message.includes("CSRF")
+                ) {
+                  UI.toast(
+                    "Session expired. Getting new security token...",
+                    "warning",
+                  );
+                  await this.fetchCsrfToken();
+                  this.showErrorMessage(
+                    messageDiv,
+                    "Security token expired. Please try again.",
+                  );
+                } else {
+                  UI.toast(
+                    `Failed to add ${this.config.itemName}: ${data.message}`,
+                    "danger",
+                  );
+                  this.showErrorMessage(messageDiv, data.message);
+                }
+              } catch (error) {
+                console.error("Error:", error);
+                UI.toast(
+                  "An error occurred. Please try again later.",
+                  "danger",
+                );
+                this.showErrorMessage(
+                  messageDiv,
+                  "An error occurred. Please try again later.",
+                );
               }
-              // this.showSuccessMessage(
-              //   messageDiv,
-              //   `New ${this.config.itemName} has been successfully added!`
-              // );
-
-              // Close modal
-              document.getElementById(this.config.addModalId).style.display =
-                "none";
-
-              // Get new CSRF token for next submission (one-time token)
-              await this.fetchCsrfToken();
-
-              // Refresh data
-              this.fetchData();
-            } else if (
-              response.status === 403 &&
-              data.message.includes("CSRF")
-            ) {
-              // CSRF token expired - get new one and retry
-              UI.toast(
-                "Session expired. Getting new security token...",
-                "warning"
-              );
-              await this.fetchCsrfToken();
-
-              // You could automatically retry here or prompt user to try again
-              this.showErrorMessage(
-                messageDiv,
-                "Security token expired. Please try again."
-              );
-            } else {
-              UI.toast(
-                `Failed to add ${this.config.itemName}: ${data.message}`,
-                "danger"
-              );
-              this.showErrorMessage(messageDiv, data.message);
-            }
-          } catch (error) {
-            console.error("Error:", error);
-            UI.toast("An error occurred. Please try again later.", "danger");
-            this.showErrorMessage(
-              messageDiv,
-              "An error occurred. Please try again later."
-            );
-          }
-        }
+            },
+          );
+        },
       );
     });
   }
@@ -337,7 +341,7 @@ class DataManager {
 
     try {
       const response = await fetch(
-        `${this.config.fetchUrl}?page=${page}&limit=${this.config.limit}`
+        `${this.config.fetchUrl}?page=${page}&limit=${this.config.limit}`,
       );
       const data = await response.json();
 
@@ -346,16 +350,16 @@ class DataManager {
 
         this.updateTable(
           items,
-          data.logged_in_user_role || this.config.userRole
+          data.logged_in_user_role || this.config.userRole,
         );
         this.updatePagination(
           data.pagination.total,
           data.pagination.page,
-          data.pagination.limit
+          data.pagination.limit,
         );
         UI.toast(
           `${this.config.itemNamePlural} loaded successfully`,
-          "success"
+          "success",
         );
       } else {
         UI.toast(`No ${this.config.itemNamePlural} Found`, "info");
@@ -366,7 +370,7 @@ class DataManager {
       UI.toast(`Error loading ${this.config.itemNamePlural} data`, "error");
       this.showErrorMessage(
         tableBody,
-        `Error loading ${this.config.itemNamePlural} data`
+        `Error loading ${this.config.itemNamePlural} data`,
       );
     }
   }
@@ -462,7 +466,7 @@ class DataManager {
   setupActionListeners() {
     document.querySelectorAll(".edit-icon").forEach((span) => {
       span.addEventListener("click", () =>
-        this.fetchItemDetails(span.dataset.id)
+        this.fetchItemDetails(span.dataset.id),
       );
     });
 
@@ -470,8 +474,8 @@ class DataManager {
       span.addEventListener("click", () =>
         UI.confirm(
           `Are you sure you want to delete this ${this.config.itemName}?`,
-          () => this.deleteItem(span.dataset.id)
-        )
+          () => this.deleteItem(span.dataset.id),
+        ),
       );
     });
 
@@ -479,7 +483,7 @@ class DataManager {
       span.addEventListener("click", () => {
         UI.confirm(
           `Are you sure you want to restore this ${this.config.itemName}?`,
-          () => this.restoreItem(span.dataset.id)
+          () => this.restoreItem(span.dataset.id),
         );
       });
     });
@@ -488,7 +492,7 @@ class DataManager {
   /** ------------------------- Pagination ------------------------- **/
   updatePagination(totalItems, currentPage, itemsPerPage) {
     const paginationContainer = document.getElementById(
-      this.config.paginationId
+      this.config.paginationId,
     );
     if (!paginationContainer) return;
 
@@ -499,13 +503,13 @@ class DataManager {
       "« First",
       1,
       currentPage === 1,
-      paginationContainer
+      paginationContainer,
     );
     this.createPaginationButton(
       "‹ Prev",
       currentPage - 1,
       currentPage === 1,
-      paginationContainer
+      paginationContainer,
     );
 
     const maxVisible = 2;
@@ -524,13 +528,13 @@ class DataManager {
       "Next ›",
       currentPage + 1,
       currentPage === totalPages,
-      paginationContainer
+      paginationContainer,
     );
     this.createPaginationButton(
       "Last »",
       totalPages,
       currentPage === totalPages,
-      paginationContainer
+      paginationContainer,
     );
   }
 
@@ -540,6 +544,30 @@ class DataManager {
     if (disabled) btn.disabled = true;
     btn.addEventListener("click", () => this.fetchData(page));
     container.appendChild(btn);
+  }
+  /** ------------------------- Global Loader Helper ------------------------- **/
+  /**
+   * Run an async function under the global UI loader.
+   * Guarantees the loader is hidden afterward, even on error.
+   *
+   * @param {string} message - Message to display while loading
+   * @param {Function} asyncFn - Async function to run
+   */
+  async runWithLoader(message, asyncFn) {
+    // Guard against double invocation (e.g., double-click)
+    if (UI.loader.isActive()) {
+      console.warn(
+        "[DataManager] Loader already active — skipping duplicate call",
+      );
+      return;
+    }
+
+    UI.loader.show(message);
+    try {
+      return await asyncFn();
+    } finally {
+      UI.loader.hide();
+    }
   }
 
   /** ------------------------- CRUD Operations ------------------------- **/
@@ -575,10 +603,10 @@ class DataManager {
       } else {
         console.error(
           `Failed to fetch ${this.config.itemName} details:`,
-          data.message
+          data.message,
         );
         alert(
-          `Failed to fetch ${this.config.itemName} details: ${data.message}`
+          `Failed to fetch ${this.config.itemName} details: ${data.message}`,
         );
       }
     } catch (error) {
@@ -598,93 +626,107 @@ class DataManager {
       action_type: "update_all",
     };
 
-    try {
-      const response = await fetch(this.config.updateUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(itemData),
-      });
-      const result = await response.json();
+    await this.runWithLoader(
+      `Updating ${this.config.itemName}...`,
+      async () => {
+        try {
+          const response = await fetch(this.config.updateUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(itemData),
+          });
+          const result = await response.json();
 
-      if (result.success) {
-        UI.alert(
-          `${this.config.itemName} has been updated successfully.`,
-          "Success"
-        );
-        document.getElementById(this.config.modalId).style.display = "none";
-        this.fetchData(this.currentPage);
-      } else {
-        UI.alert(
-          `Failed to update ${this.config.itemName}: ${result.message}`,
-          "Error"
-        );
-      }
-    } catch (error) {
-      console.error(`Error updating ${this.config.itemName}:`, error);
-      UI.alert(`Error updating ${this.config.itemName}`, "Error");
-    }
+          if (result.success) {
+            UI.alert(
+              `${this.config.itemName} has been updated successfully.`,
+              "Success",
+            );
+            document.getElementById(this.config.modalId).style.display = "none";
+            this.fetchData(this.currentPage);
+          } else {
+            UI.alert(
+              `Failed to update ${this.config.itemName}: ${result.message}`,
+              "Error",
+            );
+          }
+        } catch (error) {
+          console.error(`Error updating ${this.config.itemName}:`, error);
+          UI.alert(`Error updating ${this.config.itemName}`, "Error");
+        }
+      },
+    );
   }
 
   async deleteItem(itemId) {
-    try {
-      const response = await fetch(this.config.updateUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          [this.config.idField]: itemId,
-          action_type: "delete",
-        }),
-      });
-      const data = await response.json();
+    await this.runWithLoader(
+      `Deleting ${this.config.itemName}...`,
+      async () => {
+        try {
+          const response = await fetch(this.config.updateUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              [this.config.idField]: itemId,
+              action_type: "delete",
+            }),
+          });
+          const data = await response.json();
 
-      if (data.success) {
-        UI.alert(
-          `${this.config.itemName} has been successfully deleted!`,
-          "Success"
-        );
-        this.fetchData(this.currentPage);
-      } else {
-        UI.alert(
-          `Failed to delete ${this.config.itemName}: ${data.message}`,
-          "Error"
-        );
-      }
-    } catch (error) {
-      console.error(`Error deleting ${this.config.itemName}:`, error);
-      UI.alert(`Error deleting ${this.config.itemName}`, "System Error");
-    }
+          if (data.success) {
+            UI.alert(
+              `${this.config.itemName} has been successfully deleted!`,
+              "Success",
+            );
+            this.fetchData(this.currentPage);
+          } else {
+            UI.alert(
+              `Failed to delete ${this.config.itemName}: ${data.message}`,
+              "Error",
+            );
+          }
+        } catch (error) {
+          console.error(`Error deleting ${this.config.itemName}:`, error);
+          UI.alert(`Error deleting ${this.config.itemName}`, "System Error");
+        }
+      },
+    );
   }
 
   async restoreItem(itemId) {
-    try {
-      const response = await fetch(this.config.updateUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          [this.config.idField]: itemId,
-          action_type: "restore",
-        }),
-      });
-      const data = await response.json();
+    await this.runWithLoader(
+      `Restoring ${this.config.itemName}...`,
+      async () => {
+        try {
+          const response = await fetch(this.config.updateUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              [this.config.idField]: itemId,
+              action_type: "restore",
+            }),
+          });
+          const data = await response.json();
 
-      if (data.success) {
-        UI.alert(
-          `${this.config.itemName} has been successfully restored!`,
-          "Success"
-        );
-        this.fetchData(this.currentPage);
-      } else {
-        UI.alert(
-          `Failed to restore ${this.config.itemName}: ${data.message}`,
-          "Error"
-        );
-      }
-    } catch (error) {
-      console.error(`Error restoring ${this.config.itemName}:`, error);
-      UI.alert(`Error restoring ${this.config.itemName}`, "System Error");
-    }
+          if (data.success) {
+            UI.alert(
+              `${this.config.itemName} has been successfully restored!`,
+              "Success",
+            );
+            this.fetchData(this.currentPage);
+          } else {
+            UI.alert(
+              `Failed to restore ${this.config.itemName}: ${data.message}`,
+              "Error",
+            );
+          }
+        } catch (error) {
+          console.error(`Error restoring ${this.config.itemName}:`, error);
+          UI.alert(`Error restoring ${this.config.itemName}`, "System Error");
+        }
+      },
+    );
   }
-
   /** ------------------------- Search Filter ------------------------- **/
   setupSearchListener() {
     const searchInput = document.getElementById(this.config.searchInputId);
@@ -702,7 +744,7 @@ class DataManager {
     rows.forEach((row) => {
       const cells = Array.from(row.getElementsByTagName("td"));
       const matchFound = cells.some((cell) =>
-        cell.textContent.toLowerCase().includes(searchTerm)
+        cell.textContent.toLowerCase().includes(searchTerm),
       );
       row.style.display = matchFound ? "" : "none";
     });

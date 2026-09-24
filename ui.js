@@ -72,12 +72,94 @@ const UI = {
   // =======================
   // Loader
   // =======================
+   // =======================
+  // Loader (global, blocking, with messages)
+  // =======================
   loader: {
-    show() {
-      document.getElementById("uiLoaderOverlay").style.display = "flex";
+    // Internal state
+    _active: false,
+    _timeoutId: null,
+    _defaultMessage: "Processing your request...",
+    _slowMessage: "Still working, please wait...",
+    _slowThreshold: 15000, // 15 seconds
+
+    // ---------------------------------------------------
+    // Show the loader (blocking overlay with optional msg)
+    // ---------------------------------------------------
+    show(message = null) {
+      const overlay = document.getElementById("uiLoaderOverlay");
+      if (!overlay) {
+        console.warn("[UI.loader] #uiLoaderOverlay not found in DOM");
+        return;
+      }
+
+      // Update the message element if it exists
+      const msgEl = overlay.querySelector(".ui-loader-message");
+      if (msgEl) {
+        msgEl.textContent = message || this._defaultMessage;
+      }
+
+      overlay.style.display = "flex";
+      this._active = true;
+
+      // Schedule "still working" soft warning
+      this._clearSlowTimeout();
+      this._timeoutId = setTimeout(() => {
+        if (this._active && msgEl) {
+          msgEl.textContent = this._slowMessage;
+        }
+      }, this._slowThreshold);
+
+      // Block tab close / reload while operation is in flight
+      window.addEventListener("beforeunload", this._preventNavigation);
     },
+
+    // ---------------------------------------------------
+    // Hide the loader
+    // ---------------------------------------------------
     hide() {
-      document.getElementById("uiLoaderOverlay").style.display = "none";
+      const overlay = document.getElementById("uiLoaderOverlay");
+      if (overlay) {
+        overlay.style.display = "none";
+      }
+      this._active = false;
+      this._clearSlowTimeout();
+      window.removeEventListener("beforeunload", this._preventNavigation);
+    },
+
+    // ---------------------------------------------------
+    // Check if loader is currently visible
+    // ---------------------------------------------------
+    isActive() {
+      return this._active === true;
+    },
+
+    // ---------------------------------------------------
+    // Update the message while loader is visible
+    // ---------------------------------------------------
+    setMessage(message) {
+      if (!this._active) return;
+      const overlay = document.getElementById("uiLoaderOverlay");
+      const msgEl = overlay?.querySelector(".ui-loader-message");
+      if (msgEl) {
+        msgEl.textContent = message;
+      }
+    },
+
+    // ---------------------------------------------------
+    // Internal helpers (prefix _ to signal private)
+    // ---------------------------------------------------
+    _clearSlowTimeout() {
+      if (this._timeoutId) {
+        clearTimeout(this._timeoutId);
+        this._timeoutId = null;
+      }
+    },
+
+    _preventNavigation(e) {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
     },
   },
 };

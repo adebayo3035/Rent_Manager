@@ -791,26 +791,79 @@ textarea {
 #confirmOkBtn { background: #28a745; color: #fff; }
 #confirmCancelBtn { background: #ccc; }
 
-/* Loader */
+/* ============================================
+   Global UI Loader (blocking overlay)
+   ============================================ */
+
 #uiLoaderOverlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.4);
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     display: none;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     z-index: 999999;
+    cursor: wait;
+    /* Ensure nothing underneath is clickable */
+    pointer-events: auto;
+    animation: uiLoaderFadeIn 0.2s ease-out;
 }
+
 .ui-loader {
-    width: 50px;
-    height: 50px;
-    border: 5px solid #ddd;
-    border-top-color: #3498db;
+    width: 56px;
+    height: 56px;
+    border: 5px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #ffffff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+}
+
+.ui-loader-message {
+    margin-top: 20px;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 500;
+    text-align: center;
+    max-width: 90vw;
+    padding: 0 20px;
+    line-height: 1.5;
+    letter-spacing: 0.2px;
+    animation: uiLoaderMessagePulse 2s ease-in-out infinite;
+}
+
+/* Subtle pulse to reassure user the app is alive */
+@keyframes uiLoaderMessagePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.85; }
+}
+
+@keyframes uiLoaderFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Reuse the existing spin keyframe in your CSS — this is a fallback */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive tweak for small screens */
+@media (max-width: 480px) {
+    .ui-loader {
+        width: 48px;
+        height: 48px;
+        border-width: 4px;
+    }
+    .ui-loader-message {
+        font-size: 14px;
+    }
 }
 .photoPreview{
             width:120px;

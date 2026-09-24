@@ -256,6 +256,7 @@
 
     <div id="uiLoaderOverlay">
         <div class="ui-loader"></div>
+        <div class="ui-loader-message">Processing your request...</div>
     </div>
     <!-- <script src="../scripts/main.js"></script> -->
     <script src="../../ui.js"></script>
