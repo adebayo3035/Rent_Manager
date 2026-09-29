@@ -139,6 +139,88 @@ try {
     $rentPayment = $rentPaymentResult->fetch_assoc();
     $stmt->close();
 
+
+        // ==================== CURRENT CYCLE IDENTIFICATION ====================
+    logActivity("=== CURRENT CYCLE IDENTIFICATION START ===");
+    logActivity("Today: " . date('Y-m-d') . ", Tenant: {$tenant_code}, Apartment: {$tenantData['apartment_code']}");
+
+    // Step 1: Find the cycle whose period brackets today
+    $currentCycleQuery = "
+        SELECT 
+            rent_payment_id,
+            amount AS cycle_rent_amount,
+            amount_paid AS cycle_amount_paid,
+            balance AS cycle_balance,
+            period_start_date,
+            period_end_date,
+            payment_amount_per_period,
+            status
+        FROM rent_payments
+        WHERE tenant_code = ?
+          AND apartment_code = ?
+          AND payment_type = 'rent'
+          AND CURDATE() BETWEEN period_start_date AND period_end_date
+          AND status IN ('ongoing', 'completed', 'pending')
+        ORDER BY period_start_date DESC
+        LIMIT 1
+    ";
+    $cycleStmt = $conn->prepare($currentCycleQuery);
+    $cycleStmt->bind_param("ss", $tenant_code, $tenantData['apartment_code']);
+    $cycleStmt->execute();
+    $currentCycle = $cycleStmt->get_result()->fetch_assoc();
+    $cycleStmt->close();
+
+    logActivity("Cycle by CURDATE match: " . ($currentCycle ? "FOUND {$currentCycle['rent_payment_id']}" : "NOT FOUND"));
+
+    // Step 2: Fallback — most recent cycle that started on or before today
+    if (!$currentCycle) {
+        $fallbackQuery = "
+            SELECT 
+                rent_payment_id,
+                amount AS cycle_rent_amount,
+                amount_paid AS cycle_amount_paid,
+                balance AS cycle_balance,
+                period_start_date,
+                period_end_date,
+                payment_amount_per_period,
+                status
+            FROM rent_payments
+            WHERE tenant_code = ?
+              AND apartment_code = ?
+              AND payment_type = 'rent'
+              AND period_start_date <= CURDATE()
+              AND status IN ('ongoing', 'completed', 'pending')
+            ORDER BY period_start_date DESC
+            LIMIT 1
+        ";
+        $fbStmt = $conn->prepare($fallbackQuery);
+        $fbStmt->bind_param("ss", $tenant_code, $tenantData['apartment_code']);
+        $fbStmt->execute();
+        $currentCycle = $fbStmt->get_result()->fetch_assoc();
+        $fbStmt->close();
+
+        logActivity("Cycle by fallback: " . ($currentCycle ? "FOUND {$currentCycle['rent_payment_id']}" : "NOT FOUND"));
+    }
+
+    // Step 3: Calculate total paid within the current cycle
+    $amount_paid_in_cycle = 0;
+    if ($currentCycle) {
+        $paidStmt = $conn->prepare("
+            SELECT COALESCE(SUM(amount_paid), 0) AS total_paid
+            FROM rent_payment_tracker
+            WHERE rent_payment_id = ?
+              AND tenant_code = ?
+              AND status = 'paid'
+        ");
+        $paidStmt->bind_param("ss", $currentCycle['rent_payment_id'], $tenant_code);
+        $paidStmt->execute();
+        $amount_paid_in_cycle = (float)$paidStmt->get_result()->fetch_assoc()['total_paid'];
+        $paidStmt->close();
+    }
+
+    logActivity("Amount paid in current cycle: ₦{$amount_paid_in_cycle}");
+    logActivity("=== CURRENT CYCLE IDENTIFICATION END ===");
+
     // Get ALL payment tracker records (periodic payments)
     $trackerQuery = "
         SELECT 
@@ -721,7 +803,18 @@ if ($existingCount > 0) {
         'renewal_message' => $renewal_message,
         'new_cycle_rent_amount' => $new_cycle_rent_amount,
         'new_cycle_security_deposit' => $new_cycle_security_deposit,
-
+        'current_cycle' => $currentCycle ? [
+            'rent_payment_id'      => $currentCycle['rent_payment_id'],
+            'cycle_rent_amount'    => (float)$currentCycle['cycle_rent_amount'],
+            'cycle_amount_paid'    => (float)$currentCycle['cycle_amount_paid'],
+            'cycle_balance'        => (float)$currentCycle['cycle_balance'],
+            'cycle_start_date'     => $currentCycle['period_start_date'],
+            'cycle_end_date'       => $currentCycle['period_end_date'],
+            'amount_paid_in_cycle' => $amount_paid_in_cycle,
+            'payment_amount_per_period' => (float)$currentCycle['payment_amount_per_period'],
+            'status'               => $currentCycle['status'],
+            'payment_frequency'    => $payment_frequency
+        ] : null,
         // ====================== fetch evacuation status =================
         // Add to dashboardData
         'can_request_evacuation' => $can_request_evacuation,

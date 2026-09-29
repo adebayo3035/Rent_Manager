@@ -73,6 +73,10 @@
                     <i class="fas fa-file-alt"></i>
                     <span>Documents</span>
                 </a>
+                <a href="evacuation.php" class="nav-item" data-page="evacuation">
+                    <i class="fas fa-door-open"></i>
+                    <span>Evacuation Requests</span>
+                </a>
                 <a href="profile.php" class="nav-item" data-page="profile">
                     <i class="fas fa-user"></i>
                     <span>Profile</span>

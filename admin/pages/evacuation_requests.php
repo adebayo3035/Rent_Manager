@@ -1,17 +1,18 @@
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Evacuation Requests | RentFlow Pro</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-     <link rel="stylesheet" href="../../styles.css">
+    <link rel="stylesheet" href="../../styles.css">
     <link rel="stylesheet" href="../css/evacuation_requests.css">
 </head>
+
 <body>
     <?php include('navbar.php'); ?>
-    
+
     <div class="container">
         <div class="page-header">
             <h1><i class="fas fa-sign-out-alt"></i> Evacuation Requests</h1>
@@ -33,7 +34,7 @@
                     <div class="stat-label">Rejected</div>
                 </div>
             </div>
-            
+
             <div class="tabs">
                 <button class="tab-btn active" data-status="pending_review">Pending Review</button>
                 <button class="tab-btn" data-status="approved">Approved</button>
@@ -41,7 +42,7 @@
                 <button class="tab-btn" data-status="completed">Completed</button>
             </div>
         </div>
-        
+
         <div id="requestsContainer" class="requests-container">
             <div class="loading-state">
                 <div class="spinner"></div>
@@ -65,16 +66,26 @@
                 </div>
                 <div class="form-group">
                     <label>Admin Notes (Optional)</label>
-                    <textarea class="form-textarea" id="reviewNotes" rows="3" placeholder="Add any notes about this decision..."></textarea>
+                    <textarea class="form-textarea" id="reviewNotes" rows="3"
+                        placeholder="Add any notes about this decision..."></textarea>
                 </div>
                 <div class="form-group" id="rejectionReasonGroup" style="display: none;">
                     <label>Rejection Reason *</label>
-                    <textarea class="form-textarea" id="rejectionReason" rows="3" placeholder="Please provide a reason for rejection..."></textarea>
+                    <textarea class="form-textarea" id="rejectionReason" rows="3"
+                        placeholder="Please provide a reason for rejection..."></textarea>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-danger" id="rejectBtn" onclick="EvacuationApp.toggleRejectForm()">Reject</button>
-                <button class="btn btn-primary" onclick="EvacuationApp.submitReview('approve')">Approve Request</button>
+                <button class="btn btn-danger" id="rejectBtn" onclick="EvacuationApp.toggleRejectForm()">
+                    <i class="fas fa-times"></i> Reject
+                </button>
+                <button class="btn btn-danger" id="confirmRejectBtn" onclick="EvacuationApp.submitReview('reject')"
+                    style="display: none;">
+                    <i class="fas fa-times-circle"></i> Confirm Rejection
+                </button>
+                <button class="btn btn-primary" id="approveBtn" onclick="EvacuationApp.submitReview('approve')">
+                    <i class="fas fa-check"></i> Approve Request
+                </button>
             </div>
         </div>
     </div>
@@ -88,12 +99,12 @@
             </div>
             <div class="modal-body">
                 <div class="request-info" id="processRequestInfo"></div>
-                
+
                 <div class="form-group">
                     <label>Actual Move-out Date *</label>
                     <input type="date" class="form-input" id="actualMoveOutDate" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label>Security Deposit Deductions</label>
                     <div id="deductionsContainer"></div>
@@ -101,7 +112,7 @@
                         <i class="fas fa-plus"></i> Add Deduction
                     </button>
                 </div>
-                
+
                 <div class="summary-box" id="settlementSummary">
                     <!-- Settlement summary will be populated by JS -->
                 </div>
@@ -155,9 +166,10 @@
         <div class="ui-loader"></div>
         <div class="ui-loader-message">Processing your request...</div>
     </div>
-      <script src="../scripts/main.js"></script>
+    <script src="../scripts/main.js"></script>
     <script src="../../ui.js"></script>
     <script src="../../validator.js"></script>
     <script src="../scripts/evacuation_requests.js"></script>
 </body>
+
 </html>

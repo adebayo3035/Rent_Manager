@@ -116,6 +116,12 @@ class LoginSecurity
             return [false, "This account has been deactivated. Please contact support", 403];
         }
 
+        // Check if tenant has evacuated
+        if ($user['evacuation_status'] == "evacuated" || $user['status'] == 3) {
+            $this->log("Tenant has Evacuated the Apartment - ID: {$userId}");
+            return [false, "Access Denied. Tenant has evacuated", 403];
+        }
+
         return [true, "Account is active", 200];
     }
 

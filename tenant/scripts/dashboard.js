@@ -131,12 +131,22 @@ function renderDashboard() {
     return;
   }
 
-  const tenantName = `${currentUser.firstname || "Tenant"} ${currentUser.lastname || ""}`.trim();
+  const tenantName =
+    `${currentUser.firstname || "Tenant"} ${currentUser.lastname || ""}`.trim();
   const annualRent = Number(dashboardData.annual_rent || 0);
   const totalPaid = Number(dashboardData.total_paid || 0);
   const rentBalance = Number(dashboardData.rent_balance || 0);
-  const rentProgress = annualRent > 0 ? Math.min(100, Math.max(0, Math.round((totalPaid / annualRent) * 100))) : 0;
-  const leaseTone = dashboardData.is_lease_fully_paid ? "Settled" : dashboardData.has_pending_payment ? "Pending Review" : dashboardData.has_overdue_payments ? "Overdue" : "Active";
+  const rentProgress =
+    annualRent > 0
+      ? Math.min(100, Math.max(0, Math.round((totalPaid / annualRent) * 100)))
+      : 0;
+  const leaseTone = dashboardData.is_lease_fully_paid
+    ? "Settled"
+    : dashboardData.has_pending_payment
+      ? "Pending Review"
+      : dashboardData.has_overdue_payments
+        ? "Overdue"
+        : "Active";
   const nextPaymentLabel = dashboardData.next_payment
     ? `NGN ${formatNumber(dashboardData.next_payment.amount || 0)}`
     : dashboardData.is_lease_fully_paid
@@ -1032,7 +1042,6 @@ function stopAutoRefresh() {
   }
 }
 
-
 //Evacuation Processing
 // ==================== EVACUATION REQUEST FUNCTIONS ====================
 
@@ -1040,97 +1049,117 @@ function stopAutoRefresh() {
 
 // Custom confirmation modal for evacuation (independent of the other modal)
 function showEvacuationConfirm(options) {
-    return new Promise((resolve) => {
-        // Remove existing modal if any
-        const existingModal = document.getElementById('evacuationConfirmModal');
-        if (existingModal) existingModal.remove();
-        
-        // Create modal HTML
-        const modalHtml = `
+  return new Promise((resolve) => {
+    // Remove existing modal if any
+    const existingModal = document.getElementById("evacuationConfirmModal");
+    if (existingModal) existingModal.remove();
+
+    // Create modal HTML
+    const modalHtml = `
             <div id="evacuationConfirmModal" class="confirmation-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 10000; justify-content: center; align-items: center;">
                 <div class="confirmation-modal-content" style="background: white; border-radius: 20px; width: 90%; max-width: 480px; overflow: hidden; animation: slideUp 0.3s ease;">
                     <div class="confirmation-modal-header" style="padding: 24px 24px 16px 24px; border-bottom: 1px solid #eef2f6; display: flex; align-items: center; gap: 12px;">
                         <div class="modal-icon" style="width: 48px; height: 48px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                            <i class="fas ${options.icon || 'fa-exclamation-triangle'}" style="font-size: 24px; color: white;"></i>
+                            <i class="fas ${options.icon || "fa-exclamation-triangle"}" style="font-size: 24px; color: white;"></i>
                         </div>
-                        <h3 style="font-size: 20px; font-weight: 600; color: #1a1f36; margin: 0;">${options.title || 'Confirm Action'}</h3>
+                        <h3 style="font-size: 20px; font-weight: 600; color: #1a1f36; margin: 0;">${options.title || "Confirm Action"}</h3>
                     </div>
                     <div class="confirmation-modal-body" style="padding: 24px;">
-                        <p style="color: #4a5568; font-size: 14px; line-height: 1.6; margin-bottom: 20px;">${options.message || 'Are you sure you want to proceed?'}</p>
-                        ${options.list ? `
+                        <p style="color: #4a5568; font-size: 14px; line-height: 1.6; margin-bottom: 20px;">${options.message || "Are you sure you want to proceed?"}</p>
+                        ${
+                          options.list
+                            ? `
                         <div class="confirmation-list" style="background: #f8fafc; border-radius: 12px; padding: 16px 20px; margin: 16px 0;">
-                            ${options.list.map(item => `
+                            ${options.list
+                              .map(
+                                (item) => `
                                 <div class="confirmation-list-item" style="display: flex; align-items: center; gap: 12px; padding: 8px 0; color: #1e293b; font-size: 14px;">
-                                    <i class="fas ${item.icon || 'fa-check-circle'}" style="width: 20px; color: #667eea;"></i>
+                                    <i class="fas ${item.icon || "fa-check-circle"}" style="width: 20px; color: #667eea;"></i>
                                     <span>${item.text}</span>
                                 </div>
-                            `).join('')}
+                            `,
+                              )
+                              .join("")}
                         </div>
-                        ` : ''}
-                        ${options.warning ? `
+                        `
+                            : ""
+                        }
+                        ${
+                          options.warning
+                            ? `
                         <div style="background: #fef3c7; border-left: 3px solid #f59e0b; padding: 12px; border-radius: 8px; margin-top: 16px;">
                             <i class="fas fa-info-circle" style="color: #f59e0b; margin-right: 8px;"></i>
                             <span style="font-size: 13px; color: #92400e;">${options.warning}</span>
                         </div>
-                        ` : ''}
+                        `
+                            : ""
+                        }
                     </div>
                     <div class="confirmation-modal-footer" style="display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px 24px 24px; border-top: 1px solid #eef2f6;">
-                        <button class="btn-cancel" style="background: #f1f5f9; color: #475569; border: none; padding: 10px 20px; border-radius: 10px; font-weight: 500; cursor: pointer;">${options.cancelText || 'Cancel'}</button>
-                        <button class="btn-confirm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 24px; border-radius: 10px; font-weight: 500; cursor: pointer;">${options.confirmText || 'Confirm'}</button>
+                        <button class="btn-cancel" style="background: #f1f5f9; color: #475569; border: none; padding: 10px 20px; border-radius: 10px; font-weight: 500; cursor: pointer;">${options.cancelText || "Cancel"}</button>
+                        <button class="btn-confirm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 24px; border-radius: 10px; font-weight: 500; cursor: pointer;">${options.confirmText || "Confirm"}</button>
                     </div>
                 </div>
             </div>
         `;
-        
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        
-        const modal = document.getElementById('evacuationConfirmModal');
-        const confirmBtn = modal.querySelector('.btn-confirm');
-        const cancelBtn = modal.querySelector('.btn-cancel');
-        
-        const closeModal = (result) => {
-            modal.style.display = 'none';
-            setTimeout(() => {
-                modal.remove();
-                resolve(result);
-            }, 300);
-        };
-        
-        modal.style.display = 'flex';
-        
-        confirmBtn.onclick = () => closeModal(true);
-        cancelBtn.onclick = () => closeModal(false);
-        
-        // Close on escape key
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                closeModal(false);
-                document.removeEventListener('keydown', handleEscape);
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
-        
-        // Close on backdrop click
-        modal.onclick = (e) => {
-            if (e.target === modal) {
-                closeModal(false);
-            }
-        };
-    });
+
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+    const modal = document.getElementById("evacuationConfirmModal");
+    const confirmBtn = modal.querySelector(".btn-confirm");
+    const cancelBtn = modal.querySelector(".btn-cancel");
+
+    const closeModal = (result) => {
+      modal.style.display = "none";
+      setTimeout(() => {
+        modal.remove();
+        resolve(result);
+      }, 300);
+    };
+
+    modal.style.display = "flex";
+
+    confirmBtn.onclick = () => closeModal(true);
+    cancelBtn.onclick = () => closeModal(false);
+
+    // Close on escape key
+    const handleEscape = (e) => {
+      if (e.key === "Escape") {
+        closeModal(false);
+        document.removeEventListener("keydown", handleEscape);
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+
+    // Close on backdrop click
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        closeModal(false);
+      }
+    };
+  });
 }
 
 async function openEvacuationRequestModal() {
-    // Check if tenant is eligible to request
-    if (!dashboardData.can_request_evacuation) {
-        if (window.showToast) {
-            window.showToast(dashboardData.evacuation_block_reason || "You are not eligible to request evacuation at this time.", "warning");
-        }
-        return;
+  if (!dashboardData.can_request_evacuation) {
+    if (window.showToast) {
+      window.showToast(
+        dashboardData.evacuation_block_reason ||
+          "You are not eligible to request evacuation at this time.",
+        "warning",
+      );
     }
-    
-    const modalHtml = `
+    return;
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+  // Use lease_end_date as the max
+  const leaseEnd = dashboardData.lease_end_date;
+  const maxDate = leaseEnd && leaseEnd >= today ? leaseEnd : today;
+
+  const modalHtml = `
         <div id="evacuationModal" class="modal active" style="display: flex;">
-            <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-content" style="max-width: 550px;">
                 <div class="modal-header">
                     <h3><i class="fas fa-sign-out-alt"></i> Request Move-out</h3>
                     <button class="modal-close" onclick="closeEvacuationModal()">&times;</button>
@@ -1138,14 +1167,19 @@ async function openEvacuationRequestModal() {
                 <div class="modal-body">
                     <div class="info-box" style="background: #e8f0fe; padding: 12px; border-radius: 8px; margin-bottom: 20px;">
                         <i class="fas fa-info-circle"></i>
-                        <small>Please note: Early termination fees may apply if moving out before your lease end date.</small>
+                        <small>
+                            Move-out must be on or before your lease end date
+                            (${leaseEnd ? formatDate(leaseEnd) : "N/A"}).
+                            Any unused prepaid rent is split 50/50 between you and the landlord.
+                        </small>
                     </div>
-                    
+
                     <div class="form-group">
                         <label>Proposed Move-out Date *</label>
-                        <input type="date" class="form-input" id="evacuationDate" min="${new Date().toISOString().split('T')[0]}" required>
+                        <input type="date" class="form-input" id="evacuationDate"
+                               min="${today}" max="${maxDate}" required>
                     </div>
-                    
+
                     <div class="form-group">
                         <label>Reason for Leaving *</label>
                         <select class="form-input" id="evacuationReason" required>
@@ -1159,15 +1193,21 @@ async function openEvacuationRequestModal() {
                             <option value="Other">Other</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label>Additional Notes (Optional)</label>
-                        <textarea class="form-textarea" id="evacuationNotes" rows="3" placeholder="Any additional information..."></textarea>
+                        <textarea class="form-textarea" id="evacuationNotes" rows="3"
+                                  placeholder="Any additional information..."></textarea>
                     </div>
-                    
-                    <div id="feePreview" style="display: none; background: #fff3cd; padding: 12px; border-radius: 8px; margin-top: 15px;">
-                        <i class="fas fa-exclamation-triangle" style="color: #f59e0b;"></i>
-                        <span id="feePreviewText"></span>
+
+                    <div id="settlementPreview" style="display: none; background: #f0fdf4; border-left: 4px solid #10b981; padding: 14px; border-radius: 8px; margin-top: 15px;">
+                        <strong style="display:block; margin-bottom: 8px;">
+                            <i class="fas fa-calculator"></i> Estimated Settlement
+                        </strong>
+                        <div style="font-size: 13px; line-height: 1.7;" id="settlementPreviewContent"></div>
+                        <small style="color: #666; display:block; margin-top: 8px; font-style: italic;">
+                            This is an estimate. Final amount will be calculated at move-out after any deductions.
+                        </small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1177,112 +1217,189 @@ async function openEvacuationRequestModal() {
             </div>
         </div>
     `;
-    
-    // Remove existing modal if any
-    const existingModal = document.getElementById('evacuationModal');
-    if (existingModal) existingModal.remove();
-    
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    
-    // Add date change listener to show fee preview
-    const dateInput = document.getElementById('evacuationDate');
-    if (dateInput) {
-        dateInput.addEventListener('change', previewEarlyTerminationFee);
-    }
+
+  const existingModal = document.getElementById("evacuationModal");
+  if (existingModal) existingModal.remove();
+
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+  document
+    .getElementById("evacuationDate")
+    ?.addEventListener("change", previewSettlement);
 }
 
 function closeEvacuationModal() {
-    const modal = document.getElementById('evacuationModal');
-    if (modal) modal.remove();
+  const modal = document.getElementById("evacuationModal");
+  if (modal) modal.remove();
 }
 
-async function previewEarlyTerminationFee() {
+async function previewSettlement() {
     const moveOutDate = document.getElementById('evacuationDate').value;
     if (!moveOutDate) return;
-    
-    const leaseEndDate = new Date(dashboardData.lease_end_date);
-    const selectedDate = new Date(moveOutDate);
-    
-    if (selectedDate < leaseEndDate) {
-        // Calculate approximate fee (this is a preview, actual calculation on server)
-        const monthsDiff = (leaseEndDate.getFullYear() - selectedDate.getFullYear()) * 12 + 
-                          (leaseEndDate.getMonth() - selectedDate.getMonth());
-        const monthlyRent = dashboardData.annual_rent / 12;
-        const estimatedFee = (monthlyRent * monthsDiff * 0.5).toFixed(2);
-        
-        const feePreview = document.getElementById('feePreview');
-        const feePreviewText = document.getElementById('feePreviewText');
-        
-        feePreviewText.innerHTML = `⚠️ Moving out before your lease end date (${formatDate(dashboardData.lease_end_date)}) may incur an early termination fee of approximately ₦${formatNumber(estimatedFee)}.`;
-        feePreview.style.display = 'block';
-    } else {
-        document.getElementById('feePreview').style.display = 'none';
+
+    function parseLocalDate(s) {
+        const [y, m, d] = s.split('-').map(Number);
+        return new Date(y, m - 1, d);
     }
+
+    // ==================== USE CURRENT CYCLE (NOT TOP-LEVEL LEASE DATES) ====================
+    const cycle = dashboardData.current_cycle;
+
+    if (!cycle) {
+        // No current cycle found — do not show a preview
+        const preview = document.getElementById('settlementPreview');
+        if (preview) {
+            preview.style.display = 'block';
+            document.getElementById('settlementPreviewContent').innerHTML = `
+                <div style="color: #dc2626;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Unable to determine your current rent cycle. Please contact support.
+                </div>
+            `;
+        }
+        return;
+    }
+
+    const cycleStart = parseLocalDate(cycle.cycle_start_date);
+    const cycleEnd   = parseLocalDate(cycle.cycle_end_date);
+    const moveOut    = parseLocalDate(moveOutDate);
+
+    // Validate move-out is within the current cycle
+    if (moveOut < cycleStart || moveOut > cycleEnd) {
+        const preview = document.getElementById('settlementPreview');
+        if (preview) {
+            preview.style.display = 'block';
+            document.getElementById('settlementPreviewContent').innerHTML = `
+                <div style="color: #dc2626;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Move-out date must be between
+                    <strong>${formatDate(cycle.cycle_start_date)}</strong> and
+                    <strong>${formatDate(cycle.cycle_end_date)}</strong>.
+                </div>
+            `;
+        }
+        return;
+    }
+
+    const cycleRent = parseFloat(cycle.cycle_rent_amount || 0);
+    const totalPaid = parseFloat(cycle.amount_paid_in_cycle || 0);
+
+    const totalDays = Math.round((cycleEnd - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
+    const daysUsed  = Math.round((moveOut - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
+    const dailyRate = cycleRent / totalDays;
+    const rentUsed  = dailyRate * daysUsed;
+
+    const unusedRent = Math.max(0, totalPaid - rentUsed);
+    const tenantShare = unusedRent * 0.5;
+
+    const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
+    const estimatedRefund = securityDeposit + tenantShare;
+
+    document.getElementById('settlementPreviewContent').innerHTML = `
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">
+            <em>Current cycle: ${formatDate(cycle.cycle_start_date)} → ${formatDate(cycle.cycle_end_date)}</em>
+        </div>
+        <div><strong>Daily rate:</strong> ₦${formatNumber(dailyRate.toFixed(2))}</div>
+        <div><strong>Days used:</strong> ${daysUsed} of ${totalDays}</div>
+        <div><strong>Rent used:</strong> ₦${formatNumber(rentUsed.toFixed(2))}</div>
+        <div><strong>Total paid in cycle:</strong> ₦${formatNumber(totalPaid.toFixed(2))}</div>
+        <div><strong>Unused rent:</strong> ₦${formatNumber(unusedRent.toFixed(2))}</div>
+        <div><strong>Your 50% share:</strong> ₦${formatNumber(tenantShare.toFixed(2))}</div>
+        <hr style="border:none; border-top:1px dashed #cbd5e1; margin: 8px 0;">
+        <div><strong>Security deposit:</strong> ₦${formatNumber(securityDeposit.toFixed(2))}</div>
+        <div style="color: #10b981; font-size: 15px; margin-top: 6px;">
+            <strong>Estimated refund before damages: ₦${formatNumber(estimatedRefund.toFixed(2))}</strong>
+        </div>
+    `;
+    document.getElementById('settlementPreview').style.display = 'block';
+}
+async function previewEarlyTerminationFee() {
+  const moveOutDate = document.getElementById("evacuationDate").value;
+  if (!moveOutDate) return;
+
+  // Parse dates as local to avoid timezone shift
+  function parseLocalDate(s) {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  const leaseEndDate = parseLocalDate(dashboardData.lease_end_date);
+  const selectedDate = parseLocalDate(moveOutDate);
+
+  const feePreview = document.getElementById("feePreview");
+  const feePreviewText = document.getElementById("feePreviewText");
+
+  if (selectedDate < leaseEndDate) {
+    // Roughly match the server-side calculation
+    const daysRemaining = Math.ceil(
+      (leaseEndDate - selectedDate) / (1000 * 60 * 60 * 24),
+    );
+    const monthsRemaining = Math.max(1, Math.ceil(daysRemaining / 30));
+    const monthlyRent = dashboardData.annual_rent / 12;
+    const estimatedFee = (monthlyRent * monthsRemaining * 0.5).toFixed(2);
+
+    feePreviewText.innerHTML = `⚠️ Moving out before your lease end date (${formatDate(dashboardData.lease_end_date)}) may incur an early termination fee of approximately ₦${formatNumber(estimatedFee)}.`;
+    feePreview.style.display = "block";
+  } else {
+    feePreview.style.display = "none";
+  }
 }
 
 async function submitEvacuationRequest() {
-    const moveOutDate = document.getElementById('evacuationDate').value;
-    const reason = document.getElementById('evacuationReason').value;
-    const notes = document.getElementById('evacuationNotes').value;
-    
+    const moveOutDate = document.getElementById("evacuationDate").value;
+    const reason = document.getElementById("evacuationReason").value;
+    const notes = document.getElementById("evacuationNotes").value;
+
     if (!moveOutDate) {
         if (window.showToast) window.showToast("Please select a move-out date", "error");
         return;
     }
-    
     if (!reason) {
         if (window.showToast) window.showToast("Please select a reason for leaving", "error");
         return;
     }
-    
-    // Show confirmation using our custom modal
+
     const confirmed = await showEvacuationConfirm({
-        title: 'Submit Move-out Request',
-        icon: 'fa-sign-out-alt',
-        message: 'Are you sure you want to submit a move-out request?',
+        title: "Submit Move-out Request",
+        icon: "fa-sign-out-alt",
+        message: "Are you sure you want to submit a move-out request?",
         list: [
-            { icon: 'fa-calendar', text: `Proposed move-out date: ${formatDate(moveOutDate)}` },
-            { icon: 'fa-question-circle', text: `Reason: ${reason}` }
+            { icon: "fa-calendar", text: `Proposed move-out date: ${formatDate(moveOutDate)}` },
+            { icon: "fa-question-circle", text: `Reason: ${reason}` },
         ],
-        warning: 'This request will be reviewed by admin. You cannot undo this action once submitted.',
-        confirmText: 'Yes, Submit Request',
-        cancelText: 'Cancel'
+        warning: "This request will be reviewed by admin. You cannot undo this action once submitted.",
+        confirmText: "Yes, Submit Request",
+        cancelText: "Cancel",
     });
-    
+
     if (!confirmed) return;
-    
-    // Show loading state
-    const submitBtn = document.querySelector('#evacuationModal .btn-primary');
+
+    const submitBtn = document.querySelector("#evacuationModal .btn-primary");
     const originalText = submitBtn.innerHTML;
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
     submitBtn.disabled = true;
-    
+
     try {
-        const response = await fetch('../backend/tenant/request_evacuation.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                move_out_date: moveOutDate,
-                reason: reason,
-                notes: notes
-            })
+        const response = await fetch("../backend/tenant/request_evacuation.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ move_out_date: moveOutDate, reason, notes }),
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
-            if (window.showToast) window.showToast(data.data.message, 'success');
+            const msg = data.data.message || "Request submitted";
+            if (window.showToast) window.showToast(msg, "success");
             closeEvacuationModal();
-            
-            // Refresh dashboard to update eligibility
             await fetchDashboardData();
             renderDashboard();
         } else {
-            throw new Error(data.message);
+            throw new Error(data.message || "Submission failed");
         }
     } catch (error) {
-        console.error('Error submitting evacuation request:', error);
-        if (window.showToast) window.showToast(error.message, 'error');
+        console.error("Error submitting evacuation request:", error);
+        if (window.showToast) window.showToast(error.message, "error");
     } finally {
         submitBtn.innerHTML = originalText;
         submitBtn.disabled = false;
