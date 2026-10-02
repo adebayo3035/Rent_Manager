@@ -23,7 +23,7 @@ try {
     $loggedInUserRole = $_SESSION['role'] ?? "UNKNOWN";
 
     logActivity("Authenticated Request | Admin ID: {$adminId}, Role: {$loggedInUserRole}");
-    rateLimit("fetch_property_details", 10, 60);
+    // rateLimit("fetch_property_details", 10, 60);
 
     logActivity("New fetch_property_details request received | IP: " . getClientIP());
 

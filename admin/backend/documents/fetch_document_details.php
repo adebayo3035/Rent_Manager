@@ -13,12 +13,6 @@ if (!isset($_SESSION)) session_start();
 rateLimiter();
 
 try {
-    // $auth = requireAuth([
-    //     'method'     => 'POST',
-    //     'rate_key'   => 'admin_fetch_document_details',
-    //     'rate_limit' => [60, 60],
-    //     'roles'      => ['Super Admin', 'Admin']
-    // ]);
     $adminId  = $_SESSION['unique_id'];
     $userRole = $_SESSION['role'];
 

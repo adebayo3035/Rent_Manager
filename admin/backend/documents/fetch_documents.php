@@ -18,12 +18,6 @@ rateLimiter();
 logActivity("========== FETCH DOCUMENTS (ADMIN) - START ==========");
 
 try {
-    // $auth = requireAuth([
-    //     'method'     => 'GET',
-    //     'rate_key'   => 'admin_fetch_documents',
-    //     'rate_limit' => [60, 60],
-    //     'roles'      => ['Super Admin', 'Admin']
-    // ]);
     $adminId  = $_SESSION['unique_id'];
     $userRole = $_SESSION['role'];
 

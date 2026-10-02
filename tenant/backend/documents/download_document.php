@@ -2,10 +2,12 @@
 // download_document.php - Download a tenant document
 // Handles documents stored in BOTH tenant and admin directories based on document_type
 
-session_start();
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
 // ==================== STORAGE PATHS ====================
 // Default storage: tenant module (for tenant-uploaded documents)

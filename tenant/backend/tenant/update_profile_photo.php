@@ -30,12 +30,9 @@ require_once __DIR__ . '/../utilities/config.php';
 
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
-
-// Optional: rate limiting (same style as onboarding)
-rateLimit("update_profile_photo", 10, 60); 
-
-// if (!isset($_SESSION)) session_start();
-// rateLimiter();
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
 logActivity("========== STARTING PROFILE PHOTO UPDATE ==========");
 

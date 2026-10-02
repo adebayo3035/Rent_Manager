@@ -11,7 +11,7 @@ try {
     // -----------------------------------------------------
     //  RATE LIMIT CHECK (Optional but recommended)
     // -----------------------------------------------------
-    rateLimit("get_tenants", 60, 60); // 60 requests per IP per minute
+    // rateLimit("get_tenants", 60, 60); // 60 requests per IP per minute
 
 
     // -----------------------------------------------------

@@ -8,7 +8,6 @@ require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
  if (!isset($_SESSION)) session_start();
  rateLimiter();
- // rateLimit("manage_fee_type", 10, 60); 
 
 // Generate unique request ID for tracking
 $requestId = uniqid('manage_fee_type_', true);

@@ -8,7 +8,7 @@ require_once __DIR__ . '/../utilities/rate_limit.php';
  rateLimiter();
 
 // Optional: rate limiting (same style as onboarding)
-rateLimit("fetch_unit_property_type", 10, 60); 
+// rateLimit("fetch_unit_property_type", 10, 60); 
 // 10 requests per 60 seconds for safety
 
 try {

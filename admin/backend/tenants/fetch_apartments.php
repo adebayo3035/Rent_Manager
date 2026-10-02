@@ -8,11 +8,11 @@ require_once __DIR__ . '/../utilities/rate_limit.php';
  if (!isset($_SESSION)) session_start();
  rateLimiter();
 
-$auth = requireAuth([
-    'method' => 'GET',
-    'rate_limit' => [3, 60],
-    'roles'  => ['Super Admin', 'Admin', 'Agent']
-]);
+// $auth = requireAuth([
+//     'method' => 'GET',
+//     'rate_limit' => [3, 60],
+//     'roles'  => ['Super Admin', 'Admin', 'Agent']
+// ]);
 
 
 // ================= AUTH CHECK =================
