@@ -60,6 +60,7 @@
                             <a href="maintenance.php" class="dropdown-item">
                                 <i class="fas fa-wrench"></i> Maintenance Requests
                             </a>
+
                         </div>
 
                         <!-- ==================== COLUMN 2: TENANT & PAYMENTS ==================== -->
@@ -100,6 +101,9 @@
                             </a>
                             <a href="report.php" class="dropdown-item">
                                 <i class="fas fa-file-alt"></i> Reports
+                            </a>
+                            <a href="documents.php" class="dropdown-item">
+                                <i class="fas fa-file-alt"></i> Documents
                             </a>
                         </div>
 
@@ -270,6 +274,10 @@
                                 </a>
                                 <a href="report.php" class="mobile-nav-link sub">
                                     <i class="fas fa-file-alt"></i> Reports
+                                </a>
+                                <a href="documents.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-file-alt"></i> Documents
+
                                 </a>
                             </div>
 

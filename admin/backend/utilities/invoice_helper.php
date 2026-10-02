@@ -111,8 +111,10 @@ function generateOnboardingInvoice($conn, $data) {
             'invoice_number'     => $invoice_number,
             'stored_file_name'   => $stored_file_name,
             'file_hash'          => $file_hash,
+            'storage_location'   => $data['storage_location'],
             'file_size'          => strlen($pdf_content),
-            'uploaded_by'        => $data['created_by']
+            'uploaded_by'        => $data['created_by'],
+            'uploaded_by_type'   => $data['uploaded_by_type']
         ]);
 
         if (!$document_id) {
@@ -579,9 +581,11 @@ function saveInvoiceDocument($conn, $data) {
             file_size,
             file_type,
             file_hash,
+            storage_location,
             uploaded_by,
-            uploaded_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            uploaded_at,
+            uploaded_by_type,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
     ";
     
     $stmt = $conn->prepare($query);
@@ -591,7 +595,7 @@ function saveInvoiceDocument($conn, $data) {
     }
     
     $stmt->bind_param(
-        "sssssisss",
+        "sssssisssss",
         $data['tenant_code'],
         $document_name,
         $document_type,
@@ -600,7 +604,9 @@ function saveInvoiceDocument($conn, $data) {
         $data['file_size'],
         $file_type,
         $data['file_hash'],
-        $data['uploaded_by']
+        $data['storage_location'],
+        $data['uploaded_by'],
+        $data['uploaded_by_type']
     );
     
     if (!$stmt->execute()) {

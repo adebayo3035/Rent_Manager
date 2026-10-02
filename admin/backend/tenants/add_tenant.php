@@ -17,6 +17,8 @@ define('DUE_DATE_OFFSET_MONTHLY', 7);        // 1 week
 define('DUE_DATE_OFFSET_QUARTERLY', 14);     // 2 weeks
 define('DUE_DATE_OFFSET_SEMI_ANNUALLY', 30); // 1 month
 define('DUE_DATE_OFFSET_ANNUALLY', 90);      // 3 months
+define('STORAGE_LOCATION', 'admin_invoices');
+define('UPLOADED_BY_TYPE', 'system');
 
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
@@ -1356,7 +1358,9 @@ try {
             'due_date'                  => $due_date,
             'reference_number'          => $reference_number,
             'receipt_number'            => $receipt_number,
-            'created_by'                => $userId
+            'created_by'                => $userId,
+            'storage_location'          => STORAGE_LOCATION,
+            'uploaded_by_type'          => UPLOADED_BY_TYPE
         ];
         
         $invoice_result = generateOnboardingInvoice($conn, $invoice_data);
