@@ -25,6 +25,19 @@
             </div>
             <div class="client-info" id="clientInfo">
                 <div class="client-avatar" id="photoElement"></div>
+                <div class="photo-action-buttons" id="photoActionButtons">
+                    <button class="photo-action-btn" id="uploadPhotoBtn" title="Upload Photo">
+                        <i class="fas fa-pencil-alt"></i>
+                    </button>
+                    <button class="photo-action-btn" id="cameraPhotoBtn" title="Take Photo">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+
+                <!-- Hidden file inputs -->
+                <input type="file" id="photoFileInput" accept="image/jpeg,image/png" style="display: none;">
+                <input type="file" id="cameraFileInput" accept="image/*" capture="user" style="display: none;">
+                <div class="tenant-name" id="tenantName">Loading...</div>
                 <div class="client-name" id="clientName">Loading...</div>
                 <div class="client-role" id="clientCode">Property Owner</div>
             </div>
@@ -77,7 +90,7 @@
                     <i class="fas fa-bell"></i>
                     <span>Notifications</span>
                 </a>
-                <a href="#" class="nav-item" id="logoutBtn">
+                <a href="#" class="nav-item" id="logoutBtn" role="button" aria-label="Logout">
                     <i class="fas fa-sign-out-alt"></i>
                     <span>Logout</span>
                 </a>
@@ -102,6 +115,33 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Camera Capture Modal -->
+    <div id="cameraCaptureModal" class="camera-modal">
+        <div class="camera-modal-content">
+            <div class="camera-modal-header">
+                <h3><i class="fas fa-camera"></i> Take Photo</h3>
+                <button class="camera-modal-close" id="closeCameraBtn">&times;</button>
+            </div>
+            <div class="camera-modal-body">
+                <video id="cameraVideo" autoplay playsinline muted></video>
+                <canvas id="cameraCanvas" style="display: none;"></canvas>
+                <div class="camera-error" id="cameraError" style="display: none;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p id="cameraErrorMessage">Unable to access camera</p>
+                </div>
+            </div>
+            <div class="camera-modal-footer">
+                <button class="camera-btn-switch" id="switchCameraBtn" title="Switch Camera">
+                    <i class="fas fa-sync-alt"></i> Switch
+                </button>
+                <button class="camera-btn-capture" id="capturePhotoBtn">
+                    <i class="fas fa-circle"></i> Capture
+                </button>
+                <button class="camera-btn-cancel" id="cancelCameraBtn">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <script src="../scripts/navbar.js"></script>

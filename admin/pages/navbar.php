@@ -102,9 +102,7 @@
                             <a href="report.php" class="dropdown-item">
                                 <i class="fas fa-file-alt"></i> Reports
                             </a>
-                            <a href="documents.php" class="dropdown-item">
-                                <i class="fas fa-file-alt"></i> Documents
-                            </a>
+                           
                         </div>
 
                         <!-- ==================== COLUMN 4: ADMINISTRATION ==================== -->
@@ -121,6 +119,9 @@
                             </a>
                             <a href="account_unlock.php" class="dropdown-item">
                                 <i class="fas fa-unlock-alt"></i> Account Unlock
+                            </a>
+                             <a href="documents.php" class="dropdown-item">
+                                <i class="fas fa-file-alt"></i> Documents
                             </a>
                         </div>
                     </div>
@@ -275,10 +276,7 @@
                                 <a href="report.php" class="mobile-nav-link sub">
                                     <i class="fas fa-file-alt"></i> Reports
                                 </a>
-                                <a href="documents.php" class="mobile-nav-link sub">
-                                    <i class="fas fa-file-alt"></i> Documents
-
-                                </a>
+                                
                             </div>
 
                             <!-- ==================== ADMINISTRATION ==================== -->
@@ -295,6 +293,9 @@
                                 </a>
                                 <a href="account_unlock.php" class="mobile-nav-link sub">
                                     <i class="fas fa-unlock-alt"></i> Account Unlock
+                                </a>
+                                <a href="documents.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-file-alt"></i> Documents
                                 </a>
                             </div>
                         </div>

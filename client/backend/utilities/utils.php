@@ -31,7 +31,8 @@ function json_success($data = null, $message = "Operation successful", $code = 2
     }
     
     // Log the response
-    $logMessage = "Response Success [{$code}]: {$message}";
+    $safeMessage = is_array($message) ? json_encode($message) : (string)$message;
+    $logMessage  = "Response Success [{$code}]: {$safeMessage}";
     if ($data !== null) {
         $logMessage .= " | Data: " . json_encode($data);
     }
@@ -71,7 +72,8 @@ function json_error($message, $code = 400, $errors = null, $error_code = null)
     }
     
     // Log the error
-    $logMessage = "Response Error [{$code}]: {$message}";
+    $safeMessage = is_array($message) ? json_encode($message) : (string)$message;
+    $logMessage  = "Response Error [{$code}]: {$safeMessage}";
     if ($errors !== null) {
         $logMessage .= " | Details: " . json_encode($errors);
     }

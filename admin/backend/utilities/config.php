@@ -1,4 +1,8 @@
 <?php
+// At the top of config.php or a bootstrap file
+ini_set('display_errors', '0');  // never leak warnings to clients
+ini_set('log_errors', '1');      // but DO log them server-side
+error_reporting(E_ALL);
 date_default_timezone_set('Africa/Lagos'); // Example for Nigeria (UTC+1)
 include('activity_logger.php');
   $hostname = "localhost";

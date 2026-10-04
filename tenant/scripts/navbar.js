@@ -13,6 +13,7 @@ const WARNING_TIMEOUT = 2 * 60 * 1000; // 2 minutes warning
 const PHOTO_MAX_SIZE = 500000;
 const PHOTO_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/jpg"];
 const PHOTO_ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png"];
+const NOTIFICATION_REFRESH_MS = 5* 60 * 1000; // 5 minutes
 
 // ==================== CAMERA VARIABLES ====================
 let cameraStream = null;
@@ -33,12 +34,12 @@ document.addEventListener("DOMContentLoaded", async function () {
 });
 
 function getAppBasePath() {
-    const pathParts = window.location.pathname.split("/");
-    const tenantIndex = pathParts.indexOf("tenant");
-    if (tenantIndex > 0) {
-        return pathParts.slice(0, tenantIndex).join("/");
-    }
-    return "";
+  const pathParts = window.location.pathname.split("/");
+  const tenantIndex = pathParts.indexOf("tenant");
+  if (tenantIndex > 0) {
+    return pathParts.slice(0, tenantIndex).join("/");
+  }
+  return "";
 }
 
 async function initializeApp() {
@@ -743,7 +744,7 @@ function startNotificationRefresh() {
     if (navbarCurrentUser || window.currentUser) {
       updateNotificationBadge();
     }
-  }, 600000);
+  }, NOTIFICATION_REFRESH_MS);
 }
 
 function stopNotificationRefresh() {
@@ -771,141 +772,143 @@ function handleLogoutClick(e) {
 
 // ==================== USER DATA ====================
 async function fetchNavbarUserData() {
-    if (navbarCurrentUser) return navbarCurrentUser;
+  if (navbarCurrentUser) return navbarCurrentUser;
 
-    if (window.currentUser && window.currentUser.tenant_code) {
-        navbarCurrentUser = window.currentUser;
+  if (window.currentUser && window.currentUser.tenant_code) {
+    navbarCurrentUser = window.currentUser;
+    await updateUserInfo();
+    return navbarCurrentUser;
+  }
+
+  if (!navbarUserPromise) {
+    navbarUserPromise = (async () => {
+      try {
+        const response = await fetch("../backend/tenant/fetch_user_data.php");
+
+        // Handle non-OK HTTP responses
+        if (!response.ok) {
+          const error = new Error(
+            `HTTP ${response.status}: ${response.statusText}`,
+          );
+          error.statusCode = response.status;
+          throw error;
+        }
+
+        const data = await response.json();
+
+        if (!(data.success && data.data)) {
+          const error = new Error(data.message || "Failed to fetch user data");
+          error.statusCode = data.status_code || 500;
+          throw error;
+        }
+
+        navbarCurrentUser = data.data;
+        window.currentUser = navbarCurrentUser;
+
         await updateUserInfo();
+        window.dispatchEvent(
+          new CustomEvent("userDataLoaded", { detail: navbarCurrentUser }),
+        );
         return navbarCurrentUser;
-    }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
 
-    if (!navbarUserPromise) {
-        navbarUserPromise = (async () => {
-            try {
-                const response = await fetch("../backend/tenant/fetch_user_data.php");
+        // ✅ Only redirect on AUTH errors — never on JS bugs
+        const statusCode = error.statusCode || error.status;
+        const isAuthError =
+          statusCode === 401 ||
+          statusCode === 403 ||
+          (error.message &&
+            (error.message.toLowerCase().includes("unauthorized") ||
+              error.message.toLowerCase().includes("not logged in") ||
+              error.message.toLowerCase().includes("session")));
 
-                // Handle non-OK HTTP responses
-                if (!response.ok) {
-                    const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    error.statusCode = response.status;
-                    throw error;
-                }
+        if (isAuthError) {
+          // Real auth problem — redirect to login
+          showToast("Session expired. Please login again.", "warning");
+          setTimeout(() => {
+            window.location.href = "../pages/index.php";
+          }, 2000);
+        } else {
+          // Non-auth error (network, JS, server bug) — don't log out!
+          showToast("Failed to load user information", "error");
+          // Optional: retry once after 3 seconds
+          setTimeout(() => {
+            fetchNavbarUserData();
+          }, 3000);
+        }
 
-                const data = await response.json();
+        throw error;
+      } finally {
+        navbarUserPromise = null;
+      }
+    })();
+  }
 
-                if (!(data.success && data.data)) {
-                    const error = new Error(data.message || "Failed to fetch user data");
-                    error.statusCode = data.status_code || 500;
-                    throw error;
-                }
-
-                navbarCurrentUser = data.data;
-                window.currentUser = navbarCurrentUser;
-
-                await updateUserInfo();
-                window.dispatchEvent(
-                    new CustomEvent("userDataLoaded", { detail: navbarCurrentUser })
-                );
-                return navbarCurrentUser;
-
-            } catch (error) {
-                console.error("Error fetching user data:", error);
-
-                // ✅ Only redirect on AUTH errors — never on JS bugs
-                const statusCode = error.statusCode || error.status;
-                const isAuthError =
-                    statusCode === 401 ||
-                    statusCode === 403 ||
-                    (error.message && (
-                        error.message.toLowerCase().includes("unauthorized") ||
-                        error.message.toLowerCase().includes("not logged in") ||
-                        error.message.toLowerCase().includes("session")
-                    ));
-
-                if (isAuthError) {
-                    // Real auth problem — redirect to login
-                    showToast("Session expired. Please login again.", "warning");
-                    setTimeout(() => {
-                        window.location.href = "../pages/index.php";
-                    }, 2000);
-                } else {
-                    // Non-auth error (network, JS, server bug) — don't log out!
-                    showToast("Failed to load user information", "error");
-                    // Optional: retry once after 3 seconds
-                    setTimeout(() => { fetchNavbarUserData(); }, 3000);
-                }
-
-                throw error;
-
-            } finally {
-                navbarUserPromise = null;
-            }
-        })();
-    }
-
-    return navbarUserPromise;
+  return navbarUserPromise;
 }
 
 async function updateUserInfo() {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const user = window.currentUser || navbarCurrentUser;
-    if (!user) {
-        console.error("No currentUser available");
-        return;
+  const user = window.currentUser || navbarCurrentUser;
+  if (!user) {
+    console.error("No currentUser available");
+    return;
+  }
+
+  navbarCurrentUser = user;
+
+  const nameElement = document.getElementById("tenantName");
+  const apartmentElement = document.getElementById("tenantApartment");
+  const photoElement = document.getElementById("photoElement");
+
+  const fullName = `${user.firstname || ""} ${user.lastname || ""}`.trim();
+  const apartmentNumber =
+    user.apartment_number || user.apartment_code || "No Apartment";
+
+  if (nameElement) nameElement.textContent = fullName || "Tenant";
+  if (apartmentElement)
+    apartmentElement.textContent = `Apartment Number: ${apartmentNumber}`;
+
+  if (photoElement) {
+    photoElement.innerHTML = "";
+
+    if (user.photo) {
+      // ✅ Correctly resolve base path
+      const appBasePath = getAppBasePath();
+      const photoUrl = `${appBasePath}/admin/backend/tenants/tenant_photos/${user.photo}`;
+
+      const img = document.createElement("img");
+      img.alt = `${fullName}'s photo`;
+      img.src = photoUrl;
+
+      img.onerror = function () {
+        console.warn("Failed to load photo:", img.src);
+        img.remove();
+        renderUserInitials(photoElement, fullName);
+      };
+
+      photoElement.appendChild(img);
+    } else {
+      renderUserInitials(photoElement, fullName);
     }
-
-    navbarCurrentUser = user;
-
-    const nameElement = document.getElementById("tenantName");
-    const apartmentElement = document.getElementById("tenantApartment");
-    const photoElement = document.getElementById("photoElement");
-
-    const fullName = `${user.firstname || ""} ${user.lastname || ""}`.trim();
-    const apartmentNumber =
-        user.apartment_number || user.apartment_code || "No Apartment";
-
-    if (nameElement) nameElement.textContent = fullName || "Tenant";
-    if (apartmentElement)
-        apartmentElement.textContent = `Apartment Number: ${apartmentNumber}`;
-
-    if (photoElement) {
-        photoElement.innerHTML = "";
-
-        if (user.photo) {
-            // ✅ Correctly resolve base path
-            const appBasePath = getAppBasePath();
-            const photoUrl = `${appBasePath}/admin/backend/tenants/tenant_photos/${user.photo}`;
-
-            const img = document.createElement("img");
-            img.alt = `${fullName}'s photo`;
-            img.src = photoUrl;
-
-            img.onerror = function () {
-                console.warn("Failed to load photo:", img.src);
-                img.remove();
-                renderUserInitials(photoElement, fullName);
-            };
-
-            photoElement.appendChild(img);
-        } else {
-            renderUserInitials(photoElement, fullName);
-        }
-    }
+  }
 }
 
 function renderUserInitials(container, fullName) {
-    if (!container) return;
+  if (!container) return;
 
-    const initials = (fullName || 'Tenant')
-        .split(' ')
-        .filter(Boolean)
-        .slice(0, 2)
-        .map(part => part.charAt(0).toUpperCase())
-        .join('') || 'T';
+  const initials =
+    (fullName || "Tenant")
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "T";
 
-    // No inline styles — use CSS classes
-    container.innerHTML = `<span class="tenant-initials">${escapeHtml(initials)}</span>`;
+  // No inline styles — use CSS classes
+  container.innerHTML = `<span class="tenant-initials">${escapeHtml(initials)}</span>`;
 }
 
 // ==================== LOGOUT ====================
