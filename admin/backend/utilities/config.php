@@ -4,6 +4,10 @@ ini_set('display_errors', '0');  // never leak warnings to clients
 ini_set('log_errors', '1');      // but DO log them server-side
 error_reporting(E_ALL);
 date_default_timezone_set('Africa/Lagos'); // Example for Nigeria (UTC+1)
+define('LOG_DIR',       __DIR__ . '/../logs/');
+define('LOG_LEVEL',     getenv('APP_ENV') === 'production' ? 'INFO' : 'DEBUG');
+define('LOG_ROTATION',  'daily');       // hourly for high-traffic endpoints
+define('LOG_FORMAT',    'json');        // 'json' makes reporting trivial
 include('activity_logger.php');
   $hostname = "localhost";
   $username = "root";

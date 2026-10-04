@@ -4,3 +4,63 @@
 # Ignore all secret files in any folder
 **/secrets.php
 secrets.php
+
+
+# ==================== LOGS ====================
+# Ignore the entire logs directory in every module
+logs/
+**/logs/
+**/utilities/logs/
+
+# Ignore legacy single-file loggers still scattered in the codebase
+activity_log.txt
+**/activity_log.txt
+
+# Ignore log rotation archives (*.log, *.log.1, *.log.20261004-153000)
+*.log
+*.log.*
+**/*.log
+**/*.log.*
+
+# Keep the directory structure (optional — if you commit empty dirs)
+!logs/.gitkeep
+!**/logs/.gitkeep
+
+# ==================== PHP / APP SECRETS ====================
+# Environment configs
+.env
+.env.*
+!.env.example
+
+# Local config overrides
+**/config.local.php
+**/utilities/config.local.php
+
+# ==================== UPLOADS / USER DATA ====================
+# Don't commit user-uploaded documents/photos
+**/client_documents/*
+!**/client_documents/.gitkeep
+**/tenant_documents/*
+!**/tenant_documents/.gitkeep
+**/admin/backend/clients/client_photos/*
+!**/admin/backend/clients/client_photos/.gitkeep
+
+# ==================== IDE / OS ====================
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==================== DEPENDENCIES ====================
+node_modules/
+vendor/
+composer.lock
+package-lock.json
+
+# ==================== BUILD / CACHE ====================
+*.cache
+.cache/
+tmp/
+temp/
