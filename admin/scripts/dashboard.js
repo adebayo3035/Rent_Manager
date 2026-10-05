@@ -28,7 +28,7 @@ function updateDashboardUI() {
     
     // Update counters with animation
     animateCounter('activeTenants', stats.activeTenants);
-    animateCounter('monthlyRevenue', stats.monthlyRevenue, '$');
+    animateCounter('monthlyRevenue', stats.monthlyRevenue, '#');
     animateCounter('totalProperties', stats.totalProperties);
     animateCounter('pendingRequests', stats.pendingRequests);
     animateCounter('overduePayments', stats.overduePayments);

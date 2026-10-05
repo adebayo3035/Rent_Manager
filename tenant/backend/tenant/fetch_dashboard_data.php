@@ -822,10 +822,21 @@ if ($existingCount > 0) {
         'evacuation_block_reason' => $evacuation_block_reason
     ];
 
+    // ==================== SUMMARY (for frontend convenience) ====================
+    // Nested summary object consumed by payments.js (paymentSummary variable).
+    // Values already computed earlier in this file — no new queries needed.
+    $dashboardData['summary'] = [
+        'total_paid'          => (float) $total_paid,
+        'successful_payments' => (int) count($completed_payments),
+        'payment_per_period'  => (float) $payment_amount_per_period,
+        'remaining_balance'   => (float) $rent_balance,
+    ];
+
     logActivity("=== FETCH DASHBOARD DATA COMPLETED ===");
     logActivity("Total Paid: {$total_paid}, Balance: {$rent_balance}, Fully Paid: " . ($is_lease_fully_paid ? 'Yes' : 'No'));
     logActivity("Has Pending Verification: " . ($has_pending_verification ? 'Yes' : 'No'));
     logActivity("Pending Periods Count: " . count($pending_trackers));
+    logActivity("Summary block: total_paid={$total_paid}, payments=" . count($completed_payments));
 
     json_success($dashboardData, "Dashboard data retrieved successfully");
 } catch (Exception $e) {

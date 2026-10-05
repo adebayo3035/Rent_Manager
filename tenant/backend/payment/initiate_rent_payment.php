@@ -206,7 +206,7 @@ try {
             );
         }
 
-        // 3. Find the next AVAILABLE period (not pending_verification, not paid, not failed)
+        // 3. Find the next payable period (available or failed retry)
         $next_period_query = "
             SELECT 
                 tracker_id,
@@ -221,7 +221,7 @@ try {
             FROM rent_payment_tracker
             WHERE tenant_code = ? 
             AND apartment_code = ?
-            AND status = 'available'
+            AND status IN ('available', 'failed')
             ORDER BY period_number ASC
             LIMIT 1
         ";
@@ -233,28 +233,6 @@ try {
         $next_stmt->close();
 
         if (!$next_period) {
-            // Check for failed period that needs attention
-            $failed_check = "
-                SELECT period_number, status 
-                FROM rent_payment_tracker 
-                WHERE tenant_code = ? AND apartment_code = ? AND status = 'failed'
-                ORDER BY period_number ASC
-                LIMIT 1
-            ";
-            $failed_stmt = $conn->prepare($failed_check);
-            $failed_stmt->bind_param("ss", $tenant_code, $tenant['apartment_code']);
-            $failed_stmt->execute();
-            $failed_period = $failed_stmt->get_result()->fetch_assoc();
-            $failed_stmt->close();
-
-            if ($failed_period) {
-                throw new Exception(
-                    "Your previous payment for Period #{$failed_period['period_number']} failed. " .
-                    "Please contact support to resolve this issue.",
-                    400
-                );
-            }
-
             // Check if all periods are paid
             $all_paid_check = "
                 SELECT COUNT(*) as unpaid_count 
@@ -274,7 +252,7 @@ try {
             }
         }
 
-        logActivity("Next available period found - Period #{$next_period['period_number']}: {$next_period['start_date']} to {$next_period['end_date']}");
+        logActivity("Next payable period found - Period #{$next_period['period_number']} ({$next_period['status']}): {$next_period['start_date']} to {$next_period['end_date']}");
 
         // 4. Get the main rent payment record
         $rent_payment_query = "
@@ -318,7 +296,7 @@ try {
                 payment_method = ?,
                 amount_paid = ?
             WHERE tracker_id = ?
-            AND status = 'available'
+            AND status IN ('available', 'failed')
         ";
 
         $update_stmt = $conn->prepare($update_tracker_query);

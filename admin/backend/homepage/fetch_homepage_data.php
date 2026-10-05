@@ -140,8 +140,8 @@ try {
     $revenueThisMonth = 0;
     $q = $conn->query("
         SELECT COALESCE(SUM(amount_paid), 0) AS total
-        FROM rent_payments
-        WHERE status IN ('completed', 'ongoing')
+        FROM rent_payment_tracker
+        WHERE status IN ('paid', 'ongoing')
           AND MONTH(payment_date) = MONTH(CURDATE())
           AND YEAR(payment_date)  = YEAR(CURDATE())
     ");

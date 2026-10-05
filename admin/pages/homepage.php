@@ -106,7 +106,7 @@
 
     <!-- TRUSTED BY SECTION -->
     <section class="trusted-by">
-        <p>Trusted by leading property managers</p>
+        <p>Trusted by leading property owners</p>
         <div class="logos" id="trustedByLogos">
             <span>Prime Properties</span>
             <span>Elite Estates</span>
@@ -142,14 +142,14 @@
                 <div class="feature-icon"><i class="fas fa-chart-pie"></i></div>
                 <h3>Advanced Analytics</h3>
                 <p>Real-time insights into occupancy rates, revenue trends, and property performance.</p>
-                <a href="reports.php" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
+                <a href="dashboard.php" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
             </div>
 
             <div class="feature-card" data-aos="fade-up" data-aos-delay="400">
                 <div class="feature-icon"><i class="fas fa-file-contract"></i></div>
                 <h3>Document Management</h3>
                 <p>Digital lease agreements, maintenance requests, and automated document storage.</p>
-                <a href="property.php" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
+                <a href="documents.php" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
             </div>
 
             <div class="feature-card" data-aos="fade-up" data-aos-delay="500">
