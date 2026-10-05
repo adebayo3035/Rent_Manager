@@ -31,6 +31,7 @@ function updateDashboardUI() {
     animateCounter('monthlyRevenue', stats.monthlyRevenue, '$');
     animateCounter('totalProperties', stats.totalProperties);
     animateCounter('pendingRequests', stats.pendingRequests);
+    animateCounter('overduePayments', stats.overduePayments);
     
     // Update module counts
     document.getElementById('clientsCount').textContent = stats.clients;

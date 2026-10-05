@@ -110,9 +110,19 @@ try {
     $stmt->close();
 
     // Overdue Payments (from rent_payment_tracker)
-    $query = "SELECT COUNT(*) as count FROM rent_payments 
-              WHERE due_date < CURDATE() 
-              AND status = 'pending'";
+    // $query = "SELECT COUNT(*) as count FROM rent_payments 
+    //           WHERE due_date < CURDATE() 
+    //           AND status = 'pending'";
+    // $stmt = $conn->prepare($query);
+    // $stmt->execute();
+    // $result = $stmt->get_result();
+    // $stats['overduePayments'] = $result->fetch_assoc()['count'] ?? 0;
+    // $stmt->close();
+
+
+    $query = "SELECT COUNT(*) as count FROM rent_payment_tracker
+              WHERE end_date < CURDATE() 
+              AND status = 'available'";
     $stmt = $conn->prepare($query);
     $stmt->execute();
     $result = $stmt->get_result();

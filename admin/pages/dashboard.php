@@ -61,6 +61,17 @@
                     <span class="stat-change negative"><i class="fas fa-arrow-up"></i> 8%</span>
                 </div>
             </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                    <i class="fas fa-exclamation-circle"></i>
+                </div>
+                <div class="stat-info">
+                    <h3>Overdue Rent Payment</h3>
+                    <p class="stat-number" id="overduePayments">0</p>
+                    <span class="stat-change negative"><i class="fas fa-arrow-up"></i> 8%</span>
+                </div>
+            </div>
         </div>
 
         <!-- Main Dashboard Content -->

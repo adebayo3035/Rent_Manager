@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KaraKata Pro - Property & Rent Management Solution</title>
+    <title>KaraKata Pro - Admin Dashboard</title>
 
     <!-- Font Awesome -->
     <script src="https://kit.fontawesome.com/7cab3097e7.js" crossorigin="anonymous"></script>
@@ -17,7 +17,7 @@
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
 
     <link rel="stylesheet" href="../css/homepage.css" />
-     <link rel="stylesheet" href="../../styles.css">
+    <link rel="stylesheet" href="../../styles.css">
 </head>
 <body>
     <?php include "navbar.php" ?>
@@ -27,14 +27,16 @@
         <div class="hero-container">
             <div class="hero-content" data-aos="fade-up" data-aos-duration="1000">
                 <div class="hero-badge">
-                    <span><i class="fas fa-star"></i> Trusted by 500+ Properties</span>
+                    <span id="heroBadgeText">
+                        <i class="fas fa-star"></i> Trusted by 500+ Properties
+                    </span>
                 </div>
                 <h1 class="hero-title">
                     <span class="gradient-text">Simplify Property Management</span>
                     <br>with Smart Automation
                 </h1>
                 <p class="hero-subtitle">
-                    All-in-one platform for landlords, property managers, and tenants. 
+                    All-in-one admin platform for landlords, property managers, and tenants.
                     Streamline rent collection, tenant management, and property oversight in one dashboard.
                 </p>
                 <div class="hero-cta">
@@ -47,15 +49,15 @@
                 </div>
                 <div class="hero-stats">
                     <div class="stat">
-                        <h3>1,200+</h3>
+                        <h3 id="statPropertiesManaged"></h3>
                         <p>Properties Managed</p>
                     </div>
                     <div class="stat">
-                        <h3>₦4.8B+</h3>
+                        <h3 id="statRentProcessed">₦4.8B+</h3>
                         <p>Rent Processed</p>
                     </div>
                     <div class="stat">
-                        <h3>98.7%</h3>
+                        <h3 id="statSatisfaction"></h3>
                         <p>Client Satisfaction</p>
                     </div>
                 </div>
@@ -73,14 +75,14 @@
                         <div class="metric-card">
                             <i class="fas fa-chart-line"></i>
                             <h4>Revenue Overview</h4>
-                            <p>₦2.4M This Month</p>
+                            <p id="previewRevenue">₦2.4M This Month</p>
                         </div>
                         <div class="metric-card">
                             <i class="fas fa-home"></i>
                             <h4>Active Properties</h4>
-                            <p>24 Properties</p>
+                            <p id="previewActiveProperties">24 Properties</p>
                         </div>
-                        <div class="tenant-list">
+                        <div class="tenant-list" id="previewTenantList">
                             <h4><i class="fas fa-users"></i> Recent Tenants</h4>
                             <div class="tenant-item">
                                 <span>John Doe</span>
@@ -95,7 +97,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Scroll Indicator -->
         <div class="scroll-indicator">
             <i class="fas fa-chevron-down"></i>
@@ -105,7 +107,7 @@
     <!-- TRUSTED BY SECTION -->
     <section class="trusted-by">
         <p>Trusted by leading property managers</p>
-        <div class="logos">
+        <div class="logos" id="trustedByLogos">
             <span>Prime Properties</span>
             <span>Elite Estates</span>
             <span>Urban Living</span>
@@ -120,72 +122,48 @@
             <h2 class="section-title">Everything You Need in One Platform</h2>
             <p class="section-subtitle">Powerful tools designed specifically for property management</p>
         </div>
-        
+
         <div class="features-grid">
             <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
-                <div class="feature-icon">
-                    <i class="fas fa-money-check-alt"></i>
-                </div>
+                <div class="feature-icon"><i class="fas fa-money-check-alt"></i></div>
                 <h3>Smart Rent Collection</h3>
                 <p>Automated rent collection with multiple payment options, reminders, and late fee calculations.</p>
-                <a href="rent_payments.php" class="feature-link">
-                    Explore <i class="fas fa-arrow-right"></i>
-                </a>
+                <a href="rent_payments.php" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
             </div>
-            
+
             <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
-                <div class="feature-icon">
-                    <i class="fas fa-user-shield"></i>
-                </div>
+                <div class="feature-icon"><i class="fas fa-user-shield"></i></div>
                 <h3>Tenant Management</h3>
                 <p>Complete tenant profiles, communication tools, and automated onboarding processes.</p>
-                <a href="tenant.php" class="feature-link">
-                    Explore <i class="fas fa-arrow-right"></i>
-                </a>
+                <a href="tenant.php" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
             </div>
-            
+
             <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
-                <div class="feature-icon">
-                    <i class="fas fa-chart-pie"></i>
-                </div>
+                <div class="feature-icon"><i class="fas fa-chart-pie"></i></div>
                 <h3>Advanced Analytics</h3>
                 <p>Real-time insights into occupancy rates, revenue trends, and property performance.</p>
-                <a href="reports.php" class="feature-link">
-                    Explore <i class="fas fa-arrow-right"></i>
-                </a>
+                <a href="reports.php" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
             </div>
-            
+
             <div class="feature-card" data-aos="fade-up" data-aos-delay="400">
-                <div class="feature-icon">
-                    <i class="fas fa-file-contract"></i>
-                </div>
+                <div class="feature-icon"><i class="fas fa-file-contract"></i></div>
                 <h3>Document Management</h3>
                 <p>Digital lease agreements, maintenance requests, and automated document storage.</p>
-                <a href="property.php" class="feature-link">
-                    Explore <i class="fas fa-arrow-right"></i>
-                </a>
+                <a href="property.php" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
             </div>
-            
+
             <div class="feature-card" data-aos="fade-up" data-aos-delay="500">
-                <div class="feature-icon">
-                    <i class="fas fa-mobile-alt"></i>
-                </div>
+                <div class="feature-icon"><i class="fas fa-mobile-alt"></i></div>
                 <h3>Mobile App</h3>
                 <p>Access your property portfolio anytime, anywhere with our iOS and Android apps.</p>
-                <a href="#" class="feature-link">
-                    Explore <i class="fas fa-arrow-right"></i>
-                </a>
+                <a href="#" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
             </div>
-            
+
             <div class="feature-card" data-aos="fade-up" data-aos-delay="600">
-                <div class="feature-icon">
-                    <i class="fas fa-headset"></i>
-                </div>
+                <div class="feature-icon"><i class="fas fa-headset"></i></div>
                 <h3>24/7 Support</h3>
                 <p>Dedicated support team and comprehensive resources to help you succeed.</p>
-                <a href="#contact" class="feature-link">
-                    Explore <i class="fas fa-arrow-right"></i>
-                </a>
+                <a href="#contact" class="feature-link">Explore <i class="fas fa-arrow-right"></i></a>
             </div>
         </div>
     </section>
@@ -197,45 +175,34 @@
                 <h2>Showcase Your Properties</h2>
                 <p>Beautiful property listings with high-quality images, virtual tours, and detailed descriptions to attract the right tenants.</p>
                 <div class="showcase-features">
-                    <div class="showcase-feature">
-                        <i class="fas fa-check-circle"></i>
-                        <span>High-quality image galleries</span>
-                    </div>
-                    <div class="showcase-feature">
-                        <i class="fas fa-check-circle"></i>
-                        <span>Virtual tour integration</span>
-                    </div>
-                    <div class="showcase-feature">
-                        <i class="fas fa-check-circle"></i>
-                        <span>Automated availability updates</span>
-                    </div>
-                    <div class="showcase-feature">
-                        <i class="fas fa-check-circle"></i>
-                        <span>Lead tracking and management</span>
-                    </div>
+                    <div class="showcase-feature"><i class="fas fa-check-circle"></i><span>High-quality image galleries</span></div>
+                    <div class="showcase-feature"><i class="fas fa-check-circle"></i><span>Virtual tour integration</span></div>
+                    <div class="showcase-feature"><i class="fas fa-check-circle"></i><span>Automated availability updates</span></div>
+                    <div class="showcase-feature"><i class="fas fa-check-circle"></i><span>Lead tracking and management</span></div>
                 </div>
                 <a href="property.php" class="btn-primary">
                     <i class="fas fa-eye"></i> Browse Properties
                 </a>
             </div>
             <div class="showcase-visual" data-aos="fade-left">
-                <div class="property-card">
+                <div class="property-card" id="featuredPropertyCard">
                     <div class="property-badge">Featured</div>
                     <div class="property-image">
-                        <!-- Image would go here -->
-                        <div class="image-placeholder"></div>
+                        <div class="image-placeholder" id="featuredPropertyImage"></div>
                     </div>
                     <div class="property-details">
-                        <h3>Luxury 3-Bedroom Apartment</h3>
-                        <p class="property-location"><i class="fas fa-map-marker-alt"></i> Lekki Phase 1, Lagos</p>
-                        <div class="property-specs">
-                            <span><i class="fas fa-bed"></i> 3 Bedrooms</span>
-                            <span><i class="fas fa-bath"></i> 3 Bathrooms</span>
-                            <span><i class="fas fa-car"></i> 2 Parking</span>
+                        <h3 id="featuredPropertyTitle">Luxury 3-Bedroom Apartment</h3>
+                        <p class="property-location" id="featuredPropertyLocation">
+                            <i class="fas fa-map-marker-alt"></i> Lekki Phase 1, Lagos
+                        </p>
+                        <div class="property-specs" id="featuredPropertySpecs">
+                            <span><i class="fas fa-home"></i> 3 Apartments</span>
+                            <span><i class="fas fa-door-open"></i> 0 Vacant</span>
+                            <span><i class="fas fa-users"></i> 3 Occupied</span>
                         </div>
                         <div class="property-price">
-                            <strong>₦4,500,000/year</strong>
-                            <span class="property-status available">Available</span>
+                            <strong id="featuredPropertyPrice">₦4,500,000/year</strong>
+                            <span class="property-status available" id="featuredPropertyStatus">Available</span>
                         </div>
                     </div>
                 </div>
@@ -249,73 +216,8 @@
             <h2 class="section-title">Trusted by Property Professionals</h2>
             <p class="section-subtitle">See what our clients say about their experience</p>
         </div>
-        
-        <div class="testimonial-slider" data-aos="fade-up">
-            <div class="testimonial-card">
-                <div class="testimonial-rating">
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                </div>
-                <p class="testimonial-text">
-                    "KaraKata Pro transformed how we manage our 50+ properties. The automation features saved us 20 hours per week!"
-                </p>
-                <div class="testimonial-author">
-                    <div class="author-avatar">
-                        <i class="fas fa-user-circle"></i>
-                    </div>
-                    <div class="author-info">
-                        <h4>David Johnson</h4>
-                        <p>Property Manager, Elite Estates</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="testimonial-card">
-                <div class="testimonial-rating">
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star-half-alt"></i>
-                </div>
-                <p class="testimonial-text">
-                    "As a landlord with multiple tenants, the automated reminders and payment tracking have been game-changing."
-                </p>
-                <div class="testimonial-author">
-                    <div class="author-avatar">
-                        <i class="fas fa-user-circle"></i>
-                    </div>
-                    <div class="author-info">
-                        <h4>Sarah Williams</h4>
-                        <p>Property Owner, 12 Units</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="testimonial-card">
-                <div class="testimonial-rating">
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                </div>
-                <p class="testimonial-text">
-                    "The reporting features give us insights we never had before. Highly recommended for any serious property business."
-                </p>
-                <div class="testimonial-author">
-                    <div class="author-avatar">
-                        <i class="fas fa-user-circle"></i>
-                    </div>
-                    <div class="author-info">
-                        <h4>Michael Chen</h4>
-                        <p>CEO, Urban Living Group</p>
-                    </div>
-                </div>
-            </div>
+        <div class="testimonial-slider" data-aos="fade-up" id="testimonialSlider">
+            <!-- Populated by JS -->
         </div>
     </section>
 
@@ -356,7 +258,6 @@
                     <a href="#"><i class="fab fa-instagram"></i></a>
                 </div>
             </div>
-            
             <div class="footer-links">
                 <div class="footer-column">
                     <h4>Product</h4>
@@ -366,7 +267,6 @@
                     <a href="reports.php">Reporting</a>
                     <a href="rent_payments.php">Rent Collection</a>
                 </div>
-                
                 <div class="footer-column">
                     <h4>Resources</h4>
                     <a href="#">Help Center</a>
@@ -375,7 +275,6 @@
                     <a href="#">API Documentation</a>
                     <a href="#">Community</a>
                 </div>
-                
                 <div class="footer-column">
                     <h4>Company</h4>
                     <a href="#about">About Us</a>
@@ -384,7 +283,6 @@
                     <a href="#">Privacy Policy</a>
                     <a href="#">Terms of Service</a>
                 </div>
-                
                 <div class="footer-column">
                     <h4>Contact</h4>
                     <p><i class="fas fa-phone"></i> +234-810-327-3279</p>
@@ -393,7 +291,6 @@
                 </div>
             </div>
         </div>
-        
         <div class="footer-bottom">
             <p>&copy; 2025 KaraKata Pro. All rights reserved.</p>
             <div class="footer-legal">
@@ -434,14 +331,10 @@
     <!-- AOS Animation Script -->
     <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
     <script>
-        AOS.init({
-            duration: 1000,
-            once: true,
-            offset: 100
-        });
+        AOS.init({ duration: 1000, once: true, offset: 100 });
     </script>
-    
+
     <script src="../scripts/homepage.js"></script>
-     <script src="../../ui.js"></script>
+    <script src="../../ui.js"></script>
 </body>
 </html>

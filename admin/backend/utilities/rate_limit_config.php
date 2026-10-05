@@ -7,7 +7,7 @@ return [
         'limit' => 20,
         'seconds' => 60
     ],
-    
+
     // Endpoint-specific overrides
     'endpoints' => [
         // Fee endpoints (lower limits for heavy operations)
@@ -43,7 +43,7 @@ return [
             'limit' => 5,
             'seconds' => 60
         ],
-        
+
         // Payment endpoints (higher limits for payment processing)
         'process_payment' => [
             'limit' => 30,
@@ -53,7 +53,7 @@ return [
             'limit' => 30,
             'seconds' => 60
         ],
-        
+
         // Authentication endpoints (very strict)
         'admin_login3' => [
             'limit' => 5,
@@ -71,7 +71,7 @@ return [
             'limit' => 3,
             'seconds' => 60
         ],
-        
+
         // Maintenance endpoints
         'fetch_maintenance_requests' => [
             'limit' => 30,
@@ -85,20 +85,24 @@ return [
             'limit' => 10,
             'seconds' => 60
         ],
-        
+
         // Tenant endpoints
         'pay_fee' => [
             'limit' => 5,
             'seconds' => 60
         ],
-        
+        'fetch_homepage_data' => [
+            'limit' => 30,     // generous for a public homepage, but capped
+            'seconds' => 60
+        ],
+
         // General endpoints (moderate limits)
         'fetch_data' => [
             'limit' => 25,
             'seconds' => 60
         ],
     ],
-    
+
     // Global security rules
     'security' => [
         'enable_logging' => true,

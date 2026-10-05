@@ -296,13 +296,15 @@ body {
 
 .accounts-table thead {
     background: #f8f9fa;
+    color: #000;
+    font-weight: bolder;
 }
 
 .accounts-table th {
     padding: 15px;
     text-align: left;
     font-weight: 600;
-    color: #fff;
+    color: #000;
     border-bottom: 2px solid #dee2e6;
     white-space: nowrap;
 }
