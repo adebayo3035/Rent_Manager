@@ -1,5 +1,9 @@
 /* admin/css/evacuation_requests.css */
 
+/* ============================================
+   RESET & BASE
+   ============================================ */
+
 * {
     margin: 0;
     padding: 0;
@@ -18,7 +22,10 @@ body {
     padding: 24px;
 }
 
-/* Page Header */
+/* ============================================
+   PAGE HEADER
+   ============================================ */
+
 .page-header {
     margin-bottom: 30px;
 }
@@ -35,7 +42,10 @@ body {
     margin-right: 12px;
 }
 
-/* Stats Row */
+/* ============================================
+   STATS ROW
+   ============================================ */
+
 .stats-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -70,7 +80,10 @@ body {
     color: #64748b;
 }
 
-/* Tabs */
+/* ============================================
+   TABS
+   ============================================ */
+
 .tabs {
     display: flex;
     gap: 8px;
@@ -100,7 +113,10 @@ body {
     color: white;
 }
 
-/* Requests Container */
+/* ============================================
+   REQUESTS CONTAINER
+   ============================================ */
+
 .requests-container {
     margin-top: 24px;
     min-height: 400px;
@@ -141,7 +157,10 @@ body {
     display: block;
 }
 
-/* Evacuation Card */
+/* ============================================
+   EVACUATION CARD (list item)
+   ============================================ */
+
 .evacuation-card {
     background: white;
     border-radius: 16px;
@@ -206,7 +225,10 @@ body {
     border-top: 1px solid #eef2f6;
 }
 
-/* Status Badges */
+/* ============================================
+   STATUS BADGES (list cards)
+   ============================================ */
+
 .status-badge {
     padding: 4px 12px;
     border-radius: 20px;
@@ -215,12 +237,19 @@ body {
 }
 
 .status-pending_review { background: #fff3cd; color: #856404; }
-.status-approved { background: #d4edda; color: #155724; }
-.status-rejected { background: #f8d7da; color: #721c24; }
-.status-completed { background: #d1ecf1; color: #0c5460; }
+.status-approved       { background: #d4edda; color: #155724; }
+.status-rejected       { background: #f8d7da; color: #721c24; }
+.status-completed      { background: #d1ecf1; color: #0c5460; }
 
-/* Buttons */
-.btn, .btn-primary, .btn-success, .btn-outline, .btn-danger {
+/* ============================================
+   BUTTONS
+   ============================================ */
+
+.btn,
+.btn-primary,
+.btn-success,
+.btn-outline,
+.btn-danger {
     padding: 8px 20px;
     border-radius: 8px;
     font-size: 13px;
@@ -287,7 +316,41 @@ body {
     background: #e2e8f0;
 }
 
-/* Modal */
+/* Process modal — decline button pinned left */
+#processModal .btn-danger {
+    background: #dc2626;
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s;
+    margin-right: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#processModal .btn-danger:hover {
+    background: #b91c1c;
+}
+
+#processModal .btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+#processModal .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* ============================================
+   MODAL (generic shell)
+   ============================================ */
+
 .modal {
     display: none;
     position: fixed;
@@ -378,7 +441,10 @@ body {
     bottom: 0;
 }
 
-/* Form Elements */
+/* ============================================
+   FORM ELEMENTS
+   ============================================ */
+
 .form-group {
     margin-bottom: 20px;
 }
@@ -391,7 +457,9 @@ body {
     font-size: 14px;
 }
 
-.form-input, .form-select, .form-textarea {
+.form-input,
+.form-select,
+.form-textarea {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid #e2e8f0;
@@ -401,13 +469,18 @@ body {
     font-family: inherit;
 }
 
-.form-input:focus, .form-select:focus, .form-textarea:focus {
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
     outline: none;
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-/* Deduction Row */
+/* ============================================
+   DEDUCTION ROW (process modal)
+   ============================================ */
+
 .deduction-row {
     background: #f8fafc;
     padding: 12px;
@@ -427,7 +500,10 @@ body {
     padding: 8px;
 }
 
-/* Summary Box */
+/* ============================================
+   SUMMARY BOX
+   ============================================ */
+
 .summary-box {
     background: #f1f5f9;
     padding: 16px;
@@ -450,45 +526,540 @@ body {
 }
 
 .text-success { color: #10b981; }
-.text-danger { color: #ef4444; }
+.text-danger  { color: #ef4444; }
 .text-warning { color: #f59e0b; }
 
-.request-info {
+/* ============================================
+   REVIEW REQUEST INFO CARD (review modal)
+   ============================================ */
+
+.review-info-card {
     background: #f8fafc;
-    padding: 12px;
-    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0;
     margin-bottom: 20px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
-/* Responsive */
+.review-info-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
+    border-bottom: 1px solid #e2e8f0;
+    color: #1e3a8a;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+.review-info-header i {
+    color: #4f46e5;
+    font-size: 14px;
+}
+
+.review-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: #e2e8f0;
+}
+
+.review-info-item {
+    background: #ffffff;
+    padding: 14px 16px;
+    min-width: 0;
+}
+
+.review-info-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 6px;
+}
+
+.review-info-label i {
+    color: #94a3b8;
+    font-size: 11px;
+    width: 12px;
+    text-align: center;
+}
+
+.review-info-value {
+    font-size: 14px;
+    font-weight: 500;
+    color: #0f172a;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.review-info-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #fef2f2;
+    border-top: 1px solid #fecaca;
+    color: #991b1b;
+}
+
+.review-info-alert i {
+    font-size: 18px;
+    color: #dc2626;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.review-info-alert-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    opacity: 0.8;
+    margin-bottom: 2px;
+}
+
+.review-info-alert-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #dc2626;
+}
+
+/* ============================================
+   OUTSTANDING FEES (process modal)
+   ============================================ */
+
+.outstanding-fees-box {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-left: 4px solid #f59e0b;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+}
+
+.outstanding-fee-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 14px;
+    color: #1f2937;
+    border-bottom: 1px dashed #fde68a;
+}
+
+.outstanding-fee-row:last-child {
+    border-bottom: none;
+}
+
+.outstanding-fee-row .fee-name {
+    font-weight: 500;
+}
+
+.outstanding-fee-row .fee-name small {
+    display: block;
+    color: #6b7280;
+    font-weight: 400;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.outstanding-fee-row .fee-amount {
+    font-weight: 600;
+    color: #b45309;
+    white-space: nowrap;
+    margin-left: 12px;
+}
+
+.outstanding-fee-row .fee-status {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 8px;
+    letter-spacing: 0.5px;
+}
+
+.outstanding-fee-row .fee-status.overdue {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.outstanding-fee-row .fee-status.pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.outstanding-fees-total {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 2px solid #fcd34d;
+    font-weight: 700;
+    color: #92400e;
+}
+
+.fees-include-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #4b5563;
+    cursor: pointer;
+    user-select: none;
+    margin-top: 4px;
+}
+
+.fees-include-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #f59e0b;
+}
+
+/* ============================================
+   FEES INFO SECTION (details modal — read-only)
+   ============================================ */
+
+.fees-info-section {
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 12px 0;
+}
+
+.fees-info-section h4 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    color: #92400e;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ============================================
+   DETAILS MODAL — WRAPPER
+   ============================================ */
+
+.details-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 4px 0;
+}
+
+/* ============================================
+   DETAILS MODAL — STATUS BANNER
+   ============================================ */
+
+.details-status-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    align-self: flex-start;
+    border: 1px solid transparent;
+}
+
+.details-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4);
+}
+
+.details-status-banner.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fcd34d;
+}
+
+.details-status-banner.status-approved {
+    background: #dbeafe;
+    color: #1e40af;
+    border-color: #93c5fd;
+}
+
+.details-status-banner.status-rejected {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+}
+
+.details-status-banner.status-completed {
+    background: #d1fae5;
+    color: #065f46;
+    border-color: #6ee7b7;
+}
+
+.details-status-banner.status-default {
+    background: #f1f5f9;
+    color: #334155;
+    border-color: #cbd5e1;
+}
+
+/* ============================================
+   DETAILS MODAL — KEY-VALUE GRID
+   ============================================ */
+
+.details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: #e2e8f0;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.detail-item {
+    background: #ffffff;
+    padding: 12px 14px;
+    min-width: 0;
+}
+
+.detail-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 4px;
+}
+
+.detail-label i {
+    color: #94a3b8;
+    font-size: 11px;
+    width: 12px;
+    text-align: center;
+}
+
+.detail-value {
+    font-size: 14px;
+    font-weight: 500;
+    color: #0f172a;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.detail-value.mono {
+    font-family: ui-monospace, "SF Mono", Monaco, monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.2px;
+    color: #1e293b;
+}
+
+.detail-value.accent-green {
+    color: #059669;
+    font-weight: 600;
+}
+
+/* ============================================
+   DETAILS MODAL — NARRATIVE BLOCKS
+   ============================================ */
+
+.detail-block {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #94a3b8;
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+
+.detail-block-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.detail-block-header i {
+    font-size: 13px;
+}
+
+.detail-block-body {
+    font-size: 14px;
+    color: #1e293b;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Info variant (admin notes) */
+.detail-block.detail-block-info {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    border-left-color: #3b82f6;
+}
+
+.detail-block.detail-block-info .detail-block-header {
+    color: #1e40af;
+}
+
+.detail-block.detail-block-info .detail-block-header i {
+    color: #3b82f6;
+}
+
+/* Danger variant (rejection / withdrawal) */
+.detail-block.detail-block-danger {
+    background: #fef2f2;
+    border-color: #fecaca;
+    border-left-color: #dc2626;
+}
+
+.detail-block.detail-block-danger .detail-block-header {
+    color: #991b1b;
+}
+
+.detail-block.detail-block-danger .detail-block-header i {
+    color: #dc2626;
+}
+
+/* ============================================
+   DETAILS MODAL — SETTLEMENT SECTION
+   ============================================ */
+
+.details-settlement {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.details-settlement-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border-bottom: 1px solid #e2e8f0;
+    color: #075985;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.details-settlement-header i {
+    color: #0284c7;
+    font-size: 13px;
+}
+
+.details-settlement .summary-box {
+    padding: 14px;
+    margin: 0;
+    background: #ffffff;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.details-settlement .summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px dashed #e2e8f0;
+    font-size: 14px;
+}
+
+.details-settlement .summary-row:last-child {
+    border-bottom: none;
+}
+
+.details-settlement .summary-row small {
+    display: block;
+    width: 100%;
+    color: #64748b;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.details-settlement .summary-row.summary-total {
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 2px solid #cbd5e1;
+    border-bottom: none;
+    font-size: 15px;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
 @media (max-width: 768px) {
     .container {
         padding: 16px;
     }
-    
+
     .stats-row {
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
     }
-    
+
     .card-body {
         grid-template-columns: 1fr;
     }
-    
+
     .card-actions {
         flex-direction: column;
     }
-    
+
     .card-actions .btn {
         width: 100%;
         justify-content: center;
     }
-    
+
     .deduction-row .row-fields {
         grid-template-columns: 1fr;
     }
-    
+
     .modal-content {
         width: 95%;
+    }
+}
+
+@media (max-width: 480px) {
+    .review-info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .review-info-item {
+        padding: 12px 14px;
+    }
+
+    .details-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .detail-item {
+        padding: 10px 12px;
     }
 }

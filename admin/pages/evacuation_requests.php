@@ -105,6 +105,20 @@
                     <input type="date" class="form-input" id="actualMoveOutDate" required>
                 </div>
 
+                <!-- NEW: Outstanding Fees -->
+                <div class="form-group" id="outstandingFeesSection" style="display: none;">
+                    <label>
+                        <i class="fas fa-exclamation-triangle" style="color: #f59e0b;"></i>
+                        Outstanding Fees
+                    </label>
+                    <div class="outstanding-fees-box" id="outstandingFeesList"></div>
+
+                    <label class="fees-include-toggle">
+                        <input type="checkbox" id="includeOutstandingFees" checked>
+                        <span>Include these fees in the settlement deductions</span>
+                    </label>
+                </div>
+
                 <div class="form-group">
                     <label>Security Deposit Deductions</label>
                     <div id="deductionsContainer"></div>
@@ -118,6 +132,9 @@
                 </div>
             </div>
             <div class="modal-footer">
+                <button class="btn btn-danger" onclick="EvacuationApp.declineApproval()">
+                    <i class="fas fa-undo"></i> Decline Approval
+                </button>
                 <button class="btn btn-outline" onclick="EvacuationApp.closeProcessModal()">Cancel</button>
                 <button class="btn btn-success" onclick="EvacuationApp.submitProcess()">Complete Evacuation</button>
             </div>
