@@ -605,13 +605,13 @@ class DataManager {
           `Failed to fetch ${this.config.itemName} details:`,
           data.message,
         );
-        alert(
-          `Failed to fetch ${this.config.itemName} details: ${data.message}`,
+        UI.alert(
+          `Failed to fetch ${this.config.itemName} details: ${data.message}`, "Error",
         );
       }
     } catch (error) {
       console.error(`Error fetching ${this.config.itemName} details:`, error);
-      alert(`Error fetching ${this.config.itemName} details`);
+      UI.alert(`Error fetching ${this.config.itemName} details`, "Error");
     }
   }
 

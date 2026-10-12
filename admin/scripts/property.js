@@ -121,9 +121,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let html = `
         <td>${item.property_code}</td>
+         <td>${item.name}</td>
         <td>${item.client_name}</td>
         <td>${item.property_type_name}</td>
-        <td>${item.agent_fullname}</td>
         <td>${item.address}</td>
         <td>${statusLabel}</td>
     `;

@@ -169,6 +169,11 @@ document.addEventListener("DOMContentLoaded", () => {
         render: (item) => item.apartment_type_name,
       },
       {
+        field: "occupied_by",
+        label: "Occupied By",
+        render: (item) => item.occupied_by,
+      },
+      {
         field: "agent_fullname",
         label: "Agent",
         render: (item) => item.agent.agent_fullname,
@@ -191,6 +196,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td>${item.apartment_code}</td>
         <td>${item.property_name}</td>
         <td>${item.apartment_type_name}</td>
+        <td>${item.occupied_by}</td>
         <td>${item.agent.agent_fullname}</td>
         <td>${statusLabel}</td>
     `;

@@ -37,6 +37,7 @@
                 <th>Apartment ID</th>
                 <th>Property Name</th>
                 <th>Type</th>
+                <th>Occupied By</th>
                 <th>Agent</th>
                 <th>Status</th>
                 <th colspan="2">Actions</th>
