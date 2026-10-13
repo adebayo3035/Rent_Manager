@@ -1,17 +1,14 @@
 <?php
 // process_evacuation.php - Admin processes final move-out and settlement
 //
-// Scope (this revision):
-//   - Outstanding fees auto-deducted and marked paid with full audit trail
-//   - Fee settlements recorded in `payments` as category='fee'
-//   - Refund recorded in `payments` as category='refund'
-//   - Settlement-level receipt stored on the request
-//   - Shortfalls (refund > deposit coverage) logged to settlement_shortfalls
+// Refund model (this revision):
+//   client.wallet_balance now contains:
+//      - the client's rent-share earnings
+//      - held tenant deposits
+//   So ALL refunds are debited from client.wallet_balance.
 //
-// Out of scope (business decision pending):
-//   - Reversing the 85/10/5 rent split
-//   - Who bears shortfall losses
-//   - Automated refund disbursement
+//   HARD GATE: if client.wallet_balance < refund_amount, reject the whole process.
+//   On success: debit client wallet, credit tenant wallet, both with ledger entries.
 
 header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
@@ -34,7 +31,7 @@ $auth = requireAuth([
     'rate_key' => 'process_evacuation',
     'rate_limit' => [10, 60],
     'csrf' => ['enabled' => true, 'form_name' => 'process_evacuation_form'],
-    'roles' => ['Super Admin', 'Admin']
+    'roles' => ['Super Admin', 'Admin'],
 ]);
 
 $adminId = $auth['user_id'];
@@ -89,7 +86,6 @@ foreach ($deductions as $idx => $d) {
 }
 $total_deductions = round($total_deductions, 2);
 
-// Populated inside the transaction
 $outstandingFees = [];
 $outstandingFeesTotal = 0.0;
 
@@ -97,18 +93,24 @@ $conn->begin_transaction();
 
 try {
     // ================================================================
-    // FETCH APPROVED REQUEST
+    // FETCH APPROVED REQUEST + CLIENT WALLET
     // ================================================================
     $stmt = $conn->prepare("
-        SELECT er.*,
-               t.rent_balance, t.created_by, t.apartment_code AS tenant_apt,
-               a.security_deposit, a.apartment_code, a.rent_amount, a.property_code
-        FROM evacuation_requests er
-        JOIN tenants t   ON er.tenant_code = t.tenant_code
-        JOIN apartments a ON er.apartment_code = a.apartment_code
-        WHERE er.request_id = ? AND er.status = 'approved'
-        FOR UPDATE
-    ");
+    SELECT er.*,
+           t.rent_balance, t.created_by, t.apartment_code AS tenant_apt,
+           t.wallet_balance AS tenant_wallet_balance,
+           a.security_deposit, a.apartment_code, a.rent_amount, a.property_code,
+           p.client_code,
+           c.wallet_balance AS client_wallet_balance,
+           c.firstname AS client_firstname, c.lastname AS client_lastname
+    FROM evacuation_requests er
+    JOIN tenants t     ON er.tenant_code = t.tenant_code
+    JOIN apartments a  ON er.apartment_code = a.apartment_code
+    JOIN properties p  ON a.property_code = p.property_code
+    LEFT JOIN clients c ON p.client_code = c.client_code
+    WHERE er.request_id = ? AND er.status = 'approved'
+    FOR UPDATE
+");
     $stmt->bind_param("s", $request_id);
     $stmt->execute();
     $request = $stmt->get_result()->fetch_assoc();
@@ -118,24 +120,22 @@ try {
         throw new Exception("Approved evacuation request not found", 404);
     }
 
+    if (empty($request['client_code'])) {
+        throw new Exception("No client (landlord) linked to this apartment", 400);
+    }
+
     if ($userRole !== 'Super Admin' && (int) $request['created_by'] !== (int) $adminId) {
         throw new Exception("You can only process requests for tenants you onboarded", 403);
     }
 
     // ================================================================
-    // FETCH OUTSTANDING FEES (if requested)
+    // FETCH OUTSTANDING FEES
     // ================================================================
     if ($includeOutstandingFees) {
         $feeStmt = $conn->prepare("
             SELECT
-                tf.tenant_fee_id,
-                tf.fee_type_id,
-                tf.amount,
-                tf.due_date,
-                tf.status,
-                tf.notes,
-                ft.fee_name,
-                ft.fee_code
+                tf.tenant_fee_id, tf.fee_type_id, tf.amount, tf.due_date,
+                tf.status, tf.notes, ft.fee_name, ft.fee_code
             FROM tenant_fees tf
             LEFT JOIN fee_types ft ON ft.fee_type_id = tf.fee_type_id
             WHERE tf.tenant_code = ?
@@ -177,7 +177,6 @@ try {
         }
         $feeStmt->close();
         $outstandingFeesTotal = round($outstandingFeesTotal, 2);
-
         $total_deductions = round($total_deductions + $outstandingFeesTotal, 2);
 
         logActivity("Outstanding fees included: " . count($outstandingFees)
@@ -208,7 +207,6 @@ try {
 
     $cycle_total_days = (int) $cycle_start->diff($cycle_end)->days + 1;
 
-    // Clamp move_out to cycle
     $moveOut = new DateTime($actual_move_out_date);
     $moveOut->setTime(0, 0, 0);
 
@@ -236,10 +234,34 @@ try {
         throw new Exception($calcErr->getMessage(), 400);
     }
 
-    $final_settlement = $breakdown['final_settlement_amount'];
-    $security_deposit_refund = $breakdown['security_deposit_refund'];
+    $final_settlement = (float) $breakdown['final_settlement_amount'];
 
     logActivity("Settlement computed for {$request_id}: " . json_encode($breakdown));
+
+    // ================================================================
+    // WALLET GATE: CLIENT WALLET MUST COVER THE FULL REFUND
+    // ================================================================
+    $refundAmount = $final_settlement > 0 ? $final_settlement : 0.0;
+    $clientWalletBalance = (float) ($request['client_wallet_balance'] ?? 0.0);
+
+    if ($refundAmount > 0 && $clientWalletBalance < $refundAmount) {
+        $shortfall = round($refundAmount - $clientWalletBalance, 2);
+
+        logActivity("BLOCKED: Client wallet insufficient. "
+            . "Required ₦{$refundAmount}, Available ₦{$clientWalletBalance}, Shortfall ₦{$shortfall}");
+
+        throw new Exception(
+            "Client has insufficient wallet balance to process this evacuation. "
+            . "Refund due to tenant: ₦" . number_format($refundAmount, 2) . ". "
+            . "Client wallet balance: ₦" . number_format($clientWalletBalance, 2) . ". "
+            . "Shortfall: ₦" . number_format($shortfall, 2) . ". "
+            . "Please ask the client to top up their wallet and try again.",
+            400
+        );
+    }
+
+    logActivity("Wallet gate passed: required = ₦{$refundAmount}, "
+        . "available = ₦{$clientWalletBalance}");
 
     // ================================================================
     // GENERATE SETTLEMENT-LEVEL IDENTIFIERS
@@ -276,8 +298,8 @@ try {
             processed_at               = NOW()
         WHERE request_id = ?
     ");
-        $updateRequest->bind_param(
-        "sdiidddddddddddssis",    // ← 19 chars — CORRECT
+    $updateRequest->bind_param(
+        "sdiidddddddddddssis",
         $currentCycle['rent_payment_id'],
         $currentCycle['cycle_rent_amount'],
         $cycle_total_days,
@@ -292,7 +314,7 @@ try {
         $breakdown['damages_from_share'],
         $breakdown['damages_owed_by_tenant'],
         $final_settlement,
-        $security_deposit_refund,
+        $breakdown['security_deposit_refund'],
         $settlementReceipt,
         $settlementTxnId,
         $adminId,
@@ -304,7 +326,7 @@ try {
     $updateRequest->close();
 
     // ================================================================
-    // INSERT DEDUCTIONS (with source traceability)
+    // INSERT DEDUCTIONS
     // ================================================================
     if (!empty($cleanDeductions)) {
         $insertDeduction = $conn->prepare("
@@ -336,7 +358,6 @@ try {
     $settledFeeReceipts = [];
 
     if (!empty($outstandingFees)) {
-        // Shared prepared statements
         $updateFee = $conn->prepare("
             UPDATE tenant_fees
             SET status = 'paid',
@@ -370,7 +391,6 @@ try {
             $feeDesc = "Settled via evacuation {$request_id} | "
                 . ($fee['fee_name'] ?: 'Fee') . " (" . $fee['fee_code'] . ")";
 
-            // 1. Insert payments row
             $insertPayment->bind_param(
                 "ssdssssi",
                 $request['tenant_code'],
@@ -387,7 +407,6 @@ try {
             }
             $feePaymentId = $insertPayment->insert_id;
 
-            // 2. Update tenant_fees with audit trail
             $updateFee->bind_param(
                 "sissi",
                 $feeReceipt,
@@ -416,13 +435,13 @@ try {
     }
 
     // ================================================================
-    // RECORD REFUND IN PAYMENTS (if applicable)
+    // RECORD REFUND IN PAYMENTS
     // ================================================================
     $refundReceipt = null;
     $refundTxnId = null;
     $refundPaymentId = null;
 
-    if ($final_settlement > 0) {
+    if ($refundAmount > 0) {
         $refundReceipt = 'EVRFD-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
         $refundTxnId = 'TXN-EVRFD-' . time() . '-' . rand(1000, 9999);
         $refundDesc = "Evacuation refund for {$request_id} (move-out {$actual_move_out_date})";
@@ -432,15 +451,15 @@ try {
                 tenant_code, apartment_code, amount, balance,
                 payment_date, due_date, payment_method, payment_status,
                 receipt_number, reference_number, description, recorded_by,
-                payment_category, created_at
+                payment_category, payment_type, created_at
             ) VALUES (?, ?, ?, 0, NOW(), NOW(), 'settlement', 'completed',
-                      ?, ?, ?, ?, 'refund', NOW())
+                      ?, ?, ?, ?, 'refund', 'outflow', NOW())
         ");
         $refundStmt->bind_param(
             "ssdsssi",
             $request['tenant_code'],
             $request['apartment_code'],
-            $final_settlement,
+            $refundAmount,
             $refundReceipt,
             $refundTxnId,
             $refundDesc,
@@ -452,40 +471,101 @@ try {
         $refundPaymentId = $refundStmt->insert_id;
         $refundStmt->close();
 
-        logActivity("Refund recorded: ₦{$final_settlement} | Receipt={$refundReceipt} | PaymentID={$refundPaymentId}");
+        logActivity("Refund recorded: ₦{$refundAmount} | Receipt={$refundReceipt} | PaymentID={$refundPaymentId}");
     }
 
     // ================================================================
-    // LOG SHORTFALL (refund exceeds what the deposit covered)
+    // DEBIT CLIENT WALLET + CREDIT TENANT WALLET
     // ================================================================
-    $shortfallAmount = 0.0;
+    $clientWalletNewBalance = $clientWalletBalance;
+    $tenantWalletNewBalance = (float) ($request['tenant_wallet_balance'] ?? 0.0);
 
-    if ($final_settlement > 0 && $final_settlement > $security_deposit_refund) {
-        $shortfallAmount = round($final_settlement - $security_deposit_refund, 2);
+    if ($refundAmount > 0) {
+        // ---------------- Debit client wallet ----------------
+        $clientWalletNewBalance = round($clientWalletBalance - $refundAmount, 2);
 
-        $shortfallStmt = $conn->prepare("
-            INSERT INTO settlement_shortfalls
-                (request_id, tenant_code, apartment_code,
-                 total_refund, deposit_covered, shortfall_amount, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'unresolved')
+        $debitClient = $conn->prepare("
+            UPDATE clients
+            SET wallet_balance = wallet_balance - ?
+            WHERE client_code = ?
         ");
-        $shortfallStmt->bind_param(
-            "sssddd",
-            $request_id,
-            $request['tenant_code'],
-            $request['apartment_code'],
-            $final_settlement,
-            $security_deposit_refund,
-            $shortfallAmount
-        );
-        if (!$shortfallStmt->execute()) {
-            // Non-fatal — log but don't fail the whole transaction
-            logActivity("WARNING: Failed to log shortfall: " . $shortfallStmt->error);
+        $debitClient->bind_param("ds", $refundAmount, $request['client_code']);
+        if (!$debitClient->execute()) {
+            throw new Exception("Failed to debit client wallet: " . $debitClient->error);
         }
-        $shortfallStmt->close();
+        $debitClient->close();
 
-        logActivity("SHORTFALL logged: ₦{$shortfallAmount} "
-            . "(refund ₦{$final_settlement} > deposit coverage ₦{$security_deposit_refund})");
+        // Client ledger entry
+        $clientDebitAmount = -$refundAmount;
+        $clientLedgerNote = "Evacuation refund debit for {$request_id} "
+            . "(tenant {$request['tenant_code']}, receipt {$refundReceipt})";
+
+        $clientLedger = $conn->prepare("
+            INSERT INTO client_wallet_transactions
+                (client_code, transaction_type, amount, running_balance,
+                 request_id, notes, created_by)
+            VALUES (?, 'settlement_debit', ?, ?, ?, ?, ?)
+        ");
+        $clientLedger->bind_param(
+            "sddssi",
+            $request['client_code'],
+            $clientDebitAmount,
+            $clientWalletNewBalance,
+            $request_id,
+            $clientLedgerNote,
+            $adminId
+        );
+        if (!$clientLedger->execute()) {
+            throw new Exception("Failed to write client ledger: " . $clientLedger->error);
+        }
+        $clientLedger->close();
+
+        logActivity("Client wallet debited: {$request['client_code']} | "
+            . "₦{$refundAmount} | "
+            . "Old: ₦{$clientWalletBalance} → New: ₦{$clientWalletNewBalance}");
+
+        // ---------------- Credit tenant wallet ----------------
+        $tenantWalletNewBalance = round($tenantWalletNewBalance + $refundAmount, 2);
+
+        $creditTenant = $conn->prepare("
+            UPDATE tenants
+            SET wallet_balance = wallet_balance + ?
+            WHERE tenant_code = ?
+        ");
+        $creditTenant->bind_param("ds", $refundAmount, $request['tenant_code']);
+        if (!$creditTenant->execute()) {
+            throw new Exception("Failed to credit tenant wallet: " . $creditTenant->error);
+        }
+        $creditTenant->close();
+
+        // Tenant ledger entry
+        $tenantLedgerNote = "Evacuation refund for {$request_id} "
+            . "(settlement {$settlementReceipt})";
+
+        $tenantLedger = $conn->prepare("
+            INSERT INTO tenant_wallet_transactions
+                (tenant_code, transaction_type, amount, running_balance,
+                 request_id, notes, created_by)
+            VALUES (?, 'refund_credit', ?, ?, ?, ?, ?)
+        ");
+        $tenantLedger->bind_param(
+            "sddssi",
+            $request['tenant_code'],
+            $refundAmount,
+            $tenantWalletNewBalance,
+            $request_id,
+            $tenantLedgerNote,
+            $adminId
+        );
+        if (!$tenantLedger->execute()) {
+            throw new Exception("Failed to write tenant ledger: " . $tenantLedger->error);
+        }
+        $tenantLedger->close();
+
+        logActivity("Tenant wallet credited: {$request['tenant_code']} | "
+            . "₦{$refundAmount} | New balance: ₦{$tenantWalletNewBalance}");
+    } else {
+        logActivity("Refund is zero — no wallet movements");
     }
 
     // ================================================================
@@ -551,7 +631,9 @@ try {
     // ================================================================
     try {
         if ($final_settlement > 0) {
-            $refundMsg = "Final refund due: ₦" . number_format($final_settlement, 2);
+            $refundMsg = "Final refund of ₦" . number_format($final_settlement, 2)
+                . " has been credited to your wallet. "
+                . "You can request a withdrawal from your dashboard.";
         } elseif ($final_settlement < 0) {
             $refundMsg = "Outstanding amount owed: ₦" . number_format(abs($final_settlement), 2);
         } else {
@@ -582,19 +664,52 @@ try {
             [
                 'request_id' => $request_id,
                 'final_settlement_amount' => $final_settlement,
-                'security_deposit_refund' => $security_deposit_refund,
+                'security_deposit_refund' => $breakdown['security_deposit_refund'],
                 'move_out_date' => $actual_move_out_date,
                 'outstanding_fees_total' => $outstandingFeesTotal,
                 'outstanding_fees_count' => count($outstandingFees),
                 'refund_receipt_number' => $refundReceipt,
                 'settlement_receipt_number' => $settlementReceipt,
+                'tenant_wallet_balance' => $tenantWalletNewBalance,
             ],
             'high',
-            '../evacuation_status.php',
-            'View Settlement'
+            '../wallet.php',
+            'View Wallet'
         );
     } catch (Exception $notifErr) {
         logActivity("WARNING: Tenant notification failed: " . $notifErr->getMessage());
+    }
+
+    // ================================================================
+    // NOTIFY CLIENT (if wallet was debited)
+    // ================================================================
+    try {
+        if ($refundAmount > 0) {
+            $clientNotifMessage = "A tenant refund of ₦"
+                . number_format($refundAmount, 2) . " was processed for tenant "
+                . $request['tenant_code'] . ". "
+                . "Your wallet balance is now ₦"
+                . number_format($clientWalletNewBalance, 2) . ".";
+
+            createNotification(
+                $conn,
+                $request['client_code'],
+                'wallet',
+                'Wallet Debited — Tenant Refund',
+                $clientNotifMessage,
+                [
+                    'request_id' => $request_id,
+                    'amount_debited' => $refundAmount,
+                    'new_wallet_balance' => $clientWalletNewBalance,
+                    'tenant_code' => $request['tenant_code'],
+                ],
+                'high',
+                '../wallet.php',
+                'View Wallet'
+            );
+        }
+    } catch (Exception $notifErr) {
+        logActivity("WARNING: Client notification failed: " . $notifErr->getMessage());
     }
 
     // ================================================================
@@ -637,28 +752,27 @@ try {
                 'manual_deductions_total' => round($total_deductions - $outstandingFeesTotal, 2),
             ],
 
-            // Settlement-level audit
             'settlement_receipt_number' => $settlementReceipt,
             'settlement_transaction_id' => $settlementTxnId,
 
-            // Fees settled
             'outstanding_fees' => $outstandingFees,
             'outstanding_fees_total' => $outstandingFeesTotal,
             'outstanding_fees_count' => count($outstandingFees),
             'settled_fee_receipts' => $settledFeeReceipts,
 
-            // Refund
             'refund_receipt_number' => $refundReceipt,
             'refund_transaction_id' => $refundTxnId,
             'refund_payment_id' => $refundPaymentId,
 
-            // Totals
             'final_settlement_amount' => $final_settlement,
-            'security_deposit_refund' => $security_deposit_refund,
-            'shortfall_amount' => $shortfallAmount,
-            'has_shortfall' => $shortfallAmount > 0,
+            'security_deposit_refund' => $breakdown['security_deposit_refund'],
 
-            // Context
+            // Wallet movements
+            'client_wallet_debited' => $refundAmount,
+            'client_wallet_new_balance' => $clientWalletNewBalance,
+            'tenant_wallet_credited' => $refundAmount,
+            'tenant_wallet_new_balance' => $tenantWalletNewBalance,
+
             'move_out_date' => $actual_move_out_date,
         ]
     );
