@@ -218,3 +218,95 @@ function sanitizeNumberWithCommas($value, $allowNull = false, $min = null, $max 
     
     return $number;
 }
+
+/**
+ * Validate a payment reference against the payment method.
+ *
+ * Format: PREFIX-YYYYMMDD-HEX(6)
+ *   BNK-20261014-8F3A2C
+ *   CSH-20261014-4D9E1B
+ *
+ * @param string $ref     The reference to validate
+ * @param string $method  The payment method it claims to be for
+ * @return array { valid: bool, message: string, normalized: string }
+ */
+function validatePaymentReference(string $ref, string $method): array
+{
+    $ref = strtoupper(trim($ref));
+
+    if ($ref === '') {
+        return ['valid' => false, 'message' => 'Reference is required', 'normalized' => ''];
+    }
+
+    // Length guard (avoid regex on huge strings)
+    if (strlen($ref) > 30) {
+        return ['valid' => false, 'message' => 'Reference is too long', 'normalized' => ''];
+    }
+
+    // Format: PREFIX-YYYYMMDD-HEX6
+    if (!preg_match('/^([A-Z]{3})-(\d{8})-([0-9A-F]{6})$/', $ref, $m)) {
+        return [
+            'valid' => false,
+            'message' => 'Reference must be in format XXX-YYYYMMDD-XXXXXX',
+            'normalized' => '',
+        ];
+    }
+
+    $prefix = $m[1];
+    $datePart = $m[2];
+
+    // Validate the date part is a real date
+    $y = (int) substr($datePart, 0, 4);
+    $mo = (int) substr($datePart, 4, 2);
+    $d = (int) substr($datePart, 6, 2);
+    if (!checkdate($mo, $d, $y)) {
+        return ['valid' => false, 'message' => 'Reference contains an invalid date', 'normalized' => ''];
+    }
+
+    // Reject dates more than 7 days in the future or older than 1 year
+    $ts = mktime(0, 0, 0, $mo, $d, $y);
+    $now = time();
+    if ($ts > $now + (7 * 86400)) {
+        return ['valid' => false, 'message' => 'Reference date is too far in the future', 'normalized' => ''];
+    }
+    if ($ts < $now - (365 * 86400)) {
+        return ['valid' => false, 'message' => 'Reference is more than a year old', 'normalized' => ''];
+    }
+
+    // Prefix must match the method
+    $expectedPrefixes = [
+        'bank_transfer' => 'BNK',
+        'cash'          => 'CSH',
+        'cheque'        => 'CHQ',
+        'card'          => 'CRD',
+        'wallet_offset' => 'WLT',
+        'other'         => 'OTH',
+    ];
+
+    $methodSlug = strtolower(trim($method));
+    $expectedPrefix = $expectedPrefixes[$methodSlug] ?? null;
+
+    if ($expectedPrefix && $prefix !== $expectedPrefix) {
+        return [
+            'valid' => false,
+            'message' => "Reference prefix '{$prefix}' does not match payment method '{$methodSlug}'",
+            'normalized' => '',
+        ];
+    }
+
+    return ['valid' => true, 'message' => '', 'normalized' => $ref];
+}
+
+function generatePaymentReference(string $method): string
+{
+    $prefixes = [
+        'bank_transfer' => 'BNK',
+        'cash'          => 'CSH',
+        'cheque'        => 'CHQ',
+        'card'          => 'CRD',
+        'wallet_offset' => 'WLT',
+        'other'         => 'OTH',
+    ];
+    $prefix = $prefixes[strtolower($method)] ?? 'PMT';
+    return $prefix . '-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+}

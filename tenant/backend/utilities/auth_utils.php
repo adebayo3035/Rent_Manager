@@ -39,7 +39,7 @@ function verifyAndRehashSecretAnswer($pdo, $adminId, $inputSecretAnswer, $stored
 
         $newHash = hashPassword($inputSecretAnswer);
 
-        $stmt = $pdo->prepare("UPDATE tenants SET secret_answer = ? WHERE client_code = ?");
+        $stmt = $pdo->prepare("UPDATE tenants SET secret_answer = ? WHERE tenant_code = ?");
         $stmt->execute([$newHash, $adminId]);
     }
 
@@ -52,7 +52,7 @@ function password_needsRehashPassword($pdo, $adminId, $inputPassword, $storedHas
 
         $newHash = hashPassword($inputPassword);
 
-        $stmt = $pdo->prepare("UPDATE tenants SET password = ? WHERE client_code = ?");
+        $stmt = $pdo->prepare("UPDATE tenants SET password = ? WHERE tenant_code = ?");
         $stmt->execute([$newHash, $adminId]);
     }
 }

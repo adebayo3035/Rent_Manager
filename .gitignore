@@ -45,6 +45,9 @@ activity_log.txt
 **/admin/backend/clients/client_photos/*
 !**/admin/backend/clients/client_photos/.gitkeep
 
+**/client/backend/wallet/proofs/*
+!**/client/backend/wallet/proofs/.gitkeep
+
 # ==================== IDE / OS ====================
 .vscode/
 .idea/

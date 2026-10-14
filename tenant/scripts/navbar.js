@@ -818,6 +818,7 @@ async function fetchNavbarUserData() {
         const isAuthError =
           statusCode === 401 ||
           statusCode === 403 ||
+          statusCode === 404 ||
           (error.message &&
             (error.message.toLowerCase().includes("unauthorized") ||
               error.message.toLowerCase().includes("not logged in") ||

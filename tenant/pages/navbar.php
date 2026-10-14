@@ -69,6 +69,10 @@
                     <i class="fas fa-money"></i>
                     <span>Manage Fees</span>
                 </a>
+                <a href="wallet.php" class="nav-item" data-page="wallet">
+                    <i class="fas fa-wallet"></i>
+                    <span>My Wallet</span>
+                </a>
                 <a href="documents.php" class="nav-item" data-page="documents">
                     <i class="fas fa-file-alt"></i>
                     <span>Documents</span>

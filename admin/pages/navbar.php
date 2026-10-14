@@ -78,6 +78,9 @@
                             <a href="fee_management.php" class="dropdown-item">
                                 <i class="fas fa-coins"></i> Manage Fees
                             </a>
+                            <a href="wallet_requests.php" class="dropdown-item">
+                                <i class="fas fa-wallet"></i> Wallet Requests
+                            </a>
                             <a href="evacuation_requests.php" class="dropdown-item">
                                 <i class="fas fa-door-open"></i> Tenant Evacuation
                             </a>
@@ -251,6 +254,9 @@
                                 </a>
                                 <a href="fee_management.php" class="mobile-nav-link sub">
                                     <i class="fas fa-coins"></i> Manage Fees
+                                </a>
+                                 <a href="wallet_requests.php" class="mobile-nav-link sub">
+                                    <i class="fas fa-wallet"></i> Wallet Requests
                                 </a>
                                 <a href="evacuation_requests.php" class="mobile-nav-link sub">
                                     <i class="fas fa-door-open"></i> Tenant Evacuation

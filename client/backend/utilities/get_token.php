@@ -10,7 +10,7 @@ require_once __DIR__ . '/../utilities/auth_utils.php';
 session_start();
 
 // Only allow authenticated users to get tokens
-if (!isset($_SESSION['unique_id'])) {
+if (!isset($_SESSION['client_code'])) {
     echo json_encode([
         'success' => false,
         'message' => 'Not authenticated'

@@ -37,7 +37,6 @@
                 <!-- Hidden file inputs -->
                 <input type="file" id="photoFileInput" accept="image/jpeg,image/png" style="display: none;">
                 <input type="file" id="cameraFileInput" accept="image/*" capture="user" style="display: none;">
-                <div class="tenant-name" id="tenantName">Loading...</div>
                 <div class="client-name" id="clientName">Loading...</div>
                 <div class="client-role" id="clientCode">Property Owner</div>
             </div>
@@ -69,6 +68,10 @@
                 <a href="settlement.php" class="nav-item" data-page="settlement">
                     <i class="fas fa-handshake"></i>
                     <span>Settlements</span>
+                </a>
+                <a href="wallet.php" class="nav-item" data-page="wallet">
+                    <i class="fas fa-wallet"></i>
+                    <span>My Wallet</span>
                 </a>
                 <a href="fees.php" class="nav-item" data-page="fees">
                     <i class="fas fa-money"></i>

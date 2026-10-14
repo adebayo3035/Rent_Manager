@@ -20,6 +20,11 @@
         <button id="addNewTenantBtn" class="addNewBtnModal">
             <i class="fa fa-plus" aria-hidden="true"></i> Add New Tenant
         </button>
+        <a href = "tenant_debts.php">
+         <button id="tenantDebtsBtn" class="addNewBtnModal">
+            <i class="fas fa-wallet" aria-hidden="true">Tenant Debts</i>
+        </button>
+        </a>
 
         <div class="livesearch">
             <input type="text" id="tenantLiveSearch" placeholder="Search for Tenant...">
