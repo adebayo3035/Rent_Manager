@@ -4,8 +4,17 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
+require_once __DIR__ . '/../utilities/rate_limit.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';
+if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
-session_start();
+$auth = requireAuth([
+    'method'                 => 'POST',
+    'rate_key'               => 'create_maintenance_request',
+    'roles'                  => ['Tenant'],
+    'require_active_tenancy' => true,
+]);
 
 // Define allowed secret questions mapping
 $question_map = [
@@ -41,6 +50,7 @@ try {
         logActivity("RESET_SECRET: Authorization failed - Invalid role: " . $role);
         json_error("Unauthorized access", 403, null, 'UNAUTHORIZED');
     }
+    
     
     logActivity("RESET_SECRET: User role verified - Role: " . $_SESSION['role']);
 

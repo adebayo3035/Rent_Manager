@@ -130,6 +130,19 @@ function requireAuth(array $options = [])
         }
     }
 
+    // NEW: active tenancy check
+    if (!empty($options['require_active_tenancy'])) {
+        $state = $_SESSION['tenant_state'] ?? null;
+
+        if ($state !== 'active') {
+            logActivity(
+                "Blocked: tenant {$userId} (state: " . ($state ?? 'unset')
+                . ") tried to access active-only endpoint"
+            );
+            json_error("This action is not available for evacuated tenants.", 403);
+        }
+    }
+
     logActivity("Auth OK | User={$userId} | Role={$userRole}");
 
     return [

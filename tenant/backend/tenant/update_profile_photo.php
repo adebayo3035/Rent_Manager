@@ -22,27 +22,23 @@ define('PHOTO_UPLOAD_DIR', __DIR__ . '/../../../admin/backend/tenants/tenant_pho
 define('PHOTO_URL_PATH', '/admin/backend/tenants/tenant_photos/');
 
 require_once __DIR__ . '/../utilities/config.php';
-// require_once __DIR__ . '/../utilities/auth_utils.php';
-// require_once __DIR__ . '/../utilities/utils.php';
-// require_once __DIR__ . '/../utilities/auth_guard.php';
-// require_once __DIR__ . '/../utilities/rate_limit.php';
 
 
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
- if (!isset($_SESSION)) session_start();
+require_once __DIR__ . '/../utilities/auth_guard.php';
+if (!isset($_SESSION)) session_start();
  rateLimiter();
 
-logActivity("========== STARTING PROFILE PHOTO UPDATE ==========");
+$auth = requireAuth([
+    'method'                 => 'POST',
+    'rate_key'               => 'create_maintenance_request',
+    'roles'                  => ['Tenant'],
+    'require_active_tenancy' => true,
+]);
 
-// ==================== AUTHENTICATION ====================
-// $auth = requireAuth([
-//     'method' => 'POST',
-//     'rate_key' => 'update_profile_photo',
-//     'rate_limit' => [5, 60], // 5 uploads per minute
-//     'roles' => ['Tenant']
-// ]);
+logActivity("========== STARTING PROFILE PHOTO UPDATE ==========");
 
 // $userId = $auth['user_id'];
 $userRole = $_SESSION['role'];
@@ -52,6 +48,7 @@ if (!$tenant_code) {
     logActivity("ERROR: Tenant code not found in session");
     json_error("Session expired. Please login again.", 401);
 }
+
 
 logActivity("Authenticated tenant: {$tenant_code} | User ID: {$tenant_code}");
 
@@ -174,7 +171,7 @@ try {
     if (!is_dir(PHOTO_UPLOAD_DIR)) {
         logActivity("WARNING: Upload directory does not exist: " . PHOTO_UPLOAD_DIR);
         logActivity("Attempting to create directory...");
-        
+
         if (!mkdir(PHOTO_UPLOAD_DIR, 0750, true)) {
             logActivity("ERROR: Failed to create upload directory");
             json_error("Server error: Upload directory not available", 500);
@@ -193,14 +190,14 @@ try {
     // If the exact same file exists, check its usage
     if (is_file($upload_path)) {
         logActivity("File with same hash already exists: {$file_name}");
-        
+
         // Check if it belongs to another tenant
         $photoCheckStmt = $conn->prepare("SELECT tenant_code FROM tenants WHERE photo = ? AND tenant_code != ? LIMIT 1");
         if ($photoCheckStmt) {
             $photoCheckStmt->bind_param("ss", $file_name, $tenant_code);
             $photoCheckStmt->execute();
             $photoCheckResult = $photoCheckStmt->get_result();
-            
+
             if ($photoCheckResult->num_rows > 0) {
                 $photoCheckStmt->close();
                 logActivity("File already used by another tenant");
@@ -208,7 +205,7 @@ try {
             }
             $photoCheckStmt->close();
         }
-        
+
         // If it's the same photo the tenant already has, no action needed
         if ($old_photo === $file_name) {
             logActivity("Same photo as current - no change needed");
@@ -286,7 +283,7 @@ try {
                 $usageResult = $checkUsageStmt->get_result()->fetch_assoc();
                 $checkUsageStmt->close();
 
-                if ((int)$usageResult['count'] === 0) {
+                if ((int) $usageResult['count'] === 0) {
                     if (@unlink($old_photo_path)) {
                         logActivity("Old photo deleted: {$old_photo}");
                     } else {

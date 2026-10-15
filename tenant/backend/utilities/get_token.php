@@ -6,8 +6,18 @@ header('Access-Control-Allow-Credentials: true');
 
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';
+require_once __DIR__ . '/../utilities/rate_limit.php';
+if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
-session_start();
+$auth = requireAuth([
+    'method'                 => 'POST',
+    'rate_key'               => 'create_maintenance_request',
+    'roles'                  => ['Tenant'],
+    'require_active_tenancy' => true,
+]);
+
 
 // Only allow authenticated users to get tokens
 if (!isset($_SESSION['tenant_code'])) {

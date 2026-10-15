@@ -6,11 +6,14 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
+require_once __DIR__ . '/../utilities/rate_limit.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';
 
 // Start session for logging purposes
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+rateLimiter();
 
 // Generate unique request ID for tracking
 $requestId = uniqid('change_default_pw_', true);

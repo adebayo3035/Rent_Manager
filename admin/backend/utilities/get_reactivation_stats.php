@@ -81,7 +81,8 @@ try {
         'pending' => 0,
         'approved' => 0,
         'rejected' => 0,
-        'expired' => 0
+        'expired' => 0,
+        'cancelled' => 0
     ];
 
     while ($statRow = $statsResult->fetch_assoc()) {

@@ -4,6 +4,7 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notifications.php';
+require_once __DIR__ . '/../utilities/rate_limit.php';
 
 // ==================== CONSTANTS & CONFIGURATION ====================
 const MAX_LOGIN_ATTEMPTS = 3;
@@ -13,6 +14,7 @@ const SESSION_DURATION = 1800; // 30 minutes
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+rateLimiter();
 
 function logWithCaller($message)
 {
@@ -104,27 +106,29 @@ class LoginSecurity
     {
         $userId = $user['tenant_code'];
 
-        // Check if account is blocked
-        if ($user['tenant_status'] !== '1') {
-            $this->log("Account blocked - ID: {$userId}");
-            return [false, "This account has been blocked!", 403];
+        // 1. Blocked accounts (highest priority — no exceptions)
+        if (in_array($user['tenant_status'], ['0', '2'], true)) {
+            $this->log("Account blocked/suspended - ID: {$userId}, Status: {$user['tenant_status']}");
+            return [false, "This account has been blocked. Please contact support.", 403];
         }
 
-        // Check if account is deactivated
-        if ($user['status'] == 0) {
+        // 2. Suspicious state: evicted but never went through evacuation
+        if ($user['tenant_status'] == '3' && $user['evacuation_status'] !== 'evacuated') {
+            $this->log("Inconsistent state: tenant_status=3 but evacuation_status={$user['evacuation_status']} - ID: {$userId}");
+            return [false, "Access Denied. Please contact support.", 403];
+        }
+
+        // 3. Deactivated accounts that are NOT alumni
+        if ($user['status'] == 0 && $user['evacuation_status'] !== 'evacuated') {
             $this->log("Account deactivated - ID: {$userId}");
-            return [false, "This account has been deactivated. Please contact support", 403];
+            return [false, "This account has been deactivated. Please contact support.", 403];
         }
 
-        // Check if tenant has evacuated
-        if ($user['evacuation_status'] == "evacuated" || $user['status'] == 3) {
-            $this->log("Tenant has Evacuated the Apartment - ID: {$userId}");
-            return [false, "Access Denied. Tenant has evacuated", 403];
-        }
-
+        // 4. Otherwise, allow login
+        // (Includes: active tenants, evacuated tenants, pending evacuation)
+        $this->log("Account valid - ID: {$userId}, State: {$user['evacuation_status']}");
         return [true, "Account is active", 200];
     }
-
     public function checkPasswordChangeRequired($user)
     {
         // Check if password_changed flag exists and is 0
@@ -436,7 +440,9 @@ class LoginSecurity
                 'user_id' => $userId,
                 'firstname' => $user['firstname'],
                 'lastname' => $user['lastname'],
-                'requires_action' => false
+                'requires_action' => false,
+                'is_alumni' => ($user['evacuation_status'] === 'evacuated'), // NEW
+                'tenant_state' => $user['evacuation_status'], // NEW
             ]
         ];
     }
@@ -508,6 +514,7 @@ class LoginSecurity
             'firstname' => $user['firstname'],
             'lastname' => $user['lastname'],
             'role' => "Tenant",
+            'tenant_state' => $user['evacuation_status'], // 'active' | 'pending_evacuation' | 'evacuated'
             'ip_address' => $_SERVER['REMOTE_ADDR'],
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
             'created_at' => time(),

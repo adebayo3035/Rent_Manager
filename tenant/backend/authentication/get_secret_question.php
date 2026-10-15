@@ -8,6 +8,8 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/rate_limit.php';
+rateLimiter();
 
 $requestId = uniqid('tenant_secret_', true);
 logActivity("[TENANT_SECRET_QUESTION] [ID:{$requestId}] Request started");

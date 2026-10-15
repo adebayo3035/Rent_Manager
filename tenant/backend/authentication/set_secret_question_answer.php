@@ -4,8 +4,16 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';
+if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
-session_start();
+$auth = requireAuth([
+    'method'                 => 'POST',
+    'rate_key'               => 'create_maintenance_request',
+    'roles'                  => ['Tenant'],
+    'require_active_tenancy' => true,
+]);
 
 // Define allowed secret questions
 $allowed_questions = [
@@ -30,6 +38,10 @@ try {
     // Check if user is a tenant
     if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'Tenant') {
         json_error("Unauthorized access", 403, null, 'UNAUTHORIZED');
+    }
+    if (!isset($_SESSION['tenant_state']) || $_SESSION['tenant_state'] !== 'active') {
+        logActivity("ERROR: Unauthorized access - Status: " . ($_SESSION['tenant_state'] ?? 'none'));
+        json_error("Unauthorized access. Tenant Evacuated", 403);
     }
 
     $tenant_code = $_SESSION['tenant_code'] ?? null;

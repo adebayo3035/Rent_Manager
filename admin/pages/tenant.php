@@ -5,7 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Tenants</title>
+    <link rel="stylesheet" href="../css/tenant.css">
     <link rel="stylesheet" href="../../styles.css">
+    
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -17,14 +19,17 @@
     <div class="container">
         <h1>Manage Tenants</h1>
 
-        <button id="addNewTenantBtn" class="addNewBtnModal">
-            <i class="fa fa-plus" aria-hidden="true"></i> Add New Tenant
-        </button>
-        <a href = "tenant_debts.php">
-         <button id="tenantDebtsBtn" class="addNewBtnModal">
-            <i class="fas fa-wallet" aria-hidden="true">Tenant Debts</i>
-        </button>
-        </a>
+        <div class="admin-header-actions">
+            <a href="tenant_debts.php" class="header-action-link">
+                <button id="tenantDebtsBtn" class="addNewBtnModal">
+                    <i class="fas fa-wallet" aria-hidden="true"></i> Tenant Debts
+                </button>
+            </a>
+
+            <button id="addNewTenantBtn" class="addNewBtnModal">
+                <i class="fa fa-plus" aria-hidden="true"></i> Add New Tenant
+            </button>
+        </div>
 
         <div class="livesearch">
             <input type="text" id="tenantLiveSearch" placeholder="Search for Tenant...">

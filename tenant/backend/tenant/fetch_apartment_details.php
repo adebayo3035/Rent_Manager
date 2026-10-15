@@ -62,7 +62,11 @@ LEFT JOIN apartment_type at ON a.apartment_type_id = at.type_id
 LEFT JOIN properties p ON a.property_code = p.property_code
 LEFT JOIN agents ag ON p.agent_code = ag.agent_code
 LEFT JOIN clients c ON p.client_code = c.client_code  -- <-- NEW JOIN
-WHERE t.tenant_code = ? AND t.status = 1
+WHERE t.tenant_code = ?
+          AND (
+              (t.tenant_status = '1' AND t.status = 1)
+              OR (t.tenant_status = '3' AND t.status = 0 AND t.evacuation_status = 'evacuated')
+          )
 LIMIT 1
     ";
 

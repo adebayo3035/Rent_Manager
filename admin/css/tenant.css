@@ -1,0 +1,76 @@
+/* ============================================
+   HEADER ACTION BUTTONS (scoped)
+   ============================================ */
+
+.admin-header-actions {
+    display: flex;
+    justify-content:space-around;
+    align-items: center;
+    gap: 12px;
+    margin: 20px auto;
+    flex-wrap: wrap;
+}
+
+.admin-header-actions .addNewBtnModal {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.admin-header-actions .addNewBtnModal i {
+    font-size: 13px;
+}
+
+/* Secondary action — Tenant Debts */
+.admin-header-actions #tenantDebtsBtn {
+    background: #ffffff;
+    color: #1a1f36;
+    border-color: #e2e8f0;
+}
+
+.admin-header-actions #tenantDebtsBtn:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+}
+
+/* Primary action — Add New Tenant */
+.admin-header-actions #addNewTenantBtn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.25);
+}
+
+.admin-header-actions #addNewTenantBtn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(102, 126, 234, 0.35);
+}
+
+/* Anchor wrapper — neutralize link defaults */
+.admin-header-actions .header-action-link {
+    text-decoration: none;
+    color: inherit;
+    display: inline-flex;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    .admin-header-actions {
+        gap: 8px;
+    }
+
+    .admin-header-actions .addNewBtnModal {
+        padding: 9px 14px;
+        font-size: 13px;
+    }
+}

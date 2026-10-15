@@ -6,221 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Account Reactivation Management</title>
     <link rel="stylesheet" href="../../styles.css">
+    <link rel="stylesheet" href="../css/account_management.css">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-    <style>
-        /* Additional styles for reactivation management */
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            display: inline-block;
-        }
-        body{
-            visibility: hidden;
-        }
-        
-        .status-pending {
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }
-        
-        .status-approved {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .status-rejected {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .status-expired {
-            background-color: #e2e3e5;
-            color: #383d41;
-            border: 1px solid #d6d8db;
-        }
-        
-        .user-type-badge {
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            display: inline-block;
-        }
-        
-        .user-type-admin {
-            background-color: #d1ecf1;
-            color: #0c5460;
-        }
-        
-        .user-type-agent {
-            background-color: #cce5ff;
-            color: #004085;
-        }
-        
-        .user-type-client {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        
-        .user-type-tenant {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        
-        .action-buttons {
-            display: flex;
-            gap: 5px;
-            justify-content: center;
-        }
-        
-        .action-btn {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 4px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .action-approve {
-            background-color: #28a745;
-            color: white;
-        }
-        
-        .action-approve:hover {
-            background-color: #218838;
-        }
-        
-        .action-reject {
-            background-color: #dc3545;
-            color: white;
-        }
-        
-        .action-reject:hover {
-            background-color: #c82333;
-        }
-        
-        .action-view {
-            background-color: #17a2b8;
-            color: white;
-        }
-        
-        .action-view:hover {
-            background-color: #138496;
-        }
-        
-        .filters-container {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border: 1px solid #dee2e6;
-        }
-        
-        .filters-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-        
-        .stats-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            border-left: 4px solid #007bff;
-        }
-        
-        .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #007bff;
-        }
-        
-        .stat-label {
-            font-size: 12px;
-            color: #6c757d;
-            text-transform: uppercase;
-            margin-top: 5px;
-        }
-        
-        .request-details-modal .modal-content {
-            max-width: 800px;
-            height: fit-content;
-            overflow-y:scroll;
-        }
-        
-        .details-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }
-        
-        .detail-item {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
-            border-left: 4px solid #007bff;
-        }
-        
-        .detail-label {
-            font-weight: 600;
-            color: #495057;
-            margin-bottom: 5px;
-            font-size: 13px;
-        }
-        
-        .detail-value {
-            color: #212529;
-            font-size: 14px;
-        }
-        
-        .review-section {
-            background: #e9ecef;
-            padding: 20px;
-            border-radius: 6px;
-            margin-top: 20px;
-        }
-        
-        .reason-text {
-            white-space: pre-wrap;
-            background: white;
-            padding: 15px;
-            border-radius: 6px;
-            border: 1px solid #dee2e6;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        @media (max-width: 768px) {
-            .filters-row {
-                grid-template-columns: 1fr;
-            }
-            
-            .stats-container {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-    </style>
 </head>
 
 <body>
@@ -248,6 +38,10 @@
                 <div class="stat-value">0</div>
                 <div class="stat-label">Rejected</div>
             </div>
+            <div class="stat-card">
+                <div class="stat-value">0</div>
+                <div class="stat-label">Cancelled</div>
+            </div>
         </div>
 
         <!-- Filters Section -->
@@ -273,6 +67,7 @@
                         <option value="approved">Approved</option>
                         <option value="rejected">Rejected</option>
                         <option value="expired">Expired</option>
+                        <option value="cancelled">Cancelled</option>
                     </select>
                 </div>
                 

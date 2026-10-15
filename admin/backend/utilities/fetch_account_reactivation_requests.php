@@ -89,7 +89,7 @@ try {
     $date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : null;
 
     $allowedUserTypes = ['admin', 'agent', 'client', 'tenant'];
-    $allowedStatuses = ['pending', 'approved', 'rejected', 'expired'];
+    $allowedStatuses = ['pending', 'approved', 'rejected', 'expired', 'cancelled'];
 
     logActivity("Filter Inputs | User Type: {$user_type} | Status: {$status} | Search: {$search} | Date From: {$date_from} | Date To: {$date_to}");
 
@@ -265,7 +265,8 @@ try {
             'pending' => 'warning',
             'approved' => 'success',
             'rejected' => 'danger',
-            'expired' => 'secondary'
+            'expired' => 'secondary',
+            'cancelled' => 'primary'
         ];
         
         $row['status_badge'] = $statusColors[$row['status']] ?? 'secondary';

@@ -4,6 +4,7 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notifications.php';
+
 // Error handling setup
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
@@ -20,14 +21,14 @@ logActivity("[REACTIVATION_REQUEST_START] [ID:{$requestId}] [IP:{$ipAddress}] Ac
 class ReactivationService
 {
     private $conn;
-    private $maxRequestsPerDay = 20;  // original value 2
+    private $maxRequestsPerDay = 20; // was 2 during testing
     private $requestId;
     private $ipAddress;
     private $userAgent;
 
     public function __construct($conn, $requestId, $ipAddress, $userAgent)
     {
-        $this->conn = $conn;
+        $this->conn      = $conn;
         $this->requestId = $requestId;
         $this->ipAddress = $ipAddress;
         $this->userAgent = $userAgent;
@@ -41,7 +42,9 @@ class ReactivationService
 
         logActivity("{$logPrefix} Starting reactivation request submission");
 
-        // Validate required fields
+        // ================================================================
+        // Step 1: Validate required fields
+        // ================================================================
         $requiredFields = ['email', 'user_type', 'otp', 'request_reason'];
         foreach ($requiredFields as $field) {
             if (empty($data[$field])) {
@@ -51,37 +54,38 @@ class ReactivationService
                 return [
                     'success' => false,
                     'message' => "Missing required field: {$field}",
-                    'code' => 400
+                    'code'    => 400,
                 ];
             }
         }
 
-        $email = trim($data['email']);
-        $userType = trim($data['user_type']);
-        $otp = trim($data['otp']);
+        $email         = trim($data['email']);
+        $userType      = trim($data['user_type']);
+        $otp           = trim($data['otp']);
         $requestReason = trim($data['request_reason']);
 
         logActivity("{$logPrefix} Validated fields - Email: {$email}, User Type: {$userType}, Reason length: " . strlen($requestReason));
 
-        // Validate user type
+        // ================================================================
+        // Step 2: Validate user type
+        // ================================================================
         $validUserTypes = ['admin', 'agent', 'client', 'tenant'];
-        if (!in_array($userType, $validUserTypes)) {
+        if (!in_array($userType, $validUserTypes, true)) {
             $errorMsg = "Invalid user type: {$userType}";
             logActivity("[INVALID_USER_TYPE] {$logPrefix} {$errorMsg}");
 
             return [
                 'success' => false,
                 'message' => 'Invalid user type',
-                'code' => 400
+                'code'    => 400,
             ];
         }
 
-        // Map user types to their respective tables
         $userTables = [
-            'admin' => 'admin_tbl',
-            'agent' => 'agents',
+            'admin'  => 'admin_tbl',
+            'agent'  => 'agents',
             'client' => 'clients',
-            'tenant' => 'tenants'
+            'tenant' => 'tenants',
         ];
 
         if (!isset($userTables[$userType])) {
@@ -91,30 +95,58 @@ class ReactivationService
             return [
                 'success' => false,
                 'message' => 'Invalid user type configuration',
-                'code' => 500
+                'code'    => 500,
             ];
         }
 
         $userTable = $userTables[$userType];
         logActivity("{$logPrefix} User table mapped: {$userTable}");
 
-        // Step 1: Get user details
+        // ================================================================
+        // Step 3: Fetch user by email
+        // ================================================================
         $user = $this->getUserDetails($email, $userType, $userTable);
         if (!$user) {
-            $errorMsg = "User not found or inactive - Email: {$email}, Type: {$userType}";
+            $errorMsg = "User not found - Email: {$email}, Type: {$userType}";
             logActivity("[USER_NOT_FOUND] {$logPrefix} {$errorMsg}");
 
-            // Generic response for security
+            // Generic response for security (don't leak whether the account exists)
             return [
                 'success' => false,
                 'message' => 'Invalid request. Please check your details and try again.',
-                'code' => 400
+                'code'    => 400,
             ];
         }
 
         logActivity("{$logPrefix} User found - ID: {$user['id']}, Status: {$user['status']}");
 
-        // Step 2: Check if user is already active
+        // ================================================================
+        // ===== NEW: Step 3.5: Tenant eligibility check =====
+        // Reject:
+        //   - Evacuated tenants (tenant_status='3' or evacuation_status='evacuated')
+        //   - Suspended tenants (tenant_status='2')
+        //   - Blocked tenants (tenant_status='0')
+        // Allow only:
+        //   - Tenants whose tenancy is intact but the binary status was toggled off
+        //     by admin (tenant_status='1', status=0)
+        // ================================================================
+        if ($userType === 'tenant') {
+            $eligibility = $this->checkTenantEligibility($user['id']);
+            if (!$eligibility['eligible']) {
+                logActivity("[ELIGIBILITY_FAILED] {$logPrefix} " . $eligibility['message']);
+                return [
+                    'success'    => false,
+                    'message'    => $eligibility['message'],
+                    'code'       => $eligibility['code'],
+                    'error_code' => $eligibility['error_code'] ?? null,
+                ];
+            }
+            logActivity("{$logPrefix} Tenant eligibility check passed");
+        }
+
+        // ================================================================
+        // Step 4: Reject if account is already active
+        // ================================================================
         if ($user['status'] != '0') {
             $errorMsg = "User is already active - Status: {$user['status']}";
             logActivity("[USER_ALREADY_ACTIVE] {$logPrefix} {$errorMsg}");
@@ -122,11 +154,13 @@ class ReactivationService
             return [
                 'success' => false,
                 'message' => 'Your account is already active.',
-                'code' => 400
+                'code'    => 400,
             ];
         }
 
-        // Step 3: Verify OTP
+        // ================================================================
+        // Step 5: Verify OTP
+        // ================================================================
         $otpVerification = $this->verifyOTP($user['id'], $userType, $otp, $email);
         if (!$otpVerification['success']) {
             logActivity("[OTP_VERIFICATION_FAILED] {$logPrefix} {$otpVerification['message']}");
@@ -136,7 +170,9 @@ class ReactivationService
         $otpRequestId = $otpVerification['otp_request_id'];
         logActivity("{$logPrefix} OTP verified successfully - OTP Request ID: {$otpRequestId}");
 
-        // Step 4: Check rate limiting (max 2 requests per day)
+        // ================================================================
+        // Step 6: Rate limit check
+        // ================================================================
         $rateLimitCheck = $this->checkRateLimit($user['id'], $userType);
         if (!$rateLimitCheck['allowed']) {
             $errorMsg = "Rate limit exceeded - Requests today: {$rateLimitCheck['count']}";
@@ -145,25 +181,29 @@ class ReactivationService
             return [
                 'success' => false,
                 'message' => 'You have reached the maximum number of reactivation requests for today. Please try again tomorrow.',
-                'code' => 429
+                'code'    => 429,
             ];
         }
 
-        // Step 5: Check for existing pending request
+        // ================================================================
+        // Step 7: Reject if a pending request already exists
+        // ================================================================
         $existingRequest = $this->getExistingPendingRequest($user['id'], $userType);
         if ($existingRequest) {
             $errorMsg = "Existing pending request found - Request ID: {$existingRequest['id']}";
             logActivity("[EXISTING_PENDING_REQUEST] {$logPrefix} {$errorMsg}");
 
             return [
-                'success' => false,
-                'message' => 'You already have a pending reactivation request. Please wait for it to be reviewed.',
-                'code' => 400,
-                'existing_request_id' => $existingRequest['id']
+                'success'             => false,
+                'message'             => 'You already have a pending reactivation request. Please wait for it to be reviewed.',
+                'code'                => 400,
+                'existing_request_id' => $existingRequest['id'],
             ];
         }
 
-        // Step 6: Check last rejection (prevent immediate re-request)
+        // ================================================================
+        // Step 8: Reject if within cooldown after last rejection
+        // ================================================================
         $lastRejection = $this->getLastRejection($user['id'], $userType);
         if ($lastRejection && $this->isWithinCooldownPeriod($lastRejection['created_at'])) {
             $errorMsg = "Within cooldown period after rejection - Last rejection: {$lastRejection['created_at']}";
@@ -173,74 +213,167 @@ class ReactivationService
             return [
                 'success' => false,
                 'message' => "Your last request was rejected. Please wait {$hoursRemaining} hours before submitting a new request.",
-                'code' => 429
+                'code'    => 429,
             ];
         }
-        //Generate unique request ID
+
+        // ================================================================
+        // Step 9: Generate request ID and submit
+        // ================================================================
         $request_id = generateUniqueRequestId();
-        // Step 7: Submit the reactivation request
+
         return $this->createReactivationRequest(
-            requestId: $request_id,
-            userId: $user['id'],
-            userType: $userType,
-            email: $email,
-            otpRequestId: $otpRequestId,
+            requestId:     $request_id,
+            userId:        $user['id'],
+            userType:      $userType,
+            email:         $email,
+            otpRequestId:  $otpRequestId,
             requestReason: $requestReason
         );
-
-
     }
+
+    // ====================================================================
+    // ===== NEW: Tenant eligibility check =====
+    // ====================================================================
+    /**
+     * Determine whether a tenant is eligible to submit a reactivation request.
+     *
+     * Rules:
+     *   - Evacuated (tenant_status='3' OR evacuation_status='evacuated')
+     *       → not eligible. Tenancy has ended. Nothing to reactivate.
+     *   - Suspended (tenant_status='2')
+     *       → not eligible. Must contact support.
+     *   - Blocked/Inactive (tenant_status='0')
+     *       → not eligible. Must contact support.
+     *   - Deactivated while status is intact (tenant_status='1', status=0)
+     *       → eligible. This is exactly what self-service reactivation is for.
+     *
+     * @param string $tenantCode
+     * @return array{eligible: bool, message?: string, code?: int, error_code?: string}
+     */
+    private function checkTenantEligibility($tenantCode)
+    {
+        $logPrefix = "[TENANT_ELIGIBILITY] [ID:{$this->requestId}]";
+
+        $stmt = $this->conn->prepare("
+            SELECT status, tenant_status, evacuation_status
+            FROM tenants
+            WHERE tenant_code = ?
+            LIMIT 1
+        ");
+
+        if (!$stmt) {
+            logActivity("[DB_PREPARE_ERROR] {$logPrefix} Failed to prepare eligibility query");
+            // Fail open: let downstream checks handle it
+            return ['eligible' => true];
+        }
+
+        $stmt->bind_param("s", $tenantCode);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        if (!$row) {
+            logActivity("{$logPrefix} Tenant not found: {$tenantCode}");
+            return [
+                'eligible'   => false,
+                'message'    => 'Tenant account not found.',
+                'code'       => 404,
+                'error_code' => 'TENANT_NOT_FOUND',
+            ];
+        }
+
+        $evacuationStatus = $row['evacuation_status'] ?? '';
+        $tenantStatus     = (string) ($row['tenant_status'] ?? '');
+
+        logActivity("{$logPrefix} Tenant state - status: {$row['status']}, "
+            . "tenant_status: {$tenantStatus}, evacuation_status: {$evacuationStatus}");
+
+        // --- Evacuated: not reactivatable ---
+        if ($evacuationStatus === 'evacuated' || $tenantStatus === '3') {
+            logActivity("{$logPrefix} Blocked - tenant has evacuated");
+            return [
+                'eligible'   => false,
+                'message'    => 'Your tenancy has ended. Reactivation is not applicable. '
+                              . 'To rent a property through us again, please contact our support team '
+                              . 'or reach out to an agent.',
+                'code'       => 403,
+                'error_code' => 'EVACUATED_NOT_REACTIVATABLE',
+            ];
+        }
+
+        // --- Suspended: direct to support ---
+        if ($tenantStatus === '2') {
+            logActivity("{$logPrefix} Blocked - tenant is suspended");
+            return [
+                'eligible'   => false,
+                'message'    => 'Your account is suspended. Please contact our support team to discuss reactivation.',
+                'code'       => 403,
+                'error_code' => 'SUSPENDED_CONTACT_SUPPORT',
+            ];
+        }
+
+        // --- Blocked / Inactive: direct to support ---
+        if ($tenantStatus === '0') {
+            logActivity("{$logPrefix} Blocked - tenant account is inactive/blocked");
+            return [
+                'eligible'   => false,
+                'message'    => 'Your account is blocked. Please contact our support team for assistance.',
+                'code'       => 403,
+                'error_code' => 'BLOCKED_CONTACT_SUPPORT',
+            ];
+        }
+
+        // --- All other combinations are eligible for reactivation ---
+        // Typically: tenant_status='1' with status=0 (deactivated but tenancy intact)
+        logActivity("{$logPrefix} Tenant is eligible for reactivation");
+        return ['eligible' => true];
+    }
+
+    // ====================================================================
+    // Existing methods below (unchanged)
+    // ====================================================================
 
     private function getUserDetails($email, $userType, $userTable)
     {
         $logPrefix = "[USER_LOOKUP] [ID:{$this->requestId}]";
 
-        // Define identifier column for each user type
         $idColumns = [
-            'admin' => 'unique_id',
-            'agent' => 'agent_code',
+            'admin'  => 'unique_id',
+            'agent'  => 'agent_code',
             'client' => 'client_code',
-            'tenant' => 'tenant_code'
+            'tenant' => 'tenant_code',
         ];
 
-        // Validate user type
         if (!isset($idColumns[$userType])) {
-            $errorMsg = "Invalid user type for ID mapping: {$userType}";
-            logActivity("[INVALID_USER_TYPE] {$logPrefix} {$errorMsg}");
+            logActivity("[INVALID_USER_TYPE] {$logPrefix} Invalid user type for ID mapping: {$userType}");
             return false;
         }
 
-        $idColumn = $idColumns[$userType];
+        $idColumn    = $idColumns[$userType];
+        $nameColumn  = 'firstname';
+        $phoneColumn = 'phone';
 
-        // Adjust column names based on your schema
-        // Different tables might have different column names for full_name and phone
-        $nameColumn = 'firstname'; // Adjust if needed per table
-        $phoneColumn = 'phone'; // Adjust if needed per table
-
-        // Build query with dynamic column names
         $query = "SELECT {$idColumn} as id, status, email
-              FROM {$userTable} WHERE email = ?";
+                  FROM {$userTable}
+                  WHERE email = ?";
 
         logActivity("{$logPrefix} Query: {$query} for email: {$email}");
 
         $stmt = $this->conn->prepare($query);
         if (!$stmt) {
-            $errorMsg = "Failed to prepare user statement: " . $this->conn->error;
-            logActivity("[DB_PREPARE_ERROR] {$logPrefix} {$errorMsg}");
+            logActivity("[DB_PREPARE_ERROR] {$logPrefix} " . $this->conn->error);
             return false;
         }
 
         $stmt->bind_param("s", $email);
-
         if (!$stmt->execute()) {
-            $errorMsg = "Failed to execute user query: " . $stmt->error;
-            logActivity("[DB_EXECUTE_ERROR] {$logPrefix} {$errorMsg}");
+            logActivity("[DB_EXECUTE_ERROR] {$logPrefix} " . $stmt->error);
             $stmt->close();
             return false;
         }
 
         $result = $stmt->get_result();
-
         if ($result->num_rows === 0) {
             logActivity("{$logPrefix} No user found with email: {$email}");
             $stmt->close();
@@ -250,7 +383,7 @@ class ReactivationService
         $user = $result->fetch_assoc();
         $stmt->close();
 
-        logActivity("{$logPrefix} User retrieved - Type: {$userType}, ID: {$user['id']}, Status: {$user['status']}, E-mail: {$user['email']}");
+        logActivity("{$logPrefix} User retrieved - Type: {$userType}, ID: {$user['id']}, Status: {$user['status']}");
         return $user;
     }
 
@@ -260,26 +393,21 @@ class ReactivationService
 
         logActivity("{$logPrefix} Verifying OTP for user ID: {$userId}, type: {$userType}");
 
-        // Find the most recent valid OTP for this user
-        $query = "SELECT id, otp, expires_at, status FROM otp_requests 
-                  WHERE user_type = ? AND user_id = ? AND email = ? 
+        $query = "SELECT id, otp, expires_at, status FROM otp_requests
+                  WHERE user_type = ? AND user_id = ? AND email = ?
                   AND status = 'pending' AND expires_at > NOW()
                   ORDER BY created_at DESC LIMIT 1";
 
-        logActivity("{$logPrefix} OTP Query: {$query}");
-
         $stmt = $this->conn->prepare($query);
         if (!$stmt) {
-            $errorMsg = "Failed to prepare OTP statement: " . $this->conn->error;
-            logActivity("[DB_PREPARE_ERROR] {$logPrefix} {$errorMsg}");
+            logActivity("[DB_PREPARE_ERROR] {$logPrefix} " . $this->conn->error);
             return ['success' => false, 'message' => 'OTP verification failed'];
         }
 
         $stmt->bind_param("sss", $userType, $userId, $email);
 
         if (!$stmt->execute()) {
-            $errorMsg = "Failed to execute OTP query: " . $stmt->error;
-            logActivity("[DB_EXECUTE_ERROR] {$logPrefix} {$errorMsg}");
+            logActivity("[DB_EXECUTE_ERROR] {$logPrefix} " . $stmt->error);
             $stmt->close();
             return ['success' => false, 'message' => 'OTP verification failed'];
         }
@@ -292,36 +420,30 @@ class ReactivationService
             return [
                 'success' => false,
                 'message' => 'Invalid or expired OTP. Please request a new OTP.',
-                'code' => 400
+                'code'    => 400,
             ];
         }
 
         $otpRecord = $result->fetch_assoc();
         $stmt->close();
 
-        // Verify the OTP
         if (!password_verify($otp, $otpRecord['otp'])) {
             logActivity("{$logPrefix} OTP verification failed - OTP does not match");
-
-            // Update OTP status to mark as used (failed attempt)
             $this->updateOTPStatus($otpRecord['id'], 'invalid_attempt');
-
             return [
                 'success' => false,
                 'message' => 'Invalid OTP. Please try again.',
-                'code' => 400
+                'code'    => 400,
             ];
         }
 
         logActivity("{$logPrefix} OTP verified successfully - OTP Request ID: {$otpRecord['id']}");
-
-        // Mark OTP as used
         $this->updateOTPStatus($otpRecord['id'], 'verified');
 
         return [
-            'success' => true,
+            'success'        => true,
             'otp_request_id' => $otpRecord['id'],
-            'message' => 'OTP verified successfully'
+            'message'        => 'OTP verified successfully',
         ];
     }
 
@@ -330,9 +452,7 @@ class ReactivationService
         $logPrefix = "[UPDATE_OTP_STATUS] [ID:{$this->requestId}]";
 
         try {
-            $query = "UPDATE otp_requests SET status = ?, date_last_updated = NOW() WHERE id = ?";
-            $stmt = $this->conn->prepare($query);
-
+            $stmt = $this->conn->prepare("UPDATE otp_requests SET status = ?, date_last_updated = NOW() WHERE id = ?");
             if ($stmt) {
                 $stmt->bind_param("si", $status, $otpId);
                 $stmt->execute();
@@ -348,29 +468,26 @@ class ReactivationService
     {
         $logPrefix = "[RATE_LIMIT_CHECK] [ID:{$this->requestId}]";
 
-        $query = "SELECT COUNT(*) as request_count FROM account_reactivation_requests 
-                  WHERE user_type = ? AND user_id = ? 
-                  AND DATE(created_at) = CURDATE() 
+        $query = "SELECT COUNT(*) as request_count FROM account_reactivation_requests
+                  WHERE user_type = ? AND user_id = ?
+                  AND DATE(created_at) = CURDATE()
                   AND status IN ('pending', 'approved', 'rejected')";
-
-        logActivity("{$logPrefix} Rate limit query: {$query}");
 
         $stmt = $this->conn->prepare($query);
         if (!$stmt) {
-            logActivity("[DB_PREPARE_ERROR] {$logPrefix} Failed to prepare rate limit statement");
-            return ['allowed' => true, 'count' => 0]; // Fail open for safety
+            logActivity("[DB_PREPARE_ERROR] {$logPrefix}");
+            return ['allowed' => true, 'count' => 0];
         }
 
         $stmt->bind_param("ss", $userType, $userId);
 
         if (!$stmt->execute()) {
-            logActivity("[DB_EXECUTE_ERROR] {$logPrefix} Failed to execute rate limit query");
+            logActivity("[DB_EXECUTE_ERROR] {$logPrefix}");
             $stmt->close();
             return ['allowed' => true, 'count' => 0];
         }
 
-        $result = $stmt->get_result();
-        $row = $result->fetch_assoc();
+        $row = $stmt->get_result()->fetch_assoc();
         $count = $row['request_count'] ?? 0;
         $stmt->close();
 
@@ -379,9 +496,9 @@ class ReactivationService
         logActivity("{$logPrefix} Rate limit check - Count: {$count}, Allowed: " . ($allowed ? 'Yes' : 'No'));
 
         return [
-            'allowed' => $allowed,
-            'count' => $count,
-            'max_allowed' => $this->maxRequestsPerDay
+            'allowed'     => $allowed,
+            'count'       => $count,
+            'max_allowed' => $this->maxRequestsPerDay,
         ];
     }
 
@@ -389,22 +506,21 @@ class ReactivationService
     {
         $logPrefix = "[EXISTING_REQUEST_CHECK] [ID:{$this->requestId}]";
 
-        $query = "SELECT id, status, created_at FROM account_reactivation_requests 
-                  WHERE user_type = ? AND user_id = ? AND status = 'pending' 
-                  ORDER BY created_at DESC LIMIT 1";
+        $stmt = $this->conn->prepare("
+            SELECT id, status, created_at FROM account_reactivation_requests
+            WHERE user_type = ? AND user_id = ? AND status = 'pending'
+            ORDER BY created_at DESC LIMIT 1
+        ");
 
-        logActivity("{$logPrefix} Existing request query: {$query}");
-
-        $stmt = $this->conn->prepare($query);
         if (!$stmt) {
-            logActivity("[DB_PREPARE_ERROR] {$logPrefix} Failed to prepare existing request statement");
+            logActivity("[DB_PREPARE_ERROR] {$logPrefix}");
             return null;
         }
 
         $stmt->bind_param("ss", $userType, $userId);
 
         if (!$stmt->execute()) {
-            logActivity("[DB_EXECUTE_ERROR] {$logPrefix} Failed to execute existing request query");
+            logActivity("[DB_EXECUTE_ERROR] {$logPrefix}");
             $stmt->close();
             return null;
         }
@@ -419,7 +535,6 @@ class ReactivationService
         }
 
         $stmt->close();
-        logActivity("{$logPrefix} No existing pending request found");
         return null;
     }
 
@@ -427,20 +542,21 @@ class ReactivationService
     {
         $logPrefix = "[LAST_REJECTION_CHECK] [ID:{$this->requestId}]";
 
-        $query = "SELECT id, created_at, rejection_reason FROM account_reactivation_requests 
-                  WHERE user_type = ? AND user_id = ? AND status = 'rejected' 
-                  ORDER BY created_at DESC LIMIT 1";
+        $stmt = $this->conn->prepare("
+            SELECT id, created_at, rejection_reason FROM account_reactivation_requests
+            WHERE user_type = ? AND user_id = ? AND status = 'rejected'
+            ORDER BY created_at DESC LIMIT 1
+        ");
 
-        $stmt = $this->conn->prepare($query);
         if (!$stmt) {
-            logActivity("[DB_PREPARE_ERROR] {$logPrefix} Failed to prepare rejection statement");
+            logActivity("[DB_PREPARE_ERROR] {$logPrefix}");
             return null;
         }
 
         $stmt->bind_param("ss", $userType, $userId);
 
         if (!$stmt->execute()) {
-            logActivity("[DB_EXECUTE_ERROR] {$logPrefix} Failed to execute rejection query");
+            logActivity("[DB_EXECUTE_ERROR] {$logPrefix}");
             $stmt->close();
             return null;
         }
@@ -450,34 +566,29 @@ class ReactivationService
         if ($result->num_rows > 0) {
             $rejection = $result->fetch_assoc();
             $stmt->close();
-            logActivity("{$logPrefix} Last rejection found - ID: {$rejection['id']}, Date: {$rejection['created_at']}");
+            logActivity("{$logPrefix} Last rejection found - ID: {$rejection['id']}");
             return $rejection;
         }
 
         $stmt->close();
-        logActivity("{$logPrefix} No previous rejections found");
         return null;
     }
 
     private function isWithinCooldownPeriod($rejectionDate)
     {
-        $cooldownHours = 0; // 24-hour cooldown after rejection
-        $rejectionTime = strtotime($rejectionDate);
-        $currentTime = time();
-        $hoursSinceRejection = ($currentTime - $rejectionTime) / 3600;
-
+        // Cooldown disabled during testing (0 hours).
+        // Set to 24 to enable a 24-hour cooldown after rejection.
+        $cooldownHours = 0;
+        $hoursSinceRejection = (time() - strtotime($rejectionDate)) / 3600;
         return $hoursSinceRejection < $cooldownHours;
     }
 
     private function getCooldownHoursRemaining($rejectionDate)
     {
         $cooldownHours = 24;
-        $rejectionTime = strtotime($rejectionDate);
-        $currentTime = time();
-        $hoursSinceRejection = ($currentTime - $rejectionTime) / 3600;
+        $hoursSinceRejection = (time() - strtotime($rejectionDate)) / 3600;
         $hoursRemaining = ceil($cooldownHours - $hoursSinceRejection);
-
-        return max(1, $hoursRemaining); // At least 1 hour
+        return max(1, $hoursRemaining);
     }
 
     private function createReactivationRequest($requestId, $userId, $userType, $email, $otpRequestId, $requestReason)
@@ -489,12 +600,10 @@ class ReactivationService
         $this->conn->begin_transaction();
 
         try {
-            $query = "INSERT INTO account_reactivation_requests 
-                  (request_id, user_type, user_id, email, otp_request_id, request_reason, 
-                   request_ip, request_user_agent, status, created_at) 
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())";
-
-            logActivity("{$logPrefix} Insert query: {$query}");
+            $query = "INSERT INTO account_reactivation_requests
+                      (request_id, user_type, user_id, email, otp_request_id, request_reason,
+                       request_ip, request_user_agent, status, created_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())";
 
             $stmt = $this->conn->prepare($query);
             if (!$stmt) {
@@ -517,7 +626,7 @@ class ReactivationService
                 throw new Exception("Failed to execute request insert: " . $stmt->error);
             }
 
-            $insertedId = $stmt->insert_id;
+            $insertedId   = $stmt->insert_id;
             $affectedRows = $stmt->affected_rows;
             $stmt->close();
 
@@ -525,54 +634,43 @@ class ReactivationService
                 throw new Exception("No rows affected - request insert failed");
             }
 
-            logActivity("{$logPrefix} About to Update OTP record and usage description");
-
-            // Also update the OTP record with usage description
+            // Update OTP usage description
             $this->updateOTPUsageDescription($otpRequestId, "Account reactivation request #{$insertedId}");
 
-             logActivity("{$logPrefix} OTP Update has been Completed");
-            // Create notification for the user who requested reactivation
-             logActivity("{$logPrefix} About to Create notification for new Request");
+            // Notify the user (or, more accurately, log a notification for tracking)
             try {
                 createNotification($this->conn, [
-                    'user_id' => $userId,
-                    'title' => 'New Account Reactivation Request',
-                    'message' => "User {$userId} has submitted an account reactivation request.",
-                    'type' => 'INFO',
-                    'category' => 'account_reactivation'
+                    'user_id'  => $userId,
+                    'title'    => 'New Account Reactivation Request',
+                    'message'  => "User {$userId} has submitted an account reactivation request.",
+                    'type'     => 'INFO',
+                    'category' => 'account_reactivation',
                 ]);
                 logActivity("{$logPrefix} Notification created for user ID: {$userId}");
             } catch (Exception $e) {
-                // Log but don't fail the entire request if notification fails
-                logActivity("[NOTIFICATION_ERROR] {$logPrefix} Failed to create user notification: " . $e->getMessage());
+                logActivity("[NOTIFICATION_ERROR] {$logPrefix} " . $e->getMessage());
             }
 
             $this->conn->commit();
-
-            logActivity("[REACTIVATION_REQUEST_CREATED] {$logPrefix} Request created successfully - ID: {$insertedId}");
-
-            // Send notification to admins
-            // $this->notifyAdmins($userId, $userType, $email, $insertedId);
+            logActivity("[REACTIVATION_REQUEST_CREATED] {$logPrefix} ID: {$insertedId}");
 
             return [
-                'success' => true,
-                'message' => 'Reactivation request submitted successfully. Our team will review your request shortly.',
-                'code' => 200,
-                'request_id' => $insertedId,
-                'user_id' => $userId, // Add this so it's available in response if needed
-                'review_time' => '24-48 hours'
+                'success'     => true,
+                'message'     => 'Reactivation request submitted successfully. Our team will review your request shortly.',
+                'code'        => 200,
+                'request_id'  => $insertedId,
+                'user_id'     => $userId,
+                'review_time' => '24-48 hours',
             ];
 
         } catch (Exception $e) {
             $this->conn->rollback();
-
-            $errorMsg = "Failed to create reactivation request: " . $e->getMessage();
-            logActivity("[REQUEST_CREATION_FAILED] {$logPrefix} {$errorMsg}");
+            logActivity("[REQUEST_CREATION_FAILED] {$logPrefix} " . $e->getMessage());
 
             return [
                 'success' => false,
                 'message' => 'Failed to submit reactivation request. Please try again.',
-                'code' => 500
+                'code'    => 500,
             ];
         }
     }
@@ -582,9 +680,7 @@ class ReactivationService
         $logPrefix = "[UPDATE_OTP_DESC] [ID:{$this->requestId}]";
 
         try {
-            $query = "UPDATE otp_requests SET usage_description = ?, date_last_updated = NOW() WHERE id = ?";
-            $stmt = $this->conn->prepare($query);
-
+            $stmt = $this->conn->prepare("UPDATE otp_requests SET usage_description = ?, date_last_updated = NOW() WHERE id = ?");
             if ($stmt) {
                 $stmt->bind_param("si", $description, $otpId);
                 $stmt->execute();
@@ -601,8 +697,6 @@ class ReactivationService
         $logPrefix = "[ADMIN_NOTIFICATION] [ID:{$this->requestId}]";
 
         try {
-            // Get super admins - adjust the query based on your table structure
-            // Using 'unique_id' as the ID field for admins
             $query = "SELECT unique_id as id, email, firstname, lastname FROM admin_tbl WHERE role = 'Super Admin' AND status = '1'";
             $result = $this->conn->query($query);
 
@@ -610,18 +704,16 @@ class ReactivationService
                 $adminCount = 0;
                 while ($admin = $result->fetch_assoc()) {
                     try {
-                        // Create notification for each admin
                         createNotification($this->conn, [
-                            'user_id' => $admin['id'],
-                            'title' => 'New Account Reactivation Request',
-                            'message' => "User {$email} ({$userType}) has submitted an account reactivation request.",
-                            'type' => 'INFO',
-                            'category' => 'admin_alert'
+                            'user_id'  => $admin['id'],
+                            'title'    => 'New Account Reactivation Request',
+                            'message'  => "User {$email} ({$userType}) has submitted an account reactivation request.",
+                            'type'     => 'INFO',
+                            'category' => 'admin_alert',
                         ]);
                         $adminCount++;
-                        logActivity("{$logPrefix} Notification created for admin: {$admin['email']}");
                     } catch (Exception $e) {
-                        logActivity("[ADMIN_NOTIFICATION_ERROR] {$logPrefix} Failed to notify admin {$admin['email']}: " . $e->getMessage());
+                        logActivity("[ADMIN_NOTIFICATION_ERROR] {$logPrefix} " . $e->getMessage());
                     }
                 }
                 logActivity("{$logPrefix} Created notifications for {$adminCount} super admins");
@@ -634,82 +726,78 @@ class ReactivationService
     }
 }
 
-// === Main Execution ===
+// ========================================================================
+// Main Execution
+// ========================================================================
 logActivity("[MAIN_EXECUTION_START] [ID:{$requestId}] Starting main execution");
 
 // Check database connection
 if (!isset($conn) || !($conn instanceof mysqli)) {
-    $errorMsg = "Database connection object not initialized";
-    logActivity("[DB_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] {$errorMsg}");
+    logActivity("[DB_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] Database connection object not initialized");
 
     http_response_code(503);
     echo json_encode([
-        'success' => false,
-        'message' => 'Service temporarily unavailable. Please try again later.',
-        'request_id' => $requestId
+        'success'    => false,
+        'message'    => 'Service temporarily unavailable. Please try again later.',
+        'request_id' => $requestId,
     ]);
     exit();
 }
 
 if ($conn->connect_error) {
-    $errorMsg = "Database connection failed: " . $conn->connect_error;
-    logActivity("[DB_CONNECTION_FAILED] [ID:{$requestId}] [IP:{$ipAddress}] {$errorMsg}");
+    logActivity("[DB_CONNECTION_FAILED] [ID:{$requestId}] [IP:{$ipAddress}] " . $conn->connect_error);
 
     http_response_code(503);
     echo json_encode([
-        'success' => false,
-        'message' => 'Service temporarily unavailable. Please try again later.',
-        'request_id' => $requestId
+        'success'    => false,
+        'message'    => 'Service temporarily unavailable. Please try again later.',
+        'request_id' => $requestId,
     ]);
     exit();
 }
 
-// Validate request method
+// Method check
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
-    $errorMsg = "Invalid request method: " . $_SERVER["REQUEST_METHOD"];
-    logActivity("[REQUEST_METHOD_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] {$errorMsg}");
+    logActivity("[REQUEST_METHOD_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] " . $_SERVER["REQUEST_METHOD"]);
 
     http_response_code(405);
     echo json_encode([
-        "success" => false,
-        "message" => "Method not allowed. Please use POST.",
-        "request_id" => $requestId
+        "success"    => false,
+        "message"    => "Method not allowed. Please use POST.",
+        "request_id" => $requestId,
     ]);
     exit();
 }
 
-// Get and validate JSON input
+// Read input
 $input = file_get_contents("php://input");
 if (empty($input)) {
-    $errorMsg = "Empty request body received";
-    logActivity("[EMPTY_REQUEST_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] {$errorMsg}");
+    logActivity("[EMPTY_REQUEST_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] Empty request body");
 
     http_response_code(400);
     echo json_encode([
-        'success' => false,
-        'message' => 'No input data received',
-        'request_id' => $requestId
+        'success'    => false,
+        'message'    => 'No input data received',
+        'request_id' => $requestId,
     ]);
     exit();
 }
 
 $data = json_decode($input, true);
 
-// Validate JSON decoding
 if (json_last_error() !== JSON_ERROR_NONE) {
-    $errorMsg = "JSON decode error: " . json_last_error_msg();
-    logActivity("[JSON_DECODE_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] {$errorMsg}");
+    logActivity("[JSON_DECODE_ERROR] [ID:{$requestId}] [IP:{$ipAddress}] " . json_last_error_msg());
 
     http_response_code(400);
     echo json_encode([
-        'success' => false,
-        'message' => 'Invalid JSON data: ' . json_last_error_msg(),
-        'request_id' => $requestId
+        'success'    => false,
+        'message'    => 'Invalid JSON data: ' . json_last_error_msg(),
+        'request_id' => $requestId,
     ]);
     exit();
 }
 
-// Create and use ReactivationService
+// Execute the service
 try {
     $reactivationService = new ReactivationService($conn, $requestId, $ipAddress, $userAgent);
     $response = $reactivationService->submitReactivationRequest($data);
@@ -718,21 +806,19 @@ try {
     $response['request_id'] = $requestId;
     echo json_encode($response);
 
-    logActivity("[REQUEST_COMPLETE] [ID:{$requestId}] Request processed successfully");
+    logActivity("[REQUEST_COMPLETE] [ID:{$requestId}] Request processed");
 
 } catch (Exception $e) {
-    $errorMsg = "Unexpected exception: " . $e->getMessage();
-    logActivity("[UNEXPECTED_EXCEPTION] [ID:{$requestId}] [IP:{$ipAddress}] {$errorMsg}");
+    logActivity("[UNEXPECTED_EXCEPTION] [ID:{$requestId}] [IP:{$ipAddress}] " . $e->getMessage());
 
     http_response_code(500);
     echo json_encode([
-        'success' => false,
-        'message' => 'An unexpected error occurred. Please try again later.',
-        'request_id' => $requestId
+        'success'    => false,
+        'message'    => 'An unexpected error occurred. Please try again later.',
+        'request_id' => $requestId,
     ]);
 }
 
-// Close connection
 if (isset($conn) && $conn instanceof mysqli) {
     $conn->close();
 }

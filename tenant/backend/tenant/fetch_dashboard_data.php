@@ -4,22 +4,22 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
- if (!isset($_SESSION)) session_start();
- rateLimiter();
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+rateLimiter();
 
 try {
-    // Check if user is logged in
+    // ==================== AUTHENTICATION ====================
     if (!isset($_SESSION['tenant_code'])) {
         json_error("Not logged in", 401, null, 'AUTH_REQUIRED');
     }
-
-    // Check if user is a tenant
     if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'Tenant') {
         json_error("Unauthorized access", 403, null, 'UNAUTHORIZED');
     }
 
     $tenant_code = $_SESSION['tenant_code'] ?? null;
-
     if (!$tenant_code) {
         json_error("Tenant code not found", 400, null, 'TENANT_CODE_MISSING');
     }
@@ -27,22 +27,10 @@ try {
     logActivity("=== FETCH DASHBOARD DATA START ===");
     logActivity("Tenant Code: {$tenant_code}");
 
-    // Get active maintenance requests count
-    $maintenanceQuery = "
-        SELECT COUNT(*) as active_requests
-        FROM maintenance_requests
-        WHERE tenant_code = ? AND status IN ('pending', 'in_progress')
-    ";
-    $stmt = $conn->prepare($maintenanceQuery);
-    $stmt->bind_param("s", $tenant_code);
-    $stmt->execute();
-    $maintenanceResult = $stmt->get_result();
-    $maintenanceData = $maintenanceResult->fetch_assoc();
-    $stmt->close();
-
-    // Get tenant, apartment, and property details
+    // ==================== GET TENANT / APARTMENT / PROPERTY ====================
+    // Allow both active and alumni tenants — same rule as login and fetch_user_data
     $tenantQuery = "
-        SELECT 
+        SELECT
             t.tenant_code,
             t.firstname,
             t.lastname,
@@ -54,65 +42,85 @@ try {
             t.payment_amount_per_period,
             t.rent_balance,
             t.agreed_payment_frequency,
+            t.status,
+            t.tenant_status,
+            t.evacuation_status,
+            t.move_out_date,
+            t.final_settlement_amount,
+            t.wallet_balance,
             a.apartment_number,
             a.apartment_code,
             a.security_deposit,
             a.occupancy_status,
-            p.name as property_name,
+            p.name    AS property_name,
             p.property_code,
-            p.address as property_address,
-            CONCAT(ag.firstname, ' ', ag.lastname) as agent_name,
-            ag.phone as agent_phone,
-            ag.email as agent_email
+            p.address AS property_address,
+            CONCAT(ag.firstname, ' ', ag.lastname) AS agent_name,
+            ag.phone AS agent_phone,
+            ag.email AS agent_email
         FROM tenants t
-        LEFT JOIN apartments a ON t.apartment_code = a.apartment_code
-        LEFT JOIN properties p ON t.property_code = p.property_code
-        LEFT JOIN agents ag ON p.agent_code = ag.agent_code
-        WHERE t.tenant_code = ? AND t.status = 1
+        LEFT JOIN apartments a  ON t.apartment_code = a.apartment_code
+        LEFT JOIN properties p  ON t.property_code  = p.property_code
+        LEFT JOIN agents ag     ON p.agent_code     = ag.agent_code
+        WHERE t.tenant_code = ?
+          AND (
+              (t.tenant_status = '1' AND t.status = 1)
+              OR (t.tenant_status = '3' AND t.status = 0 AND t.evacuation_status = 'evacuated')
+          )
         LIMIT 1
     ";
     $stmt = $conn->prepare($tenantQuery);
     $stmt->bind_param("s", $tenant_code);
     $stmt->execute();
-    $tenantResult = $stmt->get_result();
-    $tenantData = $tenantResult->fetch_assoc();
+    $tenantData = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
     if (!$tenantData) {
+        logActivity("Dashboard denied: tenant {$tenant_code} not in active/alumni state");
         json_error("Tenant data not found", 404, null, 'TENANT_NOT_FOUND');
     }
 
-    logActivity("Tenant Data - Lease Start: {$tenantData['lease_start_date']}, Lease End: {$tenantData['lease_end_date']}, Frequency: {$tenantData['payment_frequency']}");
+    $isAlumni = ($tenantData['evacuation_status'] === 'evacuated');
 
-    // Calculate days remaining on lease
+    logActivity("Tenant Data - State: {$tenantData['evacuation_status']}, Alumni: " . ($isAlumni ? 'YES' : 'NO'));
+
+    // ==================== ACTIVE MAINTENANCE COUNT ====================
+    $maintenanceQuery = "
+        SELECT COUNT(*) AS active_requests
+        FROM maintenance_requests
+        WHERE tenant_code = ? AND status IN ('pending', 'in_progress')
+    ";
+    $stmt = $conn->prepare($maintenanceQuery);
+    $stmt->bind_param("s", $tenant_code);
+    $stmt->execute();
+    $maintenanceData = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    // ==================== COMPUTE DERIVED TENANT VALUES ====================
     $days_remaining = 0;
     if ($tenantData['lease_end_date']) {
         $today = new DateTime();
         $today->setTime(0, 0, 0);
         $end_date = new DateTime($tenantData['lease_end_date']);
         $end_date->setTime(0, 0, 0);
-
         if ($today <= $end_date) {
             $days_remaining = $today->diff($end_date)->days;
         }
     }
 
-    // Get the correct rent amounts from tenant data
-    $annual_rent = (float) ($tenantData['agreed_rent_amount'] ?? 0);
+    $annual_rent              = (float) ($tenantData['agreed_rent_amount'] ?? 0);
     $payment_amount_per_period = (float) ($tenantData['payment_amount_per_period'] ?? 0);
-    $rent_balance = (float) ($tenantData['rent_balance'] ?? 0);
-    $payment_frequency = $tenantData['agreed_payment_frequency'] ?? $tenantData['payment_frequency'] ?? 'Monthly';
-    $security_deposit = (float) ($tenantData['security_deposit'] ?? 0);
+    $rent_balance             = (float) ($tenantData['rent_balance'] ?? 0);
+    $payment_frequency        = $tenantData['agreed_payment_frequency'] ?? $tenantData['payment_frequency'] ?? 'Monthly';
+    $security_deposit         = (float) ($tenantData['security_deposit'] ?? 0);
 
-    logActivity("Annual Rent: {$annual_rent}, Payment Per Period: {$payment_amount_per_period}, Balance: {$rent_balance}, Frequency: {$payment_frequency}");
-
-    // Get the main rent payment record (from onboarding)
+    // ==================== MAIN RENT PAYMENT RECORD ====================
     $rentPaymentQuery = "
-        SELECT 
+        SELECT
             rent_payment_id,
-            amount as total_annual_rent,
-            amount_paid as initial_payment,
-            balance as remaining_balance,
+            amount AS total_annual_rent,
+            amount_paid AS initial_payment,
+            balance AS remaining_balance,
             payment_date,
             payment_method,
             payment_period,
@@ -127,27 +135,23 @@ try {
             payment_amount_per_period,
             created_at
         FROM rent_payments
-        WHERE tenant_code = ? 
-        AND apartment_code = ?
-        AND payment_type = 'rent'
+        WHERE tenant_code = ?
+          AND apartment_code = ?
+          AND payment_type = 'rent'
         ORDER BY created_at DESC
         LIMIT 1
     ";
     $stmt = $conn->prepare($rentPaymentQuery);
     $stmt->bind_param("ss", $tenant_code, $tenantData['apartment_code']);
     $stmt->execute();
-    $rentPaymentResult = $stmt->get_result();
-    $rentPayment = $rentPaymentResult->fetch_assoc();
+    $rentPayment = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-
-        // ==================== CURRENT CYCLE IDENTIFICATION ====================
+    // ==================== CURRENT CYCLE IDENTIFICATION ====================
     logActivity("=== CURRENT CYCLE IDENTIFICATION START ===");
-    logActivity("Today: " . date('Y-m-d') . ", Tenant: {$tenant_code}, Apartment: {$tenantData['apartment_code']}");
 
-    // Step 1: Find the cycle whose period brackets today
     $currentCycleQuery = "
-        SELECT 
+        SELECT
             rent_payment_id,
             amount AS cycle_rent_amount,
             amount_paid AS cycle_amount_paid,
@@ -171,12 +175,9 @@ try {
     $currentCycle = $cycleStmt->get_result()->fetch_assoc();
     $cycleStmt->close();
 
-    logActivity("Cycle by CURDATE match: " . ($currentCycle ? "FOUND {$currentCycle['rent_payment_id']}" : "NOT FOUND"));
-
-    // Step 2: Fallback — most recent cycle that started on or before today
     if (!$currentCycle) {
         $fallbackQuery = "
-            SELECT 
+            SELECT
                 rent_payment_id,
                 amount AS cycle_rent_amount,
                 amount_paid AS cycle_amount_paid,
@@ -199,11 +200,9 @@ try {
         $fbStmt->execute();
         $currentCycle = $fbStmt->get_result()->fetch_assoc();
         $fbStmt->close();
-
-        logActivity("Cycle by fallback: " . ($currentCycle ? "FOUND {$currentCycle['rent_payment_id']}" : "NOT FOUND"));
     }
 
-    // Step 3: Calculate total paid within the current cycle
+    // Total paid in current cycle
     $amount_paid_in_cycle = 0;
     if ($currentCycle) {
         $paidStmt = $conn->prepare("
@@ -215,16 +214,15 @@ try {
         ");
         $paidStmt->bind_param("ss", $currentCycle['rent_payment_id'], $tenant_code);
         $paidStmt->execute();
-        $amount_paid_in_cycle = (float)$paidStmt->get_result()->fetch_assoc()['total_paid'];
+        $amount_paid_in_cycle = (float) $paidStmt->get_result()->fetch_assoc()['total_paid'];
         $paidStmt->close();
     }
 
-    logActivity("Amount paid in current cycle: ₦{$amount_paid_in_cycle}");
     logActivity("=== CURRENT CYCLE IDENTIFICATION END ===");
 
-    // Get ALL payment tracker records (periodic payments)
+    // ==================== PAYMENT TRACKER RECORDS ====================
     $trackerQuery = "
-        SELECT 
+        SELECT
             tracker_id,
             rent_payment_id,
             period_number,
@@ -237,95 +235,52 @@ try {
             payment_id,
             created_at
         FROM rent_payment_tracker
-        WHERE tenant_code = ? 
-        AND apartment_code = ?
+        WHERE tenant_code = ?
+          AND apartment_code = ?
         ORDER BY period_number ASC
     ";
     $stmt = $conn->prepare($trackerQuery);
     $stmt->bind_param("ss", $tenant_code, $tenantData['apartment_code']);
     $stmt->execute();
-    $trackerResult = $stmt->get_result();
-    $trackerRecords = $trackerResult->fetch_all(MYSQLI_ASSOC);
+    $trackerRecords = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 
     logActivity("Found " . count($trackerRecords) . " payment tracker records");
 
-    // Get security deposit payment
+    // ==================== SECURITY DEPOSIT PAYMENT ====================
     $depositQuery = "
-        SELECT 
-            id,
-            amount,
-            payment_date,
-            due_date,
-            receipt_number,
-            reference_number,
-            description,
-            payment_status
+        SELECT
+            id, amount, payment_date, due_date,
+            receipt_number, reference_number, description, payment_status
         FROM payments
-        WHERE tenant_code = ? 
-        AND apartment_code = ?
-        AND payment_category = 'security_deposit'
-        AND payment_status = 'completed'
+        WHERE tenant_code = ?
+          AND apartment_code = ?
+          AND payment_category = 'security_deposit'
+          AND payment_status = 'completed'
         ORDER BY created_at DESC
         LIMIT 1
     ";
     $stmt = $conn->prepare($depositQuery);
     $stmt->bind_param("ss", $tenant_code, $tenantData['apartment_code']);
     $stmt->execute();
-    $depositResult = $stmt->get_result();
-    $depositPayment = $depositResult->fetch_assoc();
+    $depositPayment = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    // Function to format period based on frequency and date
-    function formatPeriod($date, $frequency)
-    {
-        switch ($frequency) {
-            case 'Monthly':
-                return $date->format('F Y');
-            case 'Quarterly':
-                $quarter = ceil($date->format('n') / 3);
-                return "Q{$quarter} {$date->format('Y')}";
-            case 'Semi-Annually':
-                $half = $date->format('n') <= 6 ? 'H1' : 'H2';
-                return "{$half} {$date->format('Y')}";
-            case 'Annually':
-                return $date->format('Y');
-            default:
-                return $date->format('F Y');
+    // ==================== HELPERS ====================
+    if (!function_exists('formatPeriod')) {
+        function formatPeriod($date, $frequency)
+        {
+            switch ($frequency) {
+                case 'Monthly':       return $date->format('F Y');
+                case 'Quarterly':     return 'Q' . ceil($date->format('n') / 3) . ' ' . $date->format('Y');
+                case 'Semi-Annually': return ($date->format('n') <= 6 ? 'H1' : 'H2') . ' ' . $date->format('Y');
+                case 'Annually':      return $date->format('Y');
+                default:              return $date->format('F Y');
+            }
         }
     }
 
-    // Function to calculate period range
-    function calculatePeriodRange($start_date, $frequency)
-    {
-        $start = new DateTime($start_date);
-        $end = clone $start;
-
-        switch ($frequency) {
-            case 'Monthly':
-                $end->modify('+1 month')->modify('-1 day');
-                break;
-            case 'Quarterly':
-                $end->modify('+3 months')->modify('-1 day');
-                break;
-            case 'Semi-Annually':
-                $end->modify('+6 months')->modify('-1 day');
-                break;
-            case 'Annually':
-                $end->modify('+1 year')->modify('-1 day');
-                break;
-            default:
-                $end->modify('+1 month')->modify('-1 day');
-        }
-
-        return [
-            'start' => $start->format('Y-m-d'),
-            'end' => $end->format('Y-m-d'),
-            'display' => $start->format('M j, Y') . ' - ' . $end->format('M j, Y')
-        ];
-    }
-
-    // Process tracker records
+    // ==================== PROCESS TRACKER RECORDS ====================
     $paid_periods = [];
     $completed_payments = [];
     $last_paid_end_date = null;
@@ -341,164 +296,137 @@ try {
     foreach ($trackerRecords as $tracker) {
         if ($tracker['status'] === 'paid') {
             $period_start = new DateTime($tracker['start_date']);
-            $period_end = new DateTime($tracker['end_date']);
-
             $paid_periods[] = [
-                'period_number' => $tracker['period_number'],
-                'period' => formatPeriod($period_start, $payment_frequency),
-                'start_date' => $tracker['start_date'],
-                'end_date' => $tracker['end_date'],
-                'amount_paid' => (float) $tracker['amount_paid'],
-                'payment_date' => $tracker['payment_date'],
-                'remaining_balance' => (float) $tracker['remaining_balance']
+                'period_number'      => $tracker['period_number'],
+                'period'             => formatPeriod($period_start, $payment_frequency),
+                'start_date'         => $tracker['start_date'],
+                'end_date'           => $tracker['end_date'],
+                'amount_paid'        => (float) $tracker['amount_paid'],
+                'payment_date'       => $tracker['payment_date'],
+                'remaining_balance'  => (float) $tracker['remaining_balance'],
             ];
-
             $completed_payments[] = [
-                'payment_id' => $tracker['payment_id'],
-                'payment_date' => $tracker['payment_date'],
-                'period' => formatPeriod($period_start, $payment_frequency),
+                'payment_id'    => $tracker['payment_id'],
+                'payment_date'  => $tracker['payment_date'],
+                'period'        => formatPeriod($period_start, $payment_frequency),
                 'period_number' => $tracker['period_number'],
-                'start_date' => $tracker['start_date'],
-                'end_date' => $tracker['end_date'],
-                'amount' => (float) $tracker['amount_paid']
+                'start_date'    => $tracker['start_date'],
+                'end_date'      => $tracker['end_date'],
+                'amount'        => (float) $tracker['amount_paid'],
             ];
-
             if (!$last_paid_end_date || $tracker['end_date'] > $last_paid_end_date) {
-                $last_paid_end_date = $tracker['end_date'];
-                $last_payment_date = $tracker['payment_date'];
-                $last_payment_period = formatPeriod($period_start, $payment_frequency);
+                $last_paid_end_date   = $tracker['end_date'];
+                $last_payment_date    = $tracker['payment_date'];
+                $last_payment_period  = formatPeriod($period_start, $payment_frequency);
             }
         } elseif ($tracker['status'] === 'pending_verification') {
             $has_pending_verification = true;
             $period_start = new DateTime($tracker['start_date']);
             $pending_verification_period = [
                 'period_number' => $tracker['period_number'],
-                'period' => formatPeriod($period_start, $payment_frequency),
-                'start_date' => $tracker['start_date'],
-                'end_date' => $tracker['end_date'],
-                'amount_due' => (float) $tracker['amount_paid'],
-                'status' => $tracker['status']
+                'period'        => formatPeriod($period_start, $payment_frequency),
+                'start_date'    => $tracker['start_date'],
+                'end_date'      => $tracker['end_date'],
+                'amount_due'    => (float) $tracker['amount_paid'],
+                'status'        => $tracker['status'],
             ];
-
-             $pending_verification_tracker[] = [
-                'period_number' => $tracker['period_number'],
-                'period' => formatPeriod($period_start, $payment_frequency),
-                'start_date' => $tracker['start_date'],
-                'end_date' => $tracker['end_date'],
-                'amount_paid' => (float) $tracker['amount_paid'],
-                'payment_date' => $tracker['payment_date'],
-                'remaining_balance' => (float) $tracker['remaining_balance']
+            $pending_verification_tracker[] = [
+                'period_number'     => $tracker['period_number'],
+                'period'            => formatPeriod($period_start, $payment_frequency),
+                'start_date'        => $tracker['start_date'],
+                'end_date'          => $tracker['end_date'],
+                'amount_paid'       => (float) $tracker['amount_paid'],
+                'payment_date'      => $tracker['payment_date'],
+                'remaining_balance' => (float) $tracker['remaining_balance'],
             ];
-        }
-        elseif ($tracker['status'] === 'failed') {
+        } elseif ($tracker['status'] === 'failed') {
             $has_failed_payment = true;
             $failed_payment_count++;
             $period_start = new DateTime($tracker['start_date']);
             $failed_payment = [
                 'period_number' => $tracker['period_number'],
-                'period' => formatPeriod($period_start, $payment_frequency),
-                'start_date' => $tracker['start_date'],
-                'end_date' => $tracker['end_date'],
-                'amount_due' => (float) $tracker['amount_paid'],
-                'status' => $tracker['status']
+                'period'        => formatPeriod($period_start, $payment_frequency),
+                'start_date'    => $tracker['start_date'],
+                'end_date'      => $tracker['end_date'],
+                'amount_due'    => (float) $tracker['amount_paid'],
+                'status'        => $tracker['status'],
             ];
-
-            
         }
     }
 
-    // Get pending/unpaid tracker records (available and failed)
+    // ==================== PENDING TRACKERS ====================
     $pending_trackers = [];
     foreach ($trackerRecords as $tracker) {
-        // Include 'available' and 'failed' statuses for pending periods
-        // Exclude 'paid' and 'pending_verification' from pending periods
         if ($tracker['status'] === 'available' || $tracker['status'] === 'failed') {
             $period_start = new DateTime($tracker['start_date']);
-
-            // FIX: Use payment_amount_per_period for amount_due, not tracker's amount_paid
-            // Because amount_paid is 0 for available periods
-            $amount_due = $payment_amount_per_period;
-
             $pending_trackers[] = [
-                'tracker_id' => $tracker['tracker_id'],
-                'period_number' => $tracker['period_number'],
-                'period' => formatPeriod($period_start, $payment_frequency),
-                'start_date' => $tracker['start_date'],
-                'end_date' => $tracker['end_date'],
-                'amount_due' => $amount_due,  // ← FIXED: Now using correct amount
-                'status' => $tracker['status'],
-                'remaining_balance' => (float) $tracker['remaining_balance']
+                'tracker_id'        => $tracker['tracker_id'],
+                'period_number'     => $tracker['period_number'],
+                'period'            => formatPeriod($period_start, $payment_frequency),
+                'start_date'        => $tracker['start_date'],
+                'end_date'          => $tracker['end_date'],
+                'amount_due'        => $payment_amount_per_period,
+                'status'            => $tracker['status'],
+                'remaining_balance' => (float) $tracker['remaining_balance'],
             ];
         }
     }
 
-    // ==================== CURRENT PERIOD CALCULATION ====================
+    // ==================== CURRENT PERIOD ====================
     $current_period = null;
     $upcoming_period = null;
     $today_date = new DateTime();
     $today_date->setTime(0, 0, 0);
-    $lease_start = new DateTime($tenantData['lease_start_date']);
-    $lease_end = new DateTime($tenantData['lease_end_date']);
 
-    logActivity("=== CURRENT PERIOD CALCULATION ===");
-    logActivity("Today: " . $today_date->format('Y-m-d'));
-    logActivity("Lease: {$tenantData['lease_start_date']} to {$tenantData['lease_end_date']}");
-
-    // Check if any paid period covers today's date
+    // Find paid period covering today
     $found_paid_period = null;
     foreach ($paid_periods as $period) {
         $period_start = new DateTime($period['start_date']);
-        $period_end = new DateTime($period['end_date']);
+        $period_end   = new DateTime($period['end_date']);
         $period_end->modify('+1 day');
-
         if ($today_date >= $period_start && $today_date <= $period_end) {
             $found_paid_period = $period;
-            logActivity("Found paid period covering today: Period #{$period['period_number']}");
             break;
         }
     }
 
     if ($found_paid_period) {
         $period_start = new DateTime($found_paid_period['start_date']);
-        $period_end = new DateTime($found_paid_period['end_date']);
-
+        $period_end   = new DateTime($found_paid_period['end_date']);
         $current_period = [
-            'period_number' => $found_paid_period['period_number'],
-            'period' => $found_paid_period['period'],
-            'start_date' => $found_paid_period['start_date'],
-            'end_date' => $found_paid_period['end_date'],
+            'period_number'   => $found_paid_period['period_number'],
+            'period'          => $found_paid_period['period'],
+            'start_date'      => $found_paid_period['start_date'],
+            'end_date'        => $found_paid_period['end_date'],
             'start_formatted' => $period_start->format('F j, Y'),
-            'end_formatted' => $period_end->format('F j, Y'),
-            'is_paid' => true,
-            'amount_paid' => $found_paid_period['amount_paid'],
-            'payment_date' => $found_paid_period['payment_date'],
-            'status' => 'active',
-            'days_elapsed' => $today_date->diff($period_start)->days,
-            'days_remaining' => $period_end->diff($today_date)->days
+            'end_formatted'   => $period_end->format('F j, Y'),
+            'is_paid'         => true,
+            'amount_paid'     => $found_paid_period['amount_paid'],
+            'payment_date'    => $found_paid_period['payment_date'],
+            'status'          => 'active',
+            'days_elapsed'    => $today_date->diff($period_start)->days,
+            'days_remaining'  => $period_end->diff($today_date)->days,
         ];
-        logActivity("Current period set from paid period: {$current_period['period']}");
     } else {
         foreach ($trackerRecords as $tracker) {
             if ($tracker['status'] === 'available' || $tracker['status'] === 'failed') {
                 $tracker_start = new DateTime($tracker['start_date']);
-                $tracker_end = new DateTime($tracker['end_date']);
+                $tracker_end   = new DateTime($tracker['end_date']);
                 $tracker_end->modify('+1 day');
-
                 if ($today_date >= $tracker_start && $today_date <= $tracker_end) {
                     $current_period = [
-                        'period_number' => $tracker['period_number'],
-                        'period' => formatPeriod($tracker_start, $payment_frequency),
-                        'start_date' => $tracker['start_date'],
-                        'end_date' => $tracker['end_date'],
+                        'period_number'   => $tracker['period_number'],
+                        'period'          => formatPeriod($tracker_start, $payment_frequency),
+                        'start_date'      => $tracker['start_date'],
+                        'end_date'        => $tracker['end_date'],
                         'start_formatted' => $tracker_start->format('F j, Y'),
-                        'end_formatted' => $tracker_end->format('F j, Y'),
-                        'is_paid' => false,
-                        'amount_due' => (float) $tracker['amount_paid'],
-                        'status' => $tracker['status'],
-                        'days_elapsed' => $today_date->diff($tracker_start)->days,
-                        'days_remaining' => $tracker_end->diff($today_date)->days
+                        'end_formatted'   => $tracker_end->format('F j, Y'),
+                        'is_paid'         => false,
+                        'amount_due'      => $payment_amount_per_period,
+                        'status'          => $tracker['status'],
+                        'days_elapsed'    => $today_date->diff($tracker_start)->days,
+                        'days_remaining'  => $tracker_end->diff($today_date)->days,
                     ];
-                    logActivity("Current period set from tracker: {$current_period['period']}");
                     break;
                 }
             }
@@ -506,87 +434,76 @@ try {
 
         if (!$current_period && !empty($pending_trackers)) {
             $first_pending = $pending_trackers[0];
-            $period_start = new DateTime($first_pending['start_date']);
-            $period_end = new DateTime($first_pending['end_date']);
-
+            $period_start  = new DateTime($first_pending['start_date']);
+            $period_end    = new DateTime($first_pending['end_date']);
             $current_period = [
-                'period_number' => $first_pending['period_number'],
-                'period' => $first_pending['period'],
-                'start_date' => $first_pending['start_date'],
-                'end_date' => $first_pending['end_date'],
+                'period_number'   => $first_pending['period_number'],
+                'period'          => $first_pending['period'],
+                'start_date'      => $first_pending['start_date'],
+                'end_date'        => $first_pending['end_date'],
                 'start_formatted' => $period_start->format('F j, Y'),
-                'end_formatted' => $period_end->format('F j, Y'),
-                'is_paid' => false,
-                'amount_due' => $payment_amount_per_period,  // ← FIXED: Use correct amount
-                'status' => 'upcoming',
-                'days_elapsed' => 0,
-                'days_remaining' => $period_end->diff($today_date)->days
+                'end_formatted'   => $period_end->format('F j, Y'),
+                'is_paid'         => false,
+                'amount_due'      => $payment_amount_per_period,
+                'status'          => 'upcoming',
+                'days_elapsed'    => 0,
+                'days_remaining'  => $period_end->diff($today_date)->days,
             ];
-            logActivity("Current period set as upcoming: {$current_period['period']}");
         }
     }
 
-    // Calculate upcoming period
+    // Upcoming period
     if ($current_period && !empty($pending_trackers)) {
-        $current_period_number = $current_period['period_number'];
         foreach ($pending_trackers as $tracker) {
-            if ($tracker['period_number'] > $current_period_number) {
+            if ($tracker['period_number'] > $current_period['period_number']) {
                 $tracker_start = new DateTime($tracker['start_date']);
-                $tracker_end = new DateTime($tracker['end_date']);
-
+                $tracker_end   = new DateTime($tracker['end_date']);
                 $upcoming_period = [
-                    'period_number' => $tracker['period_number'],
-                    'period' => $tracker['period'],
-                    'start_date' => $tracker['start_date'],
-                    'end_date' => $tracker['end_date'],
+                    'period_number'   => $tracker['period_number'],
+                    'period'          => $tracker['period'],
+                    'start_date'      => $tracker['start_date'],
+                    'end_date'        => $tracker['end_date'],
                     'start_formatted' => $tracker_start->format('F j, Y'),
-                    'end_formatted' => $tracker_end->format('F j, Y'),
-                    'amount_due' => $tracker['amount_due'],
-                    'is_paid' => false
+                    'end_formatted'   => $tracker_end->format('F j, Y'),
+                    'amount_due'      => $tracker['amount_due'],
+                    'is_paid'         => false,
                 ];
-                logActivity("Upcoming period: {$upcoming_period['period']}");
                 break;
             }
         }
     }
 
-    // ==================== NEXT PAYMENT CALCULATION ====================
-    $next_payment = null;
-    $has_upcoming_payment = false;
-    $has_overdue_payments = false;
-    $overdue_amount = 0;
+    // ==================== NEXT PAYMENT ====================
+    $next_payment          = null;
+    $has_upcoming_payment  = false;
+    $has_overdue_payments  = false;
+    $overdue_amount        = 0;
 
-    // Find the next unpaid period (available or failed)
-    // Find the next unpaid period (available or failed)
     foreach ($trackerRecords as $tracker) {
         if ($tracker['status'] === 'available' || $tracker['status'] === 'failed') {
             $period_start = new DateTime($tracker['start_date']);
-            $period_end = new DateTime($tracker['end_date']);
-
+            $period_end   = new DateTime($tracker['end_date']);
             $dueDateConfig = ['Monthly' => 7, 'Quarterly' => 14, 'Semi-Annually' => 30, 'Annually' => 90];
             $daysToAdd = $dueDateConfig[$payment_frequency] ?? 7;
             $due_date = clone $period_end;
             $due_date->modify("+{$daysToAdd} days");
-
             $is_overdue = ($due_date < $today_date);
-
             if ($is_overdue) {
                 $has_overdue_payments = true;
-                $overdue_amount += $payment_amount_per_period;  // ← FIXED: Use correct amount
+                $overdue_amount += $payment_amount_per_period;
             }
-
             if (!$next_payment) {
                 $next_payment = [
-                    'period_number' => $tracker['period_number'],
-                    'period' => formatPeriod($period_start, $payment_frequency),
-                    'period_display' => $period_start->format('M j, Y') . ' - ' . $period_end->format('M j, Y'),
-                    'start_date' => $tracker['start_date'],
-                    'end_date' => $tracker['end_date'],
-                    'amount' => $payment_amount_per_period,  // ← FIXED: Use correct amount
-                    'due_date' => $due_date->format('Y-m-d'),
-                    'status' => $tracker['status'],
-                    'is_overdue' => $is_overdue,
-                    'remaining_balance' => (float) $tracker['remaining_balance']
+                    'period_number'     => $tracker['period_number'],
+                    'period'            => formatPeriod($period_start, $payment_frequency),
+                    'period_display'    => $period_start->format('M j, Y') . ' - ' . $period_end->format('M j, Y'),
+                    'start_date'        => $tracker['start_date'],
+                    'end_date'          => $tracker['end_date'],
+                    'amount'            => $payment_amount_per_period,
+                    'due_date'          => $due_date->format('Y-m-d'),
+                    'status'            => $tracker['status'],
+                    'is_overdue'        => $is_overdue,
+                    'remaining_balance' => (float) $tracker['remaining_balance'],
                 ];
                 $has_upcoming_payment = true;
             }
@@ -594,254 +511,281 @@ try {
         }
     }
 
-    // Get last completed payment from tracker
-    $last_completed_payment = !empty($completed_payments) ? $completed_payments[count($completed_payments) - 1] : null;
-
-    // Calculate total paid amount
+    $last_completed_payment = !empty($completed_payments) ? end($completed_payments) : null;
     $total_paid = array_sum(array_column($completed_payments, 'amount'));
 
-    // Check if lease is fully paid (no available or failed periods left)
+    // Lease fully paid?
     $remaining_unpaid = 0;
     foreach ($trackerRecords as $tracker) {
-        if ($tracker['status'] === 'available' || $tracker['status'] === 'failed' || $tracker['status'] === 'pending_verification') {
+        if (in_array($tracker['status'], ['available', 'failed', 'pending_verification'], true)) {
             $remaining_unpaid++;
         }
     }
     $is_lease_fully_paid = ($remaining_unpaid == 0);
 
-        // ==================== RENEWAL ELIGIBILITY CHECK ====================
-    logActivity("=== RENEWAL ELIGIBILITY CHECK START ===");
-    
+    // ==================== RENEWAL ELIGIBILITY ====================
+    // Alumni are never eligible to renew; skip the whole block for them.
     $can_renew = false;
     $renewal_message = '';
     $new_cycle_rent_amount = null;
     $new_cycle_security_deposit = null;
-    
-    if ($is_lease_fully_paid) {
-        logActivity("Lease is fully paid - checking renewal eligibility");
-        
-        $today_check = new DateTime();
+
+    if ($isAlumni) {
+        $renewal_message = "Your tenancy has ended. Contact support if you wish to rent another property.";
+    } elseif ($is_lease_fully_paid) {
+        $today_check    = new DateTime();
         $today_check->setTime(0, 0, 0);
         $lease_end_check = new DateTime($tenantData['lease_end_date']);
         $lease_end_check->setTime(0, 0, 0);
-        
-        logActivity("Today: " . $today_check->format('Y-m-d'));
-        logActivity("Lease End Date: " . $lease_end_check->format('Y-m-d'));
-        
-        // Check if lease has ended (today >= lease_end_date)
-        // Allow renewal ON the lease end date (May 4)
+
         if ($today_check >= $lease_end_check) {
-            logActivity("Lease has ended (today >= lease_end_date)");
-            
-            // Check if there's any pending verification payment (should not allow renewal)
             if (!$has_pending_verification) {
-                logActivity("No pending verification found - tenant is eligible for renewal");
                 $can_renew = true;
-                
-                // Get current apartment rent (may have been updated by admin)
-                $currentRentQuery = "
-                    SELECT a.rent_amount, a.security_deposit 
-                    FROM apartments a 
-                    WHERE a.apartment_code = ?
-                ";
-                $rentStmt = $conn->prepare($currentRentQuery);
+                $rentStmt = $conn->prepare("SELECT rent_amount, security_deposit FROM apartments WHERE apartment_code = ?");
                 $rentStmt->bind_param("s", $tenantData['apartment_code']);
                 $rentStmt->execute();
-                $rentResult = $rentStmt->get_result();
-                if ($rentRow = $rentResult->fetch_assoc()) {
-                    $new_cycle_rent_amount = (float)$rentRow['rent_amount'];
-                    $new_cycle_security_deposit = (float)$rentRow['security_deposit'];
-                    logActivity("Current apartment rent amount: ₦{$new_cycle_rent_amount}");
-                    logActivity("Current security deposit: ₦{$new_cycle_security_deposit}");
-                } else {
-                    logActivity("WARNING: Could not fetch apartment rent amount for code: " . $tenantData['apartment_code']);
+                if ($rentRow = $rentStmt->get_result()->fetch_assoc()) {
+                    $new_cycle_rent_amount      = (float) $rentRow['rent_amount'];
+                    $new_cycle_security_deposit = (float) $rentRow['security_deposit'];
                 }
                 $rentStmt->close();
-                
                 $renewal_message = "Your lease has ended. You can start a new lease cycle.";
-                logActivity("Renewal eligibility: YES (can_renew = true)");
             } else {
-                logActivity("Renewal blocked: Has pending verification payment");
                 $renewal_message = "You have a pending payment verification. Please wait for admin approval before renewing.";
             }
         } else {
             $days_until_end = $today_check->diff($lease_end_check)->days;
-            logActivity("Lease not yet ended - {$days_until_end} days remaining until " . $lease_end_check->format('Y-m-d'));
-            $renewal_message = "Your lease is fully paid but ends on " . $lease_end_check->format('F j, Y') . ". You can renew on or after that date. ($days_until_end days remaining)";
+            $renewal_message = "Your lease is fully paid but ends on "
+                . $lease_end_check->format('F j, Y')
+                . ". You can renew on or after that date. ({$days_until_end} days remaining)";
         }
-    } else {
-        logActivity("Lease is NOT fully paid - renewal not eligible");
     }
-    
-    logActivity("=== RENEWAL ELIGIBILITY CHECK END ===");
-    logActivity("can_renew: " . ($can_renew ? 'true' : 'false'));
-    logActivity("renewal_message: " . $renewal_message);
 
-    // Get recent maintenance requests
+    // ==================== RECENT MAINTENANCE REQUESTS ====================
     $recentRequestsQuery = "
         SELECT request_id, issue_type, status, created_at, priority
         FROM maintenance_requests
         WHERE tenant_code = ?
-        ORDER BY created_at DESC LIMIT 5
+        ORDER BY created_at DESC
+        LIMIT 5
     ";
     $stmt = $conn->prepare($recentRequestsQuery);
     $stmt->bind_param("s", $tenant_code);
     $stmt->execute();
-    $recentRequestsResult = $stmt->get_result();
-    $recent_requests = [];
-    while ($row = $recentRequestsResult->fetch_assoc()) {
-        $recent_requests[] = $row;
-    }
+    $recent_requests = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 
+    // ==================== EVACUATION ELIGIBILITY ====================
+    $can_request_evacuation = true;
+    $evacuation_block_reason = null;
 
-    //Tenant evacuation checks
+    if ($isAlumni) {
+        // Alumni can never request evacuation again
+        $can_request_evacuation = false;
+        $evacuation_block_reason = "Your tenancy has already ended.";
+    } else {
+        $pendingStmt = $conn->prepare("
+            SELECT COUNT(*) AS count FROM rent_payment_tracker
+            WHERE tenant_code = ? AND status = 'pending_verification'
+        ");
+        $pendingStmt->bind_param("s", $tenant_code);
+        $pendingStmt->execute();
+        if ((int) $pendingStmt->get_result()->fetch_assoc()['count'] > 0) {
+            $can_request_evacuation = false;
+            $evacuation_block_reason = "You have a pending payment waiting for verification.";
+        }
+        $pendingStmt->close();
 
-    // Check if tenant can request evacuation
-$can_request_evacuation = true;
-$evacuation_block_reason = null;
+        $existingStmt = $conn->prepare("
+            SELECT COUNT(*) AS count FROM evacuation_requests
+            WHERE tenant_code = ? AND status IN ('pending_review', 'approved')
+        ");
+        $existingStmt->bind_param("s", $tenant_code);
+        $existingStmt->execute();
+        if ((int) $existingStmt->get_result()->fetch_assoc()['count'] > 0) {
+            $can_request_evacuation = false;
+            $evacuation_block_reason = "You already have a pending or approved evacuation request.";
+        }
+        $existingStmt->close();
+    }
 
-// Check for pending payments
-$pendingPaymentQuery = "SELECT COUNT(*) as count FROM rent_payment_tracker 
-                        WHERE tenant_code = ? AND status = 'pending_verification'";
-$pendingStmt = $conn->prepare($pendingPaymentQuery);
-$pendingStmt->bind_param("s", $tenant_code);
-$pendingStmt->execute();
-$pendingCount = $pendingStmt->get_result()->fetch_assoc()['count'];
-$pendingStmt->close();
+    // ==================== ALUMNI EXTRAS ====================
+    // When the tenant is evacuated, include settlement + debt + wallet info
+    $alumniBlock = null;
 
-if ($pendingCount > 0) {
-    $can_request_evacuation = false;
-    $evacuation_block_reason = "You have a pending payment waiting for verification.";
-}
+    if ($isAlumni) {
+        // Fetch wallet balance (already in tenantData)
+        $walletBalance = (float) ($tenantData['wallet_balance'] ?? 0);
 
-// Check for existing evacuation request
-$existingRequestQuery = "SELECT COUNT(*) as count FROM evacuation_requests 
-                         WHERE tenant_code = ? AND status IN ('pending_review', 'approved')";
-$existingStmt = $conn->prepare($existingRequestQuery);
-$existingStmt->bind_param("s", $tenant_code);
-$existingStmt->execute();
-$existingCount = $existingStmt->get_result()->fetch_assoc()['count'];
-$existingStmt->close();
+        // Outstanding debt (from tenant_debts table)
+        $outstandingDebt = 0.0;
+        $debtCount = 0;
+        $debtStmt = $conn->prepare("
+            SELECT COUNT(*) AS c, COALESCE(SUM(balance), 0) AS total
+            FROM tenant_debts
+            WHERE tenant_code = ? AND status IN ('unpaid', 'partial', 'disputed')
+        ");
+        $debtStmt->bind_param("s", $tenant_code);
+        $debtStmt->execute();
+        if ($debtRow = $debtStmt->get_result()->fetch_assoc()) {
+            $debtCount       = (int) $debtRow['c'];
+            $outstandingDebt = (float) $debtRow['total'];
+        }
+        $debtStmt->close();
 
-if ($existingCount > 0) {
-    $can_request_evacuation = false;
-    $evacuation_block_reason = "You already have a pending or approved evacuation request.";
-}
+        // Fetch the most recent completed evacuation settlement
+        $evStmt = $conn->prepare("
+            SELECT request_id, approved_move_out_date, processed_at,
+                   final_settlement_amount, security_deposit_refund,
+                   settlement_receipt_number
+            FROM evacuation_requests
+            WHERE tenant_code = ? AND status = 'completed'
+            ORDER BY processed_at DESC
+            LIMIT 1
+        ");
+        $evStmt->bind_param("s", $tenant_code);
+        $evStmt->execute();
+        $evacuation = $evStmt->get_result()->fetch_assoc();
+        $evStmt->close();
 
-    $conn->close();
+        $alumniBlock = [
+            'is_alumni'    => true,
+            'tenant_state' => 'evacuated',
+            'wallet' => [
+                'balance'           => $walletBalance,
+                'balance_formatted' => '₦' . number_format($walletBalance, 2),
+            ],
+            'outstanding_debt' => [
+                'has_debt'          => $debtCount > 0,
+                'count'             => $debtCount,
+                'balance'           => $outstandingDebt,
+                'balance_formatted' => '₦' . number_format($outstandingDebt, 2),
+            ],
+            'evacuation' => $evacuation ? [
+                'request_id'               => $evacuation['request_id'],
+                'move_out_date'            => $evacuation['approved_move_out_date'],
+                'processed_at'             => $evacuation['processed_at'],
+                'final_settlement_amount'  => (float) $evacuation['final_settlement_amount'],
+                'security_deposit_refund'  => (float) $evacuation['security_deposit_refund'],
+                'settlement_receipt_number'=> $evacuation['settlement_receipt_number'],
+            ] : null,
+            'banner' => [
+                'title'   => 'Your tenancy has ended',
+                'message' => 'You can still access your wallet, settlement, and documents.',
+                'type'    => 'info',
+            ],
+        ];
+    }
 
-    // Prepare dashboard data
+    // ==================== ASSEMBLE RESPONSE ====================
     $dashboardData = [
-        'property_name' => $tenantData['property_name'] ?? 'N/A',
-        'property_address' => $tenantData['property_address'] ?? 'N/A',
-        'apartment_number' => $tenantData['apartment_number'] ?? 'Not Assigned',
-        'apartment_code' => $tenantData['apartment_code'] ?? 'N/A',
-        'active_requests' => (int) ($maintenanceData['active_requests'] ?? 0),
-        'days_remaining' => $days_remaining,
-        'payments_count' => count($completed_payments),
-        'total_paid' => $total_paid,
-        'annual_rent' => $annual_rent,
-        'payment_amount_per_period' => $payment_amount_per_period,
-        'rent_balance' => $rent_balance,
-        'security_deposit' => $security_deposit,
-        'security_deposit_paid' => $depositPayment ? (float) $depositPayment['amount'] : 0,
+        // ---- Common fields (both active and alumni) ----
+        'property_name'                 => $tenantData['property_name'] ?? 'N/A',
+        'property_address'              => $tenantData['property_address'] ?? 'N/A',
+        'apartment_number'              => $tenantData['apartment_number'] ?? 'Not Assigned',
+        'apartment_code'                => $tenantData['apartment_code'] ?? 'N/A',
+        'active_requests'               => (int) ($maintenanceData['active_requests'] ?? 0),
+        'days_remaining'                => $days_remaining,
+        'payments_count'                => count($completed_payments),
+        'total_paid'                    => $total_paid,
+        'annual_rent'                   => $annual_rent,
+        'payment_amount_per_period'     => $payment_amount_per_period,
+        'rent_balance'                  => $rent_balance,
+        'security_deposit'              => $security_deposit,
+        'security_deposit_paid'         => $depositPayment ? (float) $depositPayment['amount'] : 0,
         'security_deposit_payment_date' => $depositPayment ? $depositPayment['payment_date'] : null,
-        'payment_frequency' => $payment_frequency,
-        'lease_start_date' => $tenantData['lease_start_date'],
-        'lease_end_date' => $tenantData['lease_end_date'],
-        'agent_name' => $tenantData['agent_name'] ?? 'N/A',
-        'agent_phone' => $tenantData['agent_phone'] ?? null,
-        'agent_email' => $tenantData['agent_email'] ?? null,
-        'recent_requests' => $recent_requests,
-        // Main rent payment record
-        'rent_payment' => $rentPayment ? [
-            'rent_payment_id' => $rentPayment['rent_payment_id'],
-            'total_annual_rent' => (float) $rentPayment['total_annual_rent'],
-            'initial_payment' => (float) $rentPayment['initial_payment'],
-            'remaining_balance' => (float) $rentPayment['remaining_balance'],
-            'payment_date' => $rentPayment['payment_date'],
-            'status' => $rentPayment['status'],
-            'reference_number' => $rentPayment['reference_number'],
-            'receipt_number' => $rentPayment['receipt_number']
+        'payment_frequency'             => $payment_frequency,
+        'lease_start_date'              => $tenantData['lease_start_date'],
+        'lease_end_date'                => $tenantData['lease_end_date'],
+        'agent_name'                    => $tenantData['agent_name']  ?? 'N/A',
+        'agent_phone'                   => $tenantData['agent_phone'] ?? null,
+        'agent_email'                   => $tenantData['agent_email'] ?? null,
+        'recent_requests'               => $recent_requests,
+        'rent_payment'                  => $rentPayment ? [
+            'rent_payment_id'    => $rentPayment['rent_payment_id'],
+            'total_annual_rent'  => (float) $rentPayment['total_annual_rent'],
+            'initial_payment'    => (float) $rentPayment['initial_payment'],
+            'remaining_balance'  => (float) $rentPayment['remaining_balance'],
+            'payment_date'       => $rentPayment['payment_date'],
+            'status'             => $rentPayment['status'],
+            'reference_number'   => $rentPayment['reference_number'],
+            'receipt_number'     => $rentPayment['receipt_number'],
         ] : null,
-        // Current running period
-        'current_period' => $current_period,
-        'upcoming_period' => $upcoming_period,
-        // Payment tracker summary
-        'total_periods' => count($trackerRecords),
-        'paid_periods_count' => count($paid_periods),
+        'current_period'        => $current_period,
+        'upcoming_period'       => $upcoming_period,
+        'total_periods'         => count($trackerRecords),
+        'paid_periods_count'    => count($paid_periods),
         'pending_periods_count' => count($pending_trackers),
-        'paid_periods' => $paid_periods,
-        'pending_periods' => $pending_trackers, // Only available and failed statuses
-        // Pending verification info
+        'paid_periods'          => $paid_periods,
+        'pending_periods'       => $pending_trackers,
         'pending_verification_tracker' => $pending_verification_tracker,
-        'pending_verification_count' => count($pending_verification_tracker),
-        'has_pending_payment' => $has_pending_verification,
+        'pending_verification_count'   => count($pending_verification_tracker),
+        'has_pending_payment'    => $has_pending_verification,
         'pending_payment_period' => $pending_verification_period,
-
-        //failed payment
         'failed_payment_tracker' => $failed_payment,
-        'failed_payment_count' => $failed_payment_count,
-        'has_failed_payment' => $has_failed_payment,
-        
-        // Last completed payment
-        'last_payment' => $last_completed_payment,
-        'last_paid_end_date' => $last_paid_end_date,
-        'last_payment_date' => $last_payment_date,
-        'last_payment_period' => $last_payment_period,
-        // Next payment info
-        'next_payment' => $next_payment,
-        'has_upcoming_payment' => $has_upcoming_payment,
-        // Overdue payments
-        'has_overdue_payments' => $has_overdue_payments,
-        'overdue_amount' => $overdue_amount,
-        // Lease status
-        'is_lease_fully_paid' => $is_lease_fully_paid,
-        'can_make_payment' => !$is_lease_fully_paid && !$has_pending_verification && $has_upcoming_payment,
-         // ==================== NEW: RENEWAL ELIGIBILITY ====================
-        'can_renew' => $can_renew,
-        'renewal_message' => $renewal_message,
-        'new_cycle_rent_amount' => $new_cycle_rent_amount,
+        'failed_payment_count'   => $failed_payment_count,
+        'has_failed_payment'     => $has_failed_payment,
+        'last_payment'           => $last_completed_payment,
+        'last_paid_end_date'     => $last_paid_end_date,
+        'last_payment_date'      => $last_payment_date,
+        'last_payment_period'    => $last_payment_period,
+        'next_payment'           => $next_payment,
+        'has_upcoming_payment'   => $has_upcoming_payment,
+        'has_overdue_payments'   => $has_overdue_payments,
+        'overdue_amount'         => $overdue_amount,
+        'is_lease_fully_paid'    => $is_lease_fully_paid,
+
+        // Payment capability — for alumni, everything is "can't"
+        'can_make_payment' => !$isAlumni && !$is_lease_fully_paid && !$has_pending_verification && $has_upcoming_payment,
+
+        // Renewal
+        'can_renew'                  => $can_renew,
+        'renewal_message'            => $renewal_message,
+        'new_cycle_rent_amount'      => $new_cycle_rent_amount,
         'new_cycle_security_deposit' => $new_cycle_security_deposit,
+
+        // Current cycle
         'current_cycle' => $currentCycle ? [
-            'rent_payment_id'      => $currentCycle['rent_payment_id'],
-            'cycle_rent_amount'    => (float)$currentCycle['cycle_rent_amount'],
-            'cycle_amount_paid'    => (float)$currentCycle['cycle_amount_paid'],
-            'cycle_balance'        => (float)$currentCycle['cycle_balance'],
-            'cycle_start_date'     => $currentCycle['period_start_date'],
-            'cycle_end_date'       => $currentCycle['period_end_date'],
-            'amount_paid_in_cycle' => $amount_paid_in_cycle,
-            'payment_amount_per_period' => (float)$currentCycle['payment_amount_per_period'],
-            'status'               => $currentCycle['status'],
-            'payment_frequency'    => $payment_frequency
+            'rent_payment_id'           => $currentCycle['rent_payment_id'],
+            'cycle_rent_amount'         => (float) $currentCycle['cycle_rent_amount'],
+            'cycle_amount_paid'         => (float) $currentCycle['cycle_amount_paid'],
+            'cycle_balance'             => (float) $currentCycle['cycle_balance'],
+            'cycle_start_date'          => $currentCycle['period_start_date'],
+            'cycle_end_date'            => $currentCycle['period_end_date'],
+            'amount_paid_in_cycle'      => $amount_paid_in_cycle,
+            'payment_amount_per_period' => (float) $currentCycle['payment_amount_per_period'],
+            'status'                    => $currentCycle['status'],
+            'payment_frequency'         => $payment_frequency,
         ] : null,
-        // ====================== fetch evacuation status =================
-        // Add to dashboardData
-        'can_request_evacuation' => $can_request_evacuation,
-        'evacuation_block_reason' => $evacuation_block_reason
+
+        // Evacuation gate
+        'can_request_evacuation'  => $can_request_evacuation,
+        'evacuation_block_reason' => $evacuation_block_reason,
+
+        // Summary block (for payments.js)
+        'summary' => [
+            'total_paid'          => (float) $total_paid,
+            'successful_payments' => (int) count($completed_payments),
+            'payment_per_period'  => (float) $payment_amount_per_period,
+            'remaining_balance'   => (float) $rent_balance,
+        ],
+
+        // ---- Alumni marker + extras ----
+        'is_alumni'    => $isAlumni,
+        'tenant_state' => $isAlumni ? 'evacuated' : 'active',
     ];
 
-    // ==================== SUMMARY (for frontend convenience) ====================
-    // Nested summary object consumed by payments.js (paymentSummary variable).
-    // Values already computed earlier in this file — no new queries needed.
-    $dashboardData['summary'] = [
-        'total_paid'          => (float) $total_paid,
-        'successful_payments' => (int) count($completed_payments),
-        'payment_per_period'  => (float) $payment_amount_per_period,
-        'remaining_balance'   => (float) $rent_balance,
-    ];
+    if ($isAlumni && $alumniBlock !== null) {
+        $dashboardData['alumni'] = $alumniBlock;
+    }
 
     logActivity("=== FETCH DASHBOARD DATA COMPLETED ===");
-    logActivity("Total Paid: {$total_paid}, Balance: {$rent_balance}, Fully Paid: " . ($is_lease_fully_paid ? 'Yes' : 'No'));
-    logActivity("Has Pending Verification: " . ($has_pending_verification ? 'Yes' : 'No'));
-    logActivity("Pending Periods Count: " . count($pending_trackers));
-    logActivity("Summary block: total_paid={$total_paid}, payments=" . count($completed_payments));
+    logActivity("Alumni: " . ($isAlumni ? 'YES' : 'NO') . " | Total Paid: {$total_paid} | Balance: {$rent_balance}");
 
     json_success($dashboardData, "Dashboard data retrieved successfully");
-} catch (Exception $e) {
+
+} catch (Throwable $e) {
     logActivity("Error in fetch_dashboard_data: " . $e->getMessage());
     logActivity("Stack trace: " . $e->getTraceAsString());
-    json_error("Failed to fetch dashboard data: " . $e->getMessage(), 500, null, 'SERVER_ERROR');
+    json_error("Failed to fetch dashboard data", 500, null, 'SERVER_ERROR');
 }
-?>

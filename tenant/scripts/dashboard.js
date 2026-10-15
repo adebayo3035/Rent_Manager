@@ -1017,22 +1017,15 @@ async function startNewLeaseCycle() {
 
 // ==================== AUTO REFRESH ====================
 let refreshInterval = null;
+let lastRefresh = 0;
+const MIN_REFRESH_GAP = 60000; // 60 seconds minimum between refreshes
 
 function startAutoRefresh() {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-  }
+  stopAutoRefresh();
 
-  refreshInterval = setInterval(async () => {
-    if (document.querySelector(".dashboard-container")) {
-      try {
-        await fetchDashboardData();
-        renderDashboard();
-      } catch (error) {
-        console.error("Auto-refresh error:", error);
-      }
-    }
-  }, 30000); // Refresh every 30 seconds
+  // Refresh whenever the user returns to this tab
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  window.addEventListener("focus", handleFocus);
 }
 
 function stopAutoRefresh() {
@@ -1040,8 +1033,29 @@ function stopAutoRefresh() {
     clearInterval(refreshInterval);
     refreshInterval = null;
   }
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  window.removeEventListener("focus", handleFocus);
 }
 
+function handleVisibilityChange() {
+  if (document.visibilityState === "visible") {
+    maybeRefresh();
+  }
+}
+
+function handleFocus() {
+  maybeRefresh();
+}
+
+function maybeRefresh() {
+  if (!document.querySelector(".dashboard-container")) return;
+
+  const now = Date.now();
+  if (now - lastRefresh < MIN_REFRESH_GAP) return;
+
+  lastRefresh = now;
+  fetchDashboardData().then(renderDashboard).catch(console.error);
+}
 //Evacuation Processing
 // ==================== EVACUATION REQUEST FUNCTIONS ====================
 

@@ -33,8 +33,12 @@ try {
             agreed_rent_amount,
             payment_amount_per_period,
             rent_balance
-        FROM tenants 
-        WHERE tenant_code = ? AND status = 1 
+        FROM tenants t
+        WHERE t.tenant_code = ?
+          AND (
+              (t.tenant_status = '1' AND t.status = 1)
+              OR (t.tenant_status = '3' AND t.status = 0 AND t.evacuation_status = 'evacuated')
+          )
         LIMIT 1
     ";
     $tenant_stmt = $conn->prepare($tenant_query);

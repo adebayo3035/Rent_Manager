@@ -7,8 +7,16 @@ require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
- if (!isset($_SESSION)) session_start();
+require_once __DIR__ . '/../utilities/auth_guard.php';
+if (!isset($_SESSION)) session_start();
  rateLimiter();
+
+$auth = requireAuth([
+    'method'                 => 'POST',
+    'rate_key'               => 'create_maintenance_request',
+    'roles'                  => ['Tenant'],
+    'require_active_tenancy' => true,
+]);
 
 logActivity("========== UPLOAD DOCUMENT - START ==========");
 
