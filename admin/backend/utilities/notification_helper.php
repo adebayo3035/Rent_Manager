@@ -444,4 +444,91 @@ function createDueDateReminder($conn, $tenant_code, $type, $item_name, $amount, 
 
     return createNotification($conn, $tenant_code, 'reminder', $title, $message, $details, $priority, $action_url, $action_text);
 }
+/**
+ * Create a notification for a client (landlord).
+ * Parallel to createNotification() but targets client_notifications.
+ *
+ * @param mysqli $conn
+ * @param string $clientCode
+ * @param string $type             e.g. 'wallet', 'evacuation', 'payment'
+ * @param string $title
+ * @param string $message
+ * @param array  $details          arbitrary structured data (stored as JSON string)
+ * @param string $priority         'low' | 'medium' | 'high' | 'urgent'
+ * @param string|null $actionUrl
+ * @param string|null $actionText
+ * @return int|null                notification_id on success, null on failure
+ */
+function createClientNotification(
+    mysqli $conn,
+    string $clientCode,
+    string $type,
+    string $title,
+    string $message,
+    array $details = [],
+    string $priority = 'medium',
+    ?string $actionUrl = null,
+    ?string $actionText = null
+): ?int {
+    try {
+        // Validate priority — must be one of the enum values
+        $allowedPriorities = ['low', 'medium', 'high', 'urgent'];
+        if (!in_array($priority, $allowedPriorities, true)) {
+            logActivity("[CLIENT_NOTIF_ERROR] Invalid priority '{$priority}', falling back to 'medium'");
+            $priority = 'medium';
+        }
+
+        // Serialize details as JSON
+        $detailsJson = empty($details) ? null : json_encode($details);
+
+        // Truncate action_text to 100 chars (schema limit)
+        if ($actionText !== null && strlen($actionText) > 100) {
+            $actionText = substr($actionText, 0, 100);
+        }
+
+        // Truncate action_url to 255 chars (schema limit)
+        if ($actionUrl !== null && strlen($actionUrl) > 255) {
+            $actionUrl = substr($actionUrl, 0, 255);
+        }
+
+        $insert = $conn->prepare("
+            INSERT INTO client_notifications
+                (client_code, notification_type, title, message, details,
+                 priority, action_url, action_text, is_read, is_archived, created_at)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+        ");
+
+        if (!$insert) {
+            logActivity("[CLIENT_NOTIF_ERROR] Prepare failed: " . $conn->error);
+            return null;
+        }
+
+        $insert->bind_param(
+            "ssssssss",
+            $clientCode,
+            $type,
+            $title,
+            $message,
+            $detailsJson,
+            $priority,
+            $actionUrl,
+            $actionText
+        );
+
+        if (!$insert->execute()) {
+            logActivity("[CLIENT_NOTIF_ERROR] Execute failed: " . $insert->error);
+            $insert->close();
+            return null;
+        }
+
+        $id = (int) $insert->insert_id;
+        $insert->close();
+        return $id;
+
+    } catch (Throwable $e) {
+        logActivity("[CLIENT_NOTIF_ERROR] " . $e->getMessage());
+        return null;
+    }
+}
 ?>

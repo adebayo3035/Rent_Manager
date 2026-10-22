@@ -838,6 +838,46 @@
     font-weight: 800;
 }
 
+/* Pre-lease banner */
+.prelease-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    color: #78350f;
+}
+
+.prelease-banner i {
+    font-size: 22px;
+    color: #f59e0b;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.prelease-banner strong {
+    display: block;
+    font-size: 15px;
+    margin-bottom: 4px;
+    color: #78350f;
+}
+
+.prelease-banner p {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #92400e;
+    margin: 0;
+}
+
+/* Slight visual difference for the pre-lease action card */
+.prelease-action {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border-color: #f59e0b !important;
+}
+
 @keyframes spin {
     to {
         transform: rotate(360deg);

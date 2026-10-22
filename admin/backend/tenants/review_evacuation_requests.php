@@ -200,10 +200,12 @@ try {
 
         // 3. Notify tenant
         try {
-            $notifMessage = "Your evacuation request has been approved. "
-                . "Scheduled move-out date: "
-                . date('M j, Y', strtotime($approved_move_out_date)) . ". "
-                . "The final settlement will be processed on your move-out date.";
+            $typeLabel = ($request['request_type'] ?? 'evacuation') === 'prelease_cancellation'
+    ? 'cancellation'
+    : 'evacuation';
+
+$notifMessage = "Your {$typeLabel} request has been approved. "
+    . "Scheduled date: " . date('M j, Y', strtotime($approved_move_out_date)) . ".";
 
             createNotification(
                 $conn,
@@ -340,6 +342,8 @@ try {
             $notifMessage = "Your evacuation approval has been withdrawn by the admin. "
                 . "Reason: " . $decline_reason . ". "
                 . "The request has been returned to pending review.";
+
+                
 
             createNotification(
                 $conn,

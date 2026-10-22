@@ -1,0 +1,1682 @@
+// dashboard.js
+let dashboardData = null;
+let currentUser = null;
+
+document.addEventListener("DOMContentLoaded", function () {
+  initializeDashboard();
+});
+
+async function initializeDashboard() {
+  try {
+    // Fetch user data first
+    await fetchUserData();
+
+    // Then fetch dashboard data
+    await fetchDashboardData();
+
+    // Render the dashboard
+    renderDashboard();
+  } catch (error) {
+    console.error("Error initializing dashboard:", error);
+    renderErrorState();
+  }
+}
+
+async function fetchUserData() {
+  try {
+    const response = await fetch("../backend/tenant/fetch_user_data.php");
+    const data = await response.json();
+
+    if (data.success && data.data) {
+      currentUser = data.data;
+      window.currentUser = currentUser;
+
+      // Dispatch event for other components
+      window.dispatchEvent(
+        new CustomEvent("userDataLoaded", { detail: currentUser }),
+      );
+      console.log("User data loaded:", currentUser);
+      return data;
+    } else {
+      throw new Error(data.message || "Failed to fetch user data");
+    }
+  } catch (error) {
+    console.error("Error fetching user data:", error);
+    throw error;
+  }
+}
+
+async function fetchDashboardData() {
+  try {
+    const response = await fetch("../backend/tenant/fetch_dashboard_data.php");
+    const data = await response.json();
+
+    console.log("Dashboard data response:", data);
+
+    if (data.success && data.data) {
+      dashboardData = data.data;
+      console.log("Dashboard data loaded:", dashboardData);
+      return data;
+    } else {
+      throw new Error(data.message || "Failed to fetch dashboard data");
+    }
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error);
+    if (window.showToast) {
+      window.showToast("Failed to load dashboard statistics", "error");
+    }
+    throw error;
+  }
+}
+
+async function createMaintenanceRequest(requestData) {
+  try {
+    const response = await fetch(
+      "../backend/maintenance/create_maintenance_request.php",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestData),
+      },
+    );
+    const data = await response.json();
+
+    if (data.success) {
+      if (window.showToast) {
+        window.showToast(
+          "Maintenance request submitted successfully",
+          "success",
+        );
+      }
+      closeModal("maintenanceModal");
+      await fetchDashboardData(); // Refresh data
+      renderDashboard();
+      return data;
+    } else {
+      throw new Error(data.message || "Failed to submit request");
+    }
+  } catch (error) {
+    console.error("Error creating maintenance request:", error);
+    if (window.showToast) {
+      window.showToast(error.message, "error");
+    }
+    throw error;
+  }
+}
+
+function renderErrorState() {
+  const contentArea = document.getElementById("contentArea");
+  if (!contentArea) return;
+
+  contentArea.innerHTML = `
+        <div class="dashboard-container">
+            <div class="empty-state">
+                <i class="fas fa-chart-line"></i>
+                <h3>Unable to Load Dashboard</h3>
+                <p>Please refresh the page or contact support if the issue persists.</p>
+                <button class="btn-primary" onclick="location.reload()">Refresh Page</button>
+            </div>
+        </div>
+    `;
+}
+
+function renderDashboard() {
+  const contentArea = document.getElementById("contentArea");
+  if (!contentArea) return;
+
+  if (!dashboardData || !currentUser) {
+    renderErrorState();
+    return;
+  }
+
+  const tenantName =
+    `${currentUser.firstname || "Tenant"} ${currentUser.lastname || ""}`.trim();
+  const annualRent = Number(dashboardData.annual_rent || 0);
+  const totalPaid = Number(dashboardData.total_paid || 0);
+  const rentBalance = Number(dashboardData.rent_balance || 0);
+  const rentProgress =
+    annualRent > 0
+      ? Math.min(100, Math.max(0, Math.round((totalPaid / annualRent) * 100)))
+      : 0;
+  const leaseTone = dashboardData.is_lease_fully_paid
+    ? "Settled"
+    : dashboardData.has_pending_payment
+      ? "Pending Review"
+      : dashboardData.has_overdue_payments
+        ? "Overdue"
+        : "Active";
+  const nextPaymentLabel = dashboardData.next_payment
+    ? `NGN ${formatNumber(dashboardData.next_payment.amount || 0)}`
+    : dashboardData.is_lease_fully_paid
+      ? "Fully Paid"
+      : "Not Scheduled";
+
+  const html = `
+        <div class="dashboard-container">
+            <!-- Welcome Section -->
+            <div class="welcome-section">
+                <div class="welcome-copy">
+                    <span class="eyebrow">Tenant Dashboard</span>
+                    <h1>Welcome back, ${escapeHtml(tenantName)}!</h1>
+                    <p>${escapeHtml(dashboardData.property_name || "Your property")} · Apartment ${escapeHtml(dashboardData.apartment_number || "N/A")}</p>
+                    <div class="hero-actions">
+                        <button class="btn-primary" onclick="makePayment()" ${dashboardData.is_lease_fully_paid ? "disabled" : ""}>
+                            <i class="fas fa-credit-card"></i>
+                            ${dashboardData.is_lease_fully_paid ? "Lease Fully Paid" : "Make Payment"}
+                        </button>
+                        <button class="btn-secondary" onclick="openMaintenanceModal()">
+                            <i class="fas fa-tools"></i>
+                            Report Issue
+                        </button>
+                    </div>
+                </div>
+                <div class="lease-overview-card">
+                    <div class="lease-progress" style="--progress: ${rentProgress}%;">
+                        <span>${rentProgress}%</span>
+                    </div>
+                    <div class="lease-overview-meta">
+                        <span class="status-pill status-${leaseTone.toLowerCase().replace(/\s+/g, "-")}">${leaseTone}</span>
+                        <h3>${dashboardData.days_remaining || 0} days left</h3>
+                        <p>Next payment: ${nextPaymentLabel}</p>
+                    </div>
+                </div>
+            </div>
+
+            ${isPreleaseTenant() ? `
+<div class="prelease-banner">
+    <i class="fas fa-info-circle"></i>
+    <div>
+        <strong>Your tenancy starts on ${formatDate(
+            dashboardData.current_cycle?.cycle_start_date || dashboardData.lease_start_date
+        )}</strong>
+        <p>
+            You have ${daysUntilLeaseStart()} day${daysUntilLeaseStart() === 1 ? "" : "s"} until move-in.
+            If you need to cancel this booking, you can do so before the lease starts.
+        </p>
+    </div>
+</div>
+` : ""}
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-building"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>${escapeHtml(dashboardData.property_name || "N/A")}</h3>
+                        <p>Your Property</p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-door-open"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>${escapeHtml(dashboardData.apartment_number || "Not Assigned")}</h3>
+                        <p>Apartment Number</p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-tools"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>${dashboardData.active_requests || 0}</h3>
+                        <p>Active Maintenance</p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-calendar-alt"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>${dashboardData.days_remaining || 0} days</h3>
+                        <p>Lease Remaining</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Rent Information -->
+            <div class="payment-section">
+                <div class="section-header">
+                    <h2>Current Rent Information</h2>
+                    <span class="btn-link" onclick="navigateToPage('apartment')">View More <i class="fas fa-arrow-right"></i></span>
+                </div>
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Annual Rent</label>
+                            <span class="amount">₦${formatNumber(dashboardData.annual_rent || 0)}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Payment per Period</label>
+                            <span class="amount">₦${formatNumber(dashboardData.payment_amount_per_period || 0)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Payment Frequency</label>
+                            <span class="date">${escapeHtml(dashboardData.payment_frequency || "Monthly")}</span>
+                        </div>
+                    </div>
+
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Total Paid</label>
+                            <span class="amount success">₦${formatNumber(dashboardData.total_paid || 0)}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Remaining Balance</label>
+                            <span class="amount ${dashboardData.rent_balance > 0 ? "warning" : "success"}">₦${formatNumber(dashboardData.rent_balance || 0)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Lease Status</label>
+                            <span class="badge ${dashboardData.is_lease_fully_paid ? "badge-success" : "badge-info"}">
+                                ${dashboardData.is_lease_fully_paid ? "Fully Paid" : "Active"}
+                            </span>
+                        </div>
+                    </div>
+
+                    ${
+                      dashboardData.current_period
+                        ? `
+                    <div class="payment-details">
+                        <div class="payment-date">
+                            <label>Current Period</label>
+                            <span class="date">${escapeHtml(dashboardData.current_period.period || "N/A")}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Period Start</label>
+                            <span class="date">${formatDate(dashboardData.current_period.start_date)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Period End</label>
+                            <span class="date">${formatDate(dashboardData.current_period.end_date)}</span>
+                        </div>
+                        ${
+                          dashboardData.current_period.is_paid
+                            ? `
+                        <div class="payment-status status-paid">
+                            <i class="fas fa-check-circle"></i> Paid
+                        </div>
+                        `
+                            : `
+                        <div class="payment-status status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </div>
+                        `
+                        }
+                    </div>
+                    `
+                        : ""
+                    }
+                </div>
+            </div>
+
+            <!-- Upcoming Payment Section -->
+            <div class="payment-section">
+                <div class="section-header">
+                    <h2>Next Payment</h2>
+                    <span class="btn-link" onclick="navigateToPage('payments')">View All Payments <i class="fas fa-arrow-right"></i></span>
+                </div>
+                ${
+                  dashboardData.next_payment
+                    ? `
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Amount Due</label>
+                            <span class="amount">₦${formatNumber(dashboardData.next_payment.amount || 0)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Payment Period</label>
+                            <span class="date">${escapeHtml(dashboardData.next_payment.period || "N/A")}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Due Date</label>
+                            <span class="date ${dashboardData.next_payment.is_overdue ? "overdue" : ""}">${formatDate(dashboardData.next_payment.due_date)}</span>
+                        </div>
+                        ${
+                          dashboardData.next_payment.is_overdue
+                            ? `
+                        <div class="payment-status status-overdue">
+                            <i class="fas fa-exclamation-triangle"></i> Overdue
+                        </div>
+                        `
+                            : ""
+                        }
+                    </div>
+                    <button class="btn-primary" onclick="makePayment()" ${dashboardData.is_lease_fully_paid ? "disabled" : ""}>
+                        ${dashboardData.is_lease_fully_paid ? "Lease Fully Paid" : "Make Payment"}
+                    </button>
+                </div>
+                `
+                    : dashboardData.is_lease_fully_paid
+                      ? `
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <i class="fas fa-check-circle" style="color: #10b981; font-size: 48px;"></i>
+                            <h3>Congratulations!</h3>
+                            <p>Your lease has been fully paid.</p>
+                        </div>
+                    </div>
+                </div>
+                `
+                      : `
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <p>No upcoming payments scheduled.</p>
+                        </div>
+                    </div>
+                </div>
+                `
+                }
+            </div>
+
+            <!-- Security Deposit Section -->
+            ${
+              dashboardData.security_deposit > 0
+                ? `
+            <div class="payment-section">
+                <div class="section-header">
+                    <h2>Security Deposit</h2>
+                </div>
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Deposit Amount</label>
+                            <span class="amount">₦${formatNumber(dashboardData.security_deposit)}</span>
+                        </div>
+                        ${
+                          dashboardData.security_deposit_paid > 0
+                            ? `
+                        <div class="payment-amount">
+                            <label>Paid Amount</label>
+                            <span class="amount success">₦${formatNumber(dashboardData.security_deposit_paid)}</span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Payment Date</label>
+                            <span class="date">${formatDate(dashboardData.security_deposit_payment_date)}</span>
+                        </div>
+                        <div class="payment-status status-paid">
+                            <i class="fas fa-check-circle"></i> Paid
+                        </div>
+                        `
+                            : `
+                        <div class="payment-status status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </div>
+                        `
+                        }
+                    </div>
+                </div>
+            </div>
+            `
+                : ""
+            }
+
+            <!-- Payment Summary Section -->
+            <div class="payment-section">
+                <div class="section-header">
+                    <h2>Payment Summary</h2>
+                </div>
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Total Periods</label>
+                            <span class="amount">${dashboardData.total_periods || 0}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Paid Periods</label>
+                            <span class="amount success">${dashboardData.paid_periods_count || 0}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Pending Periods</label>
+                            <span class="amount warning">${dashboardData.pending_periods_count || 0}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Pending Verification</label>
+                            <span class="amount warning">${dashboardData.pending_verification_count || 0}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Failed Payment</label>
+                            <span class="amount warning">${dashboardData.failed_payment_count || 0}</span>
+                        </div>
+                    </div>
+                    
+                    ${
+                      dashboardData.paid_periods &&
+                      dashboardData.paid_periods.length > 0
+                        ? `
+                    <div class="payment-periods-list">
+                        <label>Paid Periods:</label>
+                        <div class="periods-grid">
+                            ${dashboardData.paid_periods
+                              .slice(-3)
+                              .map(
+                                (period) => `
+                                <div class="period-badge">
+                                    ${escapeHtml(period.period)}
+                                </div>
+                            `,
+                              )
+                              .join("")}
+                            ${
+                              dashboardData.paid_periods_count > 3
+                                ? `
+                            <div class="period-badge more" onclick="navigateToPage('payments')">
+                                +${dashboardData.paid_periods_count - 3} more
+                            </div>
+                            `
+                                : ""
+                            }
+                        </div>
+                    </div>
+                    `
+                        : ""
+                    }
+                </div>
+            </div>
+
+            <!-- ==================== NEW: RENEWAL SECTION ==================== -->
+            ${
+              dashboardData.can_renew
+                ? `
+            <div class="renewal-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-sync-alt"></i> Lease Renewal</h2>
+                </div>
+                <div class="renewal-card">
+                    <div class="renewal-icon">
+                        <i class="fas fa-calendar-plus"></i>
+                    </div>
+                    <div class="renewal-content">
+                        <h3>Ready for a New Lease Cycle!</h3>
+                        <p>${escapeHtml(dashboardData.renewal_message || "Your lease has ended. You can start a new lease cycle.")}</p>
+                        
+                        <div class="renewal-details">
+                            <div class="detail-row">
+                                <span class="detail-label">Previous Annual Rent:</span>
+                                <span class="detail-value">₦${formatNumber(dashboardData.annual_rent)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">New Annual Rent:</span>
+                                <span class="detail-value ${dashboardData.new_cycle_rent_amount > dashboardData.annual_rent ? "text-warning" : "text-success"}">
+                                    ₦${formatNumber(dashboardData.new_cycle_rent_amount)}
+                                    ${
+                                      dashboardData.new_cycle_rent_amount >
+                                      dashboardData.annual_rent
+                                        ? `<small>(+₦${formatNumber(dashboardData.new_cycle_rent_amount - dashboardData.annual_rent)} increase)</small>`
+                                        : dashboardData.new_cycle_rent_amount <
+                                            dashboardData.annual_rent
+                                          ? `<small>(₦${formatNumber(dashboardData.annual_rent - dashboardData.new_cycle_rent_amount)} decrease)</small>`
+                                          : ""
+                                    }
+                                </span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Payment Frequency:</span>
+                                <span class="detail-value">${escapeHtml(dashboardData.payment_frequency)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">New Payment per Period:</span>
+                                <span class="detail-value">₦${formatNumber(dashboardData.new_cycle_rent_amount / getPeriodsPerYear(dashboardData.payment_frequency))}</span>
+                            </div>
+                            ${
+                              dashboardData.new_cycle_security_deposit
+                                ? `
+                            <div class="detail-row">
+                                <span class="detail-label">Security Deposit:</span>
+                                <span class="detail-value">₦${formatNumber(dashboardData.new_cycle_security_deposit)}</span>
+                            </div>
+                            `
+                                : ""
+                            }
+                        </div>
+                        
+                        <button class="btn-renewal" onclick="startNewLeaseCycle()">
+                            <i class="fas fa-check-circle"></i> Start New Lease Cycle
+                        </button>
+                        <p class="renewal-note">By starting a new lease cycle, you agree to the new rent amount shown above.</p>
+                    </div>
+                </div>
+            </div>
+            `
+                : dashboardData.is_lease_fully_paid &&
+                    !dashboardData.lease_has_ended
+                  ? `
+            <div class="renewal-section">
+                <div class="renewal-card info-card">
+                    <div class="renewal-icon">
+                        <i class="fas fa-hourglass-half"></i>
+                    </div>
+                    <div class="renewal-content">
+                        <h3>Lease Fully Paid!</h3>
+                        <p>${escapeHtml(dashboardData.renewal_message || "Your lease is fully paid but has not ended yet.")}</p>
+                        <div class="renewal-details">
+                            <div class="detail-row">
+                                <span class="detail-label">Lease End Date:</span>
+                                <span class="detail-value">${formatDate(dashboardData.lease_end_date)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Days Remaining:</span>
+                                <span class="detail-value">${dashboardData.days_remaining} days</span>
+                            </div>
+                        </div>
+                        <p class="renewal-note">You can start a new lease cycle on or after ${formatDate(dashboardData.lease_end_date)}.</p>
+                    </div>
+                </div>
+            </div>
+            `
+                  : ""
+            }
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <div class="section-header">
+                    <h2>Quick Actions</h2>
+                </div>
+                <div class="actions-grid">
+                    <div class="action-card" onclick="openMaintenanceModal()">
+                        <i class="fas fa-tools"></i>
+                        <span>Report Issue</span>
+                    </div>
+                    <div class="action-card" onclick="navigateToPage('apartment')">
+                        <i class="fas fa-home"></i>
+                        <span>View Apartment</span>
+                    </div>
+                    <div class="action-card" onclick="navigateToPage('documents')">
+                        <i class="fas fa-file-alt"></i>
+                        <span>Documents</span>
+                    </div>
+                    <div class="action-card" onclick="contactAgent()">
+                        <i class="fas fa-phone-alt"></i>
+                        <span>Contact Agent</span>
+                    </div>
+                    
+                    ${
+                      isPreleaseTenant()
+                        ? `
+    <div class="action-card prelease-action" onclick="openEvacuationRequestModal()">
+        <i class="fas fa-calendar-times"></i>
+        <span>Cancel Booking</span>
+    </div>
+`
+                        : `
+    <div class="action-card" onclick="openEvacuationRequestModal()">
+        <i class="fas fa-sign-out-alt"></i>
+        <span>Request Move-out</span>
+    </div>
+`
+                    }
+                </div>
+            </div>
+
+            <!-- Recent Maintenance Requests -->
+            <div class="recent-requests">
+                <div class="section-header">
+                    <h2>Recent Maintenance Requests</h2>
+                    <span class="btn-link" onclick="navigateToPage('maintenance')">View All <i class="fas fa-arrow-right"></i></span>
+                </div>
+                ${renderRecentRequests(dashboardData.recent_requests || [])}
+            </div>
+        </div>
+    `;
+
+  contentArea.innerHTML = html;
+}
+
+function renderRecentRequests(requests) {
+  if (!requests || requests.length === 0) {
+    return `
+            <div class="empty-state">
+                <i class="fas fa-clipboard-list"></i>
+                <p>No maintenance requests yet</p>
+                <button class="btn-secondary" onclick="openMaintenanceModal()">Create Request</button>
+            </div>
+        `;
+  }
+
+  return `
+        <div class="requests-list">
+            ${requests
+              .map(
+                (request) => `
+                <div class="request-item">
+                    <div class="request-info">
+                        <span class="request-type">${escapeHtml(request.issue_type)}</span>
+                        <span class="request-date">${formatDate(request.created_at)}</span>
+                    </div>
+                    <div class="request-status status-${request.status}">
+                        ${formatStatus(request.status)}
+                    </div>
+                </div>
+            `,
+              )
+              .join("")}
+        </div>
+    `;
+}
+
+// ==================== UTILITY FUNCTIONS ====================
+function formatNumber(value) {
+  if (!value || value === "0") return "0.00";
+  return new Intl.NumberFormat("en-NG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatDate(dateString) {
+  if (!dateString) return "N/A";
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  } catch (e) {
+    return dateString;
+  }
+}
+
+function formatStatus(status) {
+  const statusMap = {
+    pending: "Pending",
+    in_progress: "In Progress",
+    resolved: "Resolved",
+    cancelled: "Cancelled",
+  };
+  return statusMap[status] || status;
+}
+
+function escapeHtml(text) {
+  if (!text) return "";
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ==================== MODAL FUNCTIONS ====================
+function openModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (modal) {
+    modal.classList.add("active");
+  }
+}
+
+function closeModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (modal) {
+    modal.classList.remove("active");
+    const form = document.getElementById("maintenanceForm");
+    if (form) form.reset();
+  }
+}
+
+function showConfirmModal({
+  title = "Confirm Action",
+  message = "Are you sure you want to continue?",
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  variant = "warning",
+}) {
+  return new Promise((resolve) => {
+    let modal = document.getElementById("customConfirmModal");
+
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "customConfirmModal";
+      modal.className = "custom-confirm-overlay";
+      modal.innerHTML = `
+                <div class="custom-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="customConfirmTitle">
+                    <div class="custom-confirm-icon">
+                        <i class="fas fa-circle-exclamation"></i>
+                    </div>
+                    <div class="custom-confirm-content">
+                        <h3 id="customConfirmTitle"></h3>
+                        <p id="customConfirmMessage"></p>
+                    </div>
+                    <div class="custom-confirm-actions">
+                        <button type="button" class="btn-secondary custom-confirm-cancel">Cancel</button>
+                        <button type="button" class="custom-confirm-ok">Confirm</button>
+                    </div>
+                </div>
+            `;
+      document.body.appendChild(modal);
+    }
+
+    const dialog = modal.querySelector(".custom-confirm-dialog");
+    const icon = modal.querySelector(".custom-confirm-icon i");
+    const titleElement = modal.querySelector("#customConfirmTitle");
+    const messageElement = modal.querySelector("#customConfirmMessage");
+    const confirmButton = modal.querySelector(".custom-confirm-ok");
+    const cancelButton = modal.querySelector(".custom-confirm-cancel");
+
+    const iconMap = {
+      warning: "fa-circle-exclamation",
+      success: "fa-circle-check",
+      info: "fa-circle-info",
+      danger: "fa-triangle-exclamation",
+    };
+
+    dialog.dataset.variant = variant;
+    icon.className = `fas ${iconMap[variant] || iconMap.warning}`;
+    titleElement.textContent = title;
+    messageElement.innerHTML = escapeHtml(message).replace(/\n/g, "<br>");
+    confirmButton.textContent = confirmText;
+    cancelButton.textContent = cancelText;
+
+    const handleKeydown = (event) => {
+      if (event.key === "Escape") {
+        cleanup(false);
+      }
+    };
+
+    const cleanup = (result) => {
+      modal.classList.remove("active");
+      confirmButton.onclick = null;
+      cancelButton.onclick = null;
+      modal.onclick = null;
+      document.removeEventListener("keydown", handleKeydown);
+      resolve(result);
+    };
+
+    confirmButton.onclick = () => cleanup(true);
+    cancelButton.onclick = () => cleanup(false);
+    modal.onclick = (event) => {
+      if (event.target === modal) {
+        cleanup(false);
+      }
+    };
+
+    modal.classList.add("active");
+    document.addEventListener("keydown", handleKeydown);
+    confirmButton.focus();
+  });
+}
+
+// ==================== ACTION FUNCTIONS ====================
+function openMaintenanceModal() {
+  openModal("maintenanceModal");
+}
+
+async function submitMaintenanceRequest() {
+  const issueType = document.getElementById("issueType")?.value;
+  const priority = document.getElementById("priority")?.value;
+  const description = document.getElementById("description")?.value;
+
+  if (!issueType || !priority || !description) {
+    if (window.showToast) {
+      window.showToast("Please fill in all fields", "error");
+    }
+    return;
+  }
+
+  const requestData = {
+    issue_type: issueType,
+    priority: priority,
+    description: description,
+    tenant_code: currentUser?.tenant_code,
+  };
+
+  await createMaintenanceRequest(requestData);
+}
+
+function makePayment() {
+  if (dashboardData?.is_lease_fully_paid) {
+    if (window.showToast) {
+      window.showToast("Your lease is already fully paid!", "info");
+    }
+    return;
+  }
+
+  if (window.showToast) {
+    window.showToast("Redirecting to payment gateway...", "info");
+  }
+  navigateToPage("payments");
+}
+
+function contactAgent() {
+  if (dashboardData?.agent_phone) {
+    window.location.href = `tel:${dashboardData.agent_phone}`;
+  } else if (dashboardData?.agent_email) {
+    window.location.href = `mailto:${dashboardData.agent_email}`;
+  } else {
+    if (window.showToast) {
+      window.showToast("Agent contact information not available", "warning");
+    }
+  }
+}
+
+function navigateToPage(page) {
+  // Map page names to actual URLs
+  const pageUrls = {
+    dashboard: "dashboard.php",
+    apartment: "apartment.php",
+    maintenance: "maintenance.php",
+    payments: "payments.php",
+    documents: "documents.php",
+    profile: "profile.php",
+    settings: "settings.php",
+  };
+
+  const url = pageUrls[page];
+  if (url) {
+    window.location.href = url;
+  } else {
+    if (window.showToast) {
+      window.showToast(`Page "${page}" not found`, "error");
+    }
+  }
+}
+
+// ==================== RENEWAL FUNCTIONS ====================
+
+function getPeriodsPerYear(frequency) {
+  switch (frequency) {
+    case "Monthly":
+      return 12;
+    case "Quarterly":
+      return 4;
+    case "Semi-Annually":
+      return 2;
+    case "Annually":
+      return 1;
+    default:
+      return 12;
+  }
+}
+
+async function startNewLeaseCycle() {
+  // Show confirmation dialog
+  const confirmed = confirm(
+    "⚠️ IMPORTANT: Starting a new lease cycle will:\n\n" +
+      "• End your current lease\n" +
+      "• Start a new 12-month lease cycle\n" +
+      "• Apply the new rent amount shown above\n" +
+      "• Create a new payment schedule\n\n" +
+      "Do you want to proceed?",
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  // Show loading state
+  const renewalBtn = document.querySelector(".btn-renewal");
+  const originalText = renewalBtn?.innerHTML || "Start New Lease Cycle";
+  if (renewalBtn) {
+    renewalBtn.innerHTML =
+      '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    renewalBtn.disabled = true;
+  }
+
+  try {
+    const response = await fetch(
+      "../backend/tenant/initiate_new_lease_cycle.php",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+    const data = await response.json();
+
+    if (data.success) {
+      if (window.showToast) {
+        window.showToast(data.data.message, "success");
+      }
+
+      // Refresh dashboard to show new cycle
+      await fetchDashboardData();
+      renderDashboard();
+
+      // Optional: Redirect to payments page to make first payment
+      setTimeout(() => {
+        if (
+          confirm(
+            "New lease cycle created! Would you like to make your first payment now?",
+          )
+        ) {
+          navigateToPage("payments");
+        }
+      }, 1000);
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    console.error("Error starting new lease cycle:", error);
+    if (window.showToast) {
+      window.showToast(error.message, "error");
+    }
+  } finally {
+    if (renewalBtn) {
+      renewalBtn.innerHTML = originalText;
+      renewalBtn.disabled = false;
+    }
+  }
+}
+
+async function startNewLeaseCycle() {
+  const confirmed = await showConfirmModal({
+    title: "Start New Lease Cycle?",
+    message:
+      "IMPORTANT: Starting a new lease cycle will:\n\n" +
+      "• End your current lease\n" +
+      "• Start a new 12-month lease cycle\n" +
+      "• Apply the new rent amount shown above\n" +
+      "• Create a new payment schedule\n\n" +
+      "Do you want to proceed?",
+    confirmText: "Yes, Proceed",
+    cancelText: "Not Now",
+    variant: "warning",
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  const renewalBtn = document.querySelector(".btn-renewal");
+  const originalText = renewalBtn?.innerHTML || "Start New Lease Cycle";
+  if (renewalBtn) {
+    renewalBtn.innerHTML =
+      '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    renewalBtn.disabled = true;
+  }
+
+  try {
+    const response = await fetch(
+      "../backend/tenant/initiate_new_lease_cycle.php",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+    const data = await response.json();
+
+    if (data.success) {
+      if (window.showToast) {
+        window.showToast(data.data.message, "success");
+      }
+
+      await fetchDashboardData();
+      renderDashboard();
+
+      setTimeout(async () => {
+        const goToPayments = await showConfirmModal({
+          title: "Lease Cycle Created",
+          message:
+            "Your new lease cycle has been created successfully. Would you like to make your first payment now?",
+          confirmText: "Go to Payments",
+          cancelText: "Later",
+          variant: "success",
+        });
+
+        if (goToPayments) {
+          navigateToPage("payments");
+        }
+      }, 1000);
+    } else {
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    console.error("Error starting new lease cycle:", error);
+    if (window.showToast) {
+      window.showToast(error.message, "error");
+    }
+  } finally {
+    if (renewalBtn) {
+      renewalBtn.innerHTML = originalText;
+      renewalBtn.disabled = false;
+    }
+  }
+}
+
+// ==================== AUTO REFRESH ====================
+let refreshInterval = null;
+let lastRefresh = 0;
+const MIN_REFRESH_GAP = 60000; // 60 seconds minimum between refreshes
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+
+  // Refresh whenever the user returns to this tab
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  window.addEventListener("focus", handleFocus);
+}
+
+function stopAutoRefresh() {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  window.removeEventListener("focus", handleFocus);
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === "visible") {
+    maybeRefresh();
+  }
+}
+
+function handleFocus() {
+  maybeRefresh();
+}
+
+function maybeRefresh() {
+  if (!document.querySelector(".dashboard-container")) return;
+
+  const now = Date.now();
+  if (now - lastRefresh < MIN_REFRESH_GAP) return;
+
+  lastRefresh = now;
+  fetchDashboardData().then(renderDashboard).catch(console.error);
+}
+//Evacuation Processing
+// ==================== EVACUATION REQUEST FUNCTIONS ====================
+
+// ==================== EVACUATION REQUEST FUNCTIONS ====================
+
+// Custom confirmation modal for evacuation (independent of the other modal)
+function showEvacuationConfirm(options) {
+  return new Promise((resolve) => {
+    // Remove existing modal if any
+    const existingModal = document.getElementById("evacuationConfirmModal");
+    if (existingModal) existingModal.remove();
+
+    // Create modal HTML
+    const modalHtml = `
+            <div id="evacuationConfirmModal" class="confirmation-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 10000; justify-content: center; align-items: center;">
+                <div class="confirmation-modal-content" style="background: white; border-radius: 20px; width: 90%; max-width: 480px; overflow: hidden; animation: slideUp 0.3s ease;">
+                    <div class="confirmation-modal-header" style="padding: 24px 24px 16px 24px; border-bottom: 1px solid #eef2f6; display: flex; align-items: center; gap: 12px;">
+                        <div class="modal-icon" style="width: 48px; height: 48px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                            <i class="fas ${options.icon || "fa-exclamation-triangle"}" style="font-size: 24px; color: white;"></i>
+                        </div>
+                        <h3 style="font-size: 20px; font-weight: 600; color: #1a1f36; margin: 0;">${options.title || "Confirm Action"}</h3>
+                    </div>
+                    <div class="confirmation-modal-body" style="padding: 24px;">
+                        <p style="color: #4a5568; font-size: 14px; line-height: 1.6; margin-bottom: 20px;">${options.message || "Are you sure you want to proceed?"}</p>
+                        ${
+                          options.list
+                            ? `
+                        <div class="confirmation-list" style="background: #f8fafc; border-radius: 12px; padding: 16px 20px; margin: 16px 0;">
+                            ${options.list
+                              .map(
+                                (item) => `
+                                <div class="confirmation-list-item" style="display: flex; align-items: center; gap: 12px; padding: 8px 0; color: #1e293b; font-size: 14px;">
+                                    <i class="fas ${item.icon || "fa-check-circle"}" style="width: 20px; color: #667eea;"></i>
+                                    <span>${item.text}</span>
+                                </div>
+                            `,
+                              )
+                              .join("")}
+                        </div>
+                        `
+                            : ""
+                        }
+                        ${
+                          options.warning
+                            ? `
+                        <div style="background: #fef3c7; border-left: 3px solid #f59e0b; padding: 12px; border-radius: 8px; margin-top: 16px;">
+                            <i class="fas fa-info-circle" style="color: #f59e0b; margin-right: 8px;"></i>
+                            <span style="font-size: 13px; color: #92400e;">${options.warning}</span>
+                        </div>
+                        `
+                            : ""
+                        }
+                    </div>
+                    <div class="confirmation-modal-footer" style="display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px 24px 24px; border-top: 1px solid #eef2f6;">
+                        <button class="btn-cancel" style="background: #f1f5f9; color: #475569; border: none; padding: 10px 20px; border-radius: 10px; font-weight: 500; cursor: pointer;">${options.cancelText || "Cancel"}</button>
+                        <button class="btn-confirm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 24px; border-radius: 10px; font-weight: 500; cursor: pointer;">${options.confirmText || "Confirm"}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+    const modal = document.getElementById("evacuationConfirmModal");
+    const confirmBtn = modal.querySelector(".btn-confirm");
+    const cancelBtn = modal.querySelector(".btn-cancel");
+
+    const closeModal = (result) => {
+      modal.style.display = "none";
+      setTimeout(() => {
+        modal.remove();
+        resolve(result);
+      }, 300);
+    };
+
+    modal.style.display = "flex";
+
+    confirmBtn.onclick = () => closeModal(true);
+    cancelBtn.onclick = () => closeModal(false);
+
+    // Close on escape key
+    const handleEscape = (e) => {
+      if (e.key === "Escape") {
+        closeModal(false);
+        document.removeEventListener("keydown", handleEscape);
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+
+    // Close on backdrop click
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        closeModal(false);
+      }
+    };
+  });
+}
+
+// ==================== PRE-LEASE HELPERS ====================
+
+/**
+ * Returns true if today is before the current rent cycle's start date.
+ * Falls back to lease_start_date if no cycle is loaded yet.
+ */
+function isPreleaseTenant() {
+  if (!dashboardData) return false;
+
+  // Prefer the current cycle's start date (it's the authoritative one)
+  const cycleStart =
+    dashboardData.current_cycle?.cycle_start_date ||
+    dashboardData.lease_start_date;
+
+  if (!cycleStart) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [y, m, d] = cycleStart.split("-").map(Number);
+  const cycleStartDate = new Date(y, m - 1, d);
+  cycleStartDate.setHours(0, 0, 0, 0);
+
+  return today < cycleStartDate;
+}
+
+/**
+ * Returns the number of days until the lease starts.
+ * Returns 0 if the lease has already started.
+ */
+function daysUntilLeaseStart() {
+  if (!dashboardData) return 0;
+
+  const cycleStart =
+    dashboardData.current_cycle?.cycle_start_date ||
+    dashboardData.lease_start_date;
+
+  if (!cycleStart) return 0;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [y, m, d] = cycleStart.split("-").map(Number);
+  const cycleStartDate = new Date(y, m - 1, d);
+  cycleStartDate.setHours(0, 0, 0, 0);
+
+  if (today >= cycleStartDate) return 0;
+
+  return Math.round((cycleStartDate - today) / (1000 * 60 * 60 * 24));
+}
+
+async function openEvacuationRequestModal() {
+    if (!dashboardData.can_request_evacuation) {
+        if (window.showToast) {
+            window.showToast(
+                dashboardData.evacuation_block_reason ||
+                "You are not eligible to request evacuation at this time.",
+                "warning",
+            );
+        }
+        return;
+    }
+
+    const isPrelease = isPreleaseTenant();
+    const today = new Date().toISOString().split("T")[0];
+    const leaseEnd = dashboardData.lease_end_date;
+    const maxDate = leaseEnd && leaseEnd >= today ? leaseEnd : today;
+
+    // Copy varies by state
+    const copy = isPrelease
+        ? {
+            title: "Cancel Booking",
+            icon: "fa-calendar-times",
+            infoIcon: "fa-info-circle",
+            infoText: `Your lease starts on ${formatDate(dashboardData.current_cycle?.cycle_start_date || dashboardData.lease_start_date)}. Cancelling before move-in will refund your prepaid rent (less any applicable fees) and your security deposit.`,
+            dateLabel: "Cancellation Date *",
+            reasonLabel: "Reason for Cancelling *",
+            reasons: [
+                { value: "Changed Plans", label: "Changed plans / no longer need the apartment" },
+                { value: "Job Change", label: "Job change / transferred to another city" },
+                { value: "Financial Difficulties", label: "Financial difficulties" },
+                { value: "Found Better Option", label: "Found a better option" },
+                { value: "Property Issues", label: "Property not as expected" },
+                { value: "Other", label: "Other" },
+            ],
+            submitLabel: "Submit Cancellation",
+            confirmTitle: "Submit Cancellation Request",
+            confirmMessage: "Are you sure you want to cancel this booking?",
+            confirmWarning: "This request will be reviewed by admin. You cannot undo this action once submitted.",
+            notesPlaceholder: "Any additional information about why you're cancelling...",
+        }
+        : {
+            title: "Request Move-out",
+            icon: "fa-sign-out-alt",
+            infoIcon: "fa-info-circle",
+            infoText: `Move-out must be on or before your lease end date (${leaseEnd ? formatDate(leaseEnd) : "N/A"}). Any unused prepaid rent is split 50/50 between you and the landlord.`,
+            dateLabel: "Proposed Move-out Date *",
+            reasonLabel: "Reason for Leaving *",
+            reasons: [
+                { value: "Relocating", label: "Relocating to another city" },
+                { value: "Job Change", label: "Job change/Transfer" },
+                { value: "Financial Difficulties", label: "Financial difficulties" },
+                { value: "Property Issues", label: "Property issues" },
+                { value: "Family Reasons", label: "Family reasons" },
+                { value: "Lease Ended", label: "Lease naturally ended" },
+                { value: "Other", label: "Other" },
+            ],
+            submitLabel: "Submit Request",
+            confirmTitle: "Submit Move-out Request",
+            confirmMessage: "Are you sure you want to submit a move-out request?",
+            confirmWarning: "This request will be reviewed by admin. You cannot undo this action once submitted.",
+            notesPlaceholder: "Any additional information...",
+        };
+
+    const reasonOptions = copy.reasons
+        .map(r => `<option value="${r.value}">${escapeHtml(r.label)}</option>`)
+        .join("");
+
+    const modalHtml = `
+        <div id="evacuationModal" class="modal active" style="display: flex;">
+            <div class="modal-content" style="max-width: 550px;">
+                <div class="modal-header">
+                    <h3><i class="fas ${copy.icon}"></i> ${copy.title}</h3>
+                    <button class="modal-close" onclick="closeEvacuationModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="info-box" style="background: ${isPrelease ? "#fef3c7" : "#e8f0fe"}; padding: 12px; border-radius: 8px; margin-bottom: 20px;">
+                        <i class="fas ${copy.infoIcon}"></i>
+                        <small>${copy.infoText}</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>${copy.dateLabel}</label>
+                        <input type="date" class="form-input" id="evacuationDate"
+                               min="${today}" max="${maxDate}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>${copy.reasonLabel}</label>
+                        <select class="form-input" id="evacuationReason" required>
+                            <option value="">Select reason...</option>
+                            ${reasonOptions}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Additional Notes (Optional)</label>
+                        <textarea class="form-textarea" id="evacuationNotes" rows="3"
+                                  placeholder="${copy.notesPlaceholder}"></textarea>
+                    </div>
+
+                    <div id="settlementPreview" style="display: none; background: #f0fdf4; border-left: 4px solid #10b981; padding: 14px; border-radius: 8px; margin-top: 15px;">
+                        <strong style="display:block; margin-bottom: 8px;">
+                            <i class="fas fa-calculator"></i> Estimated Settlement
+                        </strong>
+                        <div style="font-size: 13px; line-height: 1.7;" id="settlementPreviewContent"></div>
+                        <small style="color: #666; display:block; margin-top: 8px; font-style: italic;">
+                            This is an estimate. Final amount will be calculated at review time.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeEvacuationModal()">Cancel</button>
+                    <button class="btn-primary" onclick="submitEvacuationRequest()">${copy.submitLabel}</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const existingModal = document.getElementById("evacuationModal");
+    if (existingModal) existingModal.remove();
+
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+    // Prefill date with a sensible default:
+    //   Pre-lease: today (they're cancelling now)
+    //   Evacuation: the lease start (or today if already past)
+    const dateInput = document.getElementById("evacuationDate");
+    if (dateInput) {
+        if (isPrelease) {
+            dateInput.value = today;
+        } else if (dashboardData.lease_start_date >= today) {
+            dateInput.value = dashboardData.lease_start_date;
+        } else {
+            dateInput.value = today;
+        }
+        dateInput.addEventListener("change", previewSettlement);
+    }
+}
+
+function closeEvacuationModal() {
+  const modal = document.getElementById("evacuationModal");
+  if (modal) modal.remove();
+}
+
+async function previewSettlement() {
+    const moveOutDate = document.getElementById("evacuationDate").value;
+    if (!moveOutDate) return;
+
+    const preview = document.getElementById("settlementPreview");
+    const previewContent = document.getElementById("settlementPreviewContent");
+    if (!preview || !previewContent) return;
+
+    function parseLocalDate(s) {
+        if (!s) return null;
+        const [y, m, d] = s.split("-").map(Number);
+        return new Date(y, m - 1, d);
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // ============================================================
+    // DETERMINE CYCLE START
+    // Prefer current_cycle if present. Fall back to lease_start_date.
+    // ============================================================
+    const cycle = dashboardData.current_cycle;
+    const leaseStart = parseLocalDate(
+        dashboardData.lease_start_date || dashboardData.lease_start_date
+    );
+    const leaseEnd = parseLocalDate(dashboardData.lease_end_date);
+
+    const cycleStart = cycle
+        ? parseLocalDate(cycle.cycle_start_date)
+        : leaseStart;
+    const cycleEnd = cycle
+        ? parseLocalDate(cycle.cycle_end_date)
+        : leaseEnd;
+
+    if (!cycleStart || !cycleEnd) {
+        // Truly broken — can't do anything
+        preview.style.display = "block";
+        previewContent.innerHTML = `
+            <div style="color: #dc2626;">
+                <i class="fas fa-exclamation-triangle"></i>
+                Unable to compute a settlement estimate. Please contact support.
+            </div>
+        `;
+        return;
+    }
+
+    // ============================================================
+    // CASE 1: PRE-LEASE CANCELLATION
+    // Today is before the lease even starts. Refund = rent paid + deposit.
+    // We do NOT need current_cycle for this calculation.
+    // ============================================================
+    if (today < cycleStart) {
+        const totalPaid       = parseFloat(dashboardData.total_paid || 0);
+        const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
+        const estimatedRefund = totalPaid + securityDeposit;
+        const daysUntilStart  = Math.round((cycleStart - today) / 86400000);
+
+        previewContent.innerHTML = `
+            <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">
+                <em>Pre-lease cancellation · Lease starts ${formatDate(
+                    dashboardData.lease_start_date
+                )}</em>
+            </div>
+            <div><strong>Days until lease start:</strong> ${daysUntilStart}</div>
+            <div><strong>Prepaid rent:</strong> ₦${formatNumber(totalPaid.toFixed(2))}</div>
+            <div><strong>Security deposit:</strong> ₦${formatNumber(securityDeposit.toFixed(2))}</div>
+            <hr style="border:none; border-top:1px dashed #cbd5e1; margin: 8px 0;">
+            <div style="color: #10b981; font-size: 15px; margin-top: 6px;">
+                <strong>Estimated refund: ₦${formatNumber(estimatedRefund.toFixed(2))}</strong>
+            </div>
+            <small style="color:#64748b; font-size: 11px; display:block; margin-top: 6px;">
+                A cancellation fee may be deducted at admin's discretion. Final amount confirmed during review.
+            </small>
+        `;
+        preview.style.display = "block";
+        return;
+    }
+
+    // ============================================================
+    // CASE 2: POST-LEASE EVACUATION — WITH CYCLE
+    // Standard pro-rated calculation.
+    // ============================================================
+    if (cycle) {
+        const moveOut = parseLocalDate(moveOutDate);
+
+        if (moveOut < cycleStart || moveOut > cycleEnd) {
+            preview.style.display = "block";
+            previewContent.innerHTML = `
+                <div style="color: #dc2626;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Move-out date must be between
+                    <strong>${formatDate(cycle.cycle_start_date)}</strong> and
+                    <strong>${formatDate(cycle.cycle_end_date)}</strong>.
+                </div>
+            `;
+            return;
+        }
+
+        const cycleRent = parseFloat(cycle.cycle_rent_amount || 0);
+        const totalPaid = parseFloat(cycle.amount_paid_in_cycle || 0);
+
+        const totalDays = Math.round((cycleEnd - cycleStart) / 86400000) + 1;
+        const daysUsed  = Math.round((moveOut - cycleStart) / 86400000) + 1;
+        const dailyRate = cycleRent / totalDays;
+        const rentUsed  = dailyRate * daysUsed;
+
+        const unusedRent = Math.max(0, totalPaid - rentUsed);
+        const tenantShare = unusedRent * 0.5;
+
+        const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
+        const estimatedRefund = securityDeposit + tenantShare;
+
+        previewContent.innerHTML = `
+            <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">
+                <em>Current cycle: ${formatDate(cycle.cycle_start_date)} → ${formatDate(cycle.cycle_end_date)}</em>
+            </div>
+            <div><strong>Daily rate:</strong> ₦${formatNumber(dailyRate.toFixed(2))}</div>
+            <div><strong>Days used:</strong> ${daysUsed} of ${totalDays}</div>
+            <div><strong>Rent used:</strong> ₦${formatNumber(rentUsed.toFixed(2))}</div>
+            <div><strong>Total paid in cycle:</strong> ₦${formatNumber(totalPaid.toFixed(2))}</div>
+            <div><strong>Unused rent:</strong> ₦${formatNumber(unusedRent.toFixed(2))}</div>
+            <div><strong>Your 50% share:</strong> ₦${formatNumber(tenantShare.toFixed(2))}</div>
+            <hr style="border:none; border-top:1px dashed #cbd5e1; margin: 8px 0;">
+            <div><strong>Security deposit:</strong> ₦${formatNumber(securityDeposit.toFixed(2))}</div>
+            <div style="color: #10b981; font-size: 15px; margin-top: 6px;">
+                <strong>Estimated refund before damages: ₦${formatNumber(estimatedRefund.toFixed(2))}</strong>
+            </div>
+        `;
+        preview.style.display = "block";
+        return;
+    }
+
+    // ============================================================
+    // CASE 3: POST-LEASE EVACUATION — WITHOUT CYCLE (fallback)
+    // Use lease dates as a proxy for the cycle.
+    // Estimate will be less precise but still meaningful.
+    // ============================================================
+    const moveOut = parseLocalDate(moveOutDate);
+
+    if (moveOut < cycleStart || moveOut > cycleEnd) {
+        preview.style.display = "block";
+        previewContent.innerHTML = `
+            <div style="color: #dc2626;">
+                <i class="fas fa-exclamation-triangle"></i>
+                Move-out date must be between
+                <strong>${formatDate(dashboardData.lease_start_date)}</strong> and
+                <strong>${formatDate(dashboardData.lease_end_date)}</strong>.
+            </div>
+        `;
+        return;
+    }
+
+    const annualRent      = parseFloat(dashboardData.annual_rent || 0);
+    const totalPaid       = parseFloat(dashboardData.total_paid || 0);
+    const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
+
+    const totalDays = Math.round((cycleEnd - cycleStart) / 86400000) + 1;
+    const daysUsed  = Math.round((moveOut - cycleStart) / 86400000) + 1;
+    const dailyRate = annualRent / totalDays;
+    const rentUsed  = dailyRate * daysUsed;
+
+    const unusedRent = Math.max(0, totalPaid - rentUsed);
+    const tenantShare = unusedRent * 0.5;
+    const estimatedRefund = securityDeposit + tenantShare;
+
+    previewContent.innerHTML = `
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">
+            <em>Estimated from lease dates (cycle details unavailable)</em>
+        </div>
+        <div><strong>Daily rate:</strong> ₦${formatNumber(dailyRate.toFixed(2))}</div>
+        <div><strong>Days used:</strong> ${daysUsed} of ${totalDays}</div>
+        <div><strong>Rent used:</strong> ₦${formatNumber(rentUsed.toFixed(2))}</div>
+        <div><strong>Total paid:</strong> ₦${formatNumber(totalPaid.toFixed(2))}</div>
+        <div><strong>Unused rent:</strong> ₦${formatNumber(unusedRent.toFixed(2))}</div>
+        <div><strong>Your 50% share:</strong> ₦${formatNumber(tenantShare.toFixed(2))}</div>
+        <hr style="border:none; border-top:1px dashed #cbd5e1; margin: 8px 0;">
+        <div><strong>Security deposit:</strong> ₦${formatNumber(securityDeposit.toFixed(2))}</div>
+        <div style="color: #10b981; font-size: 15px; margin-top: 6px;">
+            <strong>Estimated refund before damages: ₦${formatNumber(estimatedRefund.toFixed(2))}</strong>
+        </div>
+        <small style="color:#64748b; font-size: 11px; display:block; margin-top: 6px;">
+            Precision may vary. Final amount confirmed during review.
+        </small>
+    `;
+    preview.style.display = "block";
+}
+async function previewEarlyTerminationFee() {
+  const moveOutDate = document.getElementById("evacuationDate").value;
+  if (!moveOutDate) return;
+
+  // Parse dates as local to avoid timezone shift
+  function parseLocalDate(s) {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  const leaseEndDate = parseLocalDate(dashboardData.lease_end_date);
+  const selectedDate = parseLocalDate(moveOutDate);
+
+  const feePreview = document.getElementById("feePreview");
+  const feePreviewText = document.getElementById("feePreviewText");
+
+  if (selectedDate < leaseEndDate) {
+    // Roughly match the server-side calculation
+    const daysRemaining = Math.ceil(
+      (leaseEndDate - selectedDate) / (1000 * 60 * 60 * 24),
+    );
+    const monthsRemaining = Math.max(1, Math.ceil(daysRemaining / 30));
+    const monthlyRent = dashboardData.annual_rent / 12;
+    const estimatedFee = (monthlyRent * monthsRemaining * 0.5).toFixed(2);
+
+    feePreviewText.innerHTML = `⚠️ Moving out before your lease end date (${formatDate(dashboardData.lease_end_date)}) may incur an early termination fee of approximately ₦${formatNumber(estimatedFee)}.`;
+    feePreview.style.display = "block";
+  } else {
+    feePreview.style.display = "none";
+  }
+}
+
+async function submitEvacuationRequest() {
+    const moveOutDate = document.getElementById("evacuationDate").value;
+    const reason = document.getElementById("evacuationReason").value;
+    const notes = document.getElementById("evacuationNotes").value;
+
+    if (!moveOutDate) {
+        if (window.showToast) window.showToast("Please select a date", "error");
+        return;
+    }
+    if (!reason) {
+        if (window.showToast) window.showToast("Please select a reason", "error");
+        return;
+    }
+
+    const isPrelease = isPreleaseTenant();
+
+    const confirmed = await showEvacuationConfirm({
+        title: isPrelease ? "Submit Cancellation Request" : "Submit Move-out Request",
+        icon: isPrelease ? "fa-calendar-times" : "fa-sign-out-alt",
+        message: isPrelease
+            ? "Are you sure you want to cancel this booking?"
+            : "Are you sure you want to submit a move-out request?",
+        list: [
+            { icon: "fa-calendar", text: isPrelease
+                ? `Cancellation date: ${formatDate(moveOutDate)}`
+                : `Proposed move-out date: ${formatDate(moveOutDate)}` },
+            { icon: "fa-question-circle", text: `Reason: ${reason}` },
+        ],
+        warning: "This request will be reviewed by admin. You cannot undo this action once submitted.",
+        confirmText: isPrelease ? "Yes, Cancel Booking" : "Yes, Submit Request",
+        cancelText: "Go Back",
+    });
+
+    if (!confirmed) return;
+
+    const submitBtn = document.querySelector("#evacuationModal .btn-primary");
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+    submitBtn.disabled = true;
+
+    try {
+        const response = await fetch("../backend/tenant/request_evacuation.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                move_out_date: moveOutDate,
+                reason: reason,
+                notes: notes,
+                is_prelease: isPrelease,   // ← NEW: backend uses this to pick policy
+            }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            const msg = data.data?.message || data.message || "Request submitted";
+            if (window.showToast) window.showToast(msg, "success");
+            closeEvacuationModal();
+            await fetchDashboardData();
+            renderDashboard();
+        } else {
+            throw new Error(data.message || "Submission failed");
+        }
+    } catch (error) {
+        console.error("Error submitting request:", error);
+        if (window.showToast) window.showToast(error.message, "error");
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+}
+// Start auto-refresh when page is visible
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden) {
+    stopAutoRefresh();
+  } else {
+    startAutoRefresh();
+  }
+});
+
+// Initialize auto-refresh
+startAutoRefresh();
+
+// Cleanup on page unload
+window.addEventListener("beforeunload", function () {
+  stopAutoRefresh();
+});

@@ -1010,6 +1010,76 @@ body {
     font-size: 15px;
 }
 
+.request-type-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.type-tab {
+    padding: 12px 20px;
+    background: none;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s;
+}
+
+.type-tab:hover {
+    color: #1a1f36;
+}
+
+.type-tab.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+    font-weight: 600;
+}
+
+/* ============================================
+   CARD HEADER — with type badge
+   ============================================ */
+
+.card-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.type-badge i {
+    font-size: 10px;
+}
+
+.type-badge-evacuation {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.type-badge-prelease {
+    background: #fef3c7;
+    color: #92400e;
+}
 /* ============================================
    RESPONSIVE
    ============================================ */

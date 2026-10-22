@@ -76,14 +76,46 @@ function getCurrentRentCycle($conn, $tenant_code) {
     $fallback = $res->fetch_assoc();
     $stmt->close();
 
-    if (!$fallback) {
-        logActivity("CRITICAL: No rent cycle found for tenant {$tenant_code} on " . date('Y-m-d'));
-        throw new Exception("Unable to identify the current rent cycle for this tenant. Please contact support.");
+       if ($fallback) {
+        logActivity("Using fallback cycle for tenant {$tenant_code}: {$fallback['rent_payment_id']} "
+            . "({$fallback['period_start_date']} to {$fallback['period_end_date']})");
+        return $fallback;
     }
 
-    logActivity("Using fallback cycle for tenant {$tenant_code}: {$fallback['rent_payment_id']} "
-        . "({$fallback['period_start_date']} to {$fallback['period_end_date']})");
-    return $fallback;
+    // ================================================================
+    // Step 3: NEW — next cycle that starts in the future (pre-lease)
+    // Handles tenants whose lease hasn't begun yet. Their "current"
+    // cycle is the one that will start on their lease_start_date.
+    // ================================================================
+    $stmt = $conn->prepare("
+        SELECT rent_payment_id, 
+               amount AS cycle_rent_amount, 
+               amount_paid AS cycle_amount_paid,
+               balance AS cycle_balance,
+               period_start_date, 
+               period_end_date,
+               payment_amount_per_period
+        FROM rent_payments
+        WHERE tenant_code = ?
+          AND period_start_date > CURDATE()
+          AND status IN ('ongoing', 'completed', 'pending')
+        ORDER BY period_start_date ASC
+        LIMIT 1
+    ");
+    $stmt->bind_param("s", $tenant_code);
+    $stmt->execute();
+    $futureCycle = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if ($futureCycle) {
+        logActivity("Using FUTURE cycle (pre-lease) for tenant {$tenant_code}: "
+            . "{$futureCycle['rent_payment_id']} "
+            . "({$futureCycle['period_start_date']} to {$futureCycle['period_end_date']})");
+        return $futureCycle;
+    }
+
+    logActivity("CRITICAL: No rent cycle found for tenant {$tenant_code} on " . date('Y-m-d'));
+    throw new Exception("Unable to identify the current rent cycle for this tenant. Please contact support.");
 }
 
 /**

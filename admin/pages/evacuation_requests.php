@@ -35,11 +35,21 @@
                 </div>
             </div>
 
+            <div class="request-type-tabs">
+                <button class="type-tab active" data-type="evacuation">
+                    <i class="fas fa-sign-out-alt"></i> Evacuations
+                </button>
+                <button class="type-tab" data-type="prelease_cancellation">
+                    <i class="fas fa-calendar-times"></i> Pre-Lease Cancellations
+                </button>
+            </div>
+
+            <!-- Existing status tabs below -->
             <div class="tabs">
                 <button class="tab-btn active" data-status="pending_review">Pending Review</button>
                 <button class="tab-btn" data-status="approved">Approved</button>
-                <button class="tab-btn" data-status="rejected">Rejected</button>
                 <button class="tab-btn" data-status="completed">Completed</button>
+                <button class="tab-btn" data-status="rejected">Rejected</button>
             </div>
         </div>
 

@@ -183,6 +183,20 @@ function renderDashboard() {
                     </div>
                 </div>
             </div>
+             ${isPreleaseTenant() ? `
+<div class="prelease-banner">
+    <i class="fas fa-info-circle"></i>
+    <div>
+        <strong>Your tenancy starts on ${formatDate(
+            dashboardData.current_cycle?.cycle_start_date || dashboardData.lease_start_date
+        )}</strong>
+        <p>
+            You have ${daysUntilLeaseStart()} day${daysUntilLeaseStart() === 1 ? "" : "s"} until move-in.
+            If you need to cancel this booking, you can do so before the lease starts.
+        </p>
+    </div>
+</div>
+` : ""}
 
             <!-- Stats Grid -->
             <div class="stats-grid">
@@ -585,10 +599,22 @@ function renderDashboard() {
                         <span>Contact Agent</span>
                     </div>
                     
-                    <div class="action-card" onclick="openEvacuationRequestModal()">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span>Request Move-out</span>
-                    </div>
+                   ${!dashboardData.can_request_evacuation ? `
+    <div class="action-card disabled" title="${escapeHtml(dashboardData.evacuation_block_reason || 'Not available')}" style="opacity: 0.5; cursor: not-allowed;">
+        <i class="fas fa-sign-out-alt"></i>
+        <span>${isPreleaseTenant() ? 'Cancel Booking' : 'Request Move-out'}</span>
+    </div>
+` : isPreleaseTenant() ? `
+    <div class="action-card prelease-action" onclick="openCancelEvacuationRequestModal()">
+        <i class="fas fa-calendar-times"></i>
+        <span>Cancel Booking</span>
+    </div>
+` : `
+    <div class="action-card" onclick="openEvacuationRequestModal()">
+        <i class="fas fa-sign-out-alt"></i>
+        <span>Request Move-out</span>
+    </div>
+`}
                 </div>
             </div>
 
@@ -1154,6 +1180,57 @@ function showEvacuationConfirm(options) {
   });
 }
 
+// ==================== PRE-LEASE HELPERS ====================
+
+/**
+ * Returns true if today is before the current rent cycle's start date.
+ * Falls back to lease_start_date if no cycle is loaded yet.
+ */
+function isPreleaseTenant() {
+  if (!dashboardData) return false;
+
+  // Prefer the current cycle's start date (it's the authoritative one)
+  const cycleStart =
+    dashboardData.current_cycle?.cycle_start_date ||
+    dashboardData.lease_start_date;
+
+  if (!cycleStart) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [y, m, d] = cycleStart.split("-").map(Number);
+  const cycleStartDate = new Date(y, m - 1, d);
+  cycleStartDate.setHours(0, 0, 0, 0);
+
+  return today < cycleStartDate;
+}
+
+/**
+ * Returns the number of days until the lease starts.
+ * Returns 0 if the lease has already started.
+ */
+function daysUntilLeaseStart() {
+  if (!dashboardData) return 0;
+
+  const cycleStart =
+    dashboardData.current_cycle?.cycle_start_date ||
+    dashboardData.lease_start_date;
+
+  if (!cycleStart) return 0;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [y, m, d] = cycleStart.split("-").map(Number);
+  const cycleStartDate = new Date(y, m - 1, d);
+  cycleStartDate.setHours(0, 0, 0, 0);
+
+  if (today >= cycleStartDate) return 0;
+
+  return Math.round((cycleStartDate - today) / (1000 * 60 * 60 * 24));
+}
+
 async function openEvacuationRequestModal() {
   if (!dashboardData.can_request_evacuation) {
     if (window.showToast) {
@@ -1241,6 +1318,7 @@ async function openEvacuationRequestModal() {
     .getElementById("evacuationDate")
     ?.addEventListener("change", previewSettlement);
 }
+
 
 function closeEvacuationModal() {
   const modal = document.getElementById("evacuationModal");
@@ -1413,6 +1491,209 @@ async function submitEvacuationRequest() {
         }
     } catch (error) {
         console.error("Error submitting evacuation request:", error);
+        if (window.showToast) window.showToast(error.message, "error");
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+}
+
+
+// PRE LEASE EVACUATION REQUEST
+async function openCancelEvacuationRequestModal() {
+    if (!dashboardData.can_request_evacuation) {
+        if (window.showToast) {
+            window.showToast(
+                dashboardData.evacuation_block_reason ||
+                "You cannot cancel this booking at this time.",
+                "warning"
+            );
+        }
+        return;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    const leaseStart = dashboardData.lease_start_date;
+
+    // Cancellation must happen before the lease starts
+    const maxCancellationDate = leaseStart && leaseStart > today ? leaseStart : today;
+
+    const modalHtml = `
+        <div id="cancelEvacuationModal" class="modal active" style="display: flex;">
+            <div class="modal-content" style="max-width: 550px;">
+                <div class="modal-header">
+                    <h3><i class="fas fa-calendar-times"></i> Cancel Booking</h3>
+                    <button class="modal-close" onclick="closeCancelEvacuationModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="info-box" style="background: #fef3c7; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 3px solid #f59e0b;">
+                        <i class="fas fa-info-circle" style="color:#f59e0b;"></i>
+                        <small>
+                            Your lease starts on
+                            <strong>${leaseStart ? formatDate(leaseStart) : "N/A"}</strong>.
+                            If you cancel before move-in, your prepaid rent (less any applicable fees)
+                            and security deposit will be refunded.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Cancellation Date *</label>
+                        <input type="date" class="form-input" id="cancellationDate"
+                               min="${today}" max="${maxCancellationDate}" required
+                               value="${today}">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Reason for Cancelling *</label>
+                        <select class="form-input" id="cancellationReason" required>
+                            <option value="">Select reason...</option>
+                            <option value="Changed Plans">Changed plans / no longer need the apartment</option>
+                            <option value="Job Change">Job change / transferred to another city</option>
+                            <option value="Financial Difficulties">Financial difficulties</option>
+                            <option value="Found Better Option">Found a better option</option>
+                            <option value="Property Issues">Property not as expected</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Additional Notes (Optional)</label>
+                        <textarea class="form-textarea" id="cancellationNotes" rows="3"
+                                  placeholder="Any additional information about why you're cancelling..."></textarea>
+                    </div>
+
+                    <div id="cancellationPreview" style="display: none; background: #f0fdf4; border-left: 4px solid #10b981; padding: 14px; border-radius: 8px; margin-top: 15px;">
+                        <strong style="display:block; margin-bottom: 8px;">
+                            <i class="fas fa-calculator"></i> Estimated Refund
+                        </strong>
+                        <div style="font-size: 13px; line-height: 1.7;" id="cancellationPreviewContent"></div>
+                        <small style="color: #666; display:block; margin-top: 8px; font-style: italic;">
+                            This is an estimate. Final amount will be confirmed during review.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeCancelEvacuationModal()">Cancel</button>
+                    <button class="btn-primary" onclick="submitCancellationRequest()">Submit Cancellation</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const existingModal = document.getElementById("cancelEvacuationModal");
+    if (existingModal) existingModal.remove();
+
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+    // Show the preview immediately since the date is prefilled
+    previewCancellationRefund();
+}
+
+function closeCancelEvacuationModal() {
+    const modal = document.getElementById("cancelEvacuationModal");
+    if (modal) modal.remove();
+}
+function previewCancellationRefund() {
+    const preview = document.getElementById("cancellationPreview");
+    const previewContent = document.getElementById("cancellationPreviewContent");
+    if (!preview || !previewContent) return;
+
+    const totalPaid       = parseFloat(dashboardData.total_paid || 0);
+    const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
+    const estimatedRefund = totalPaid + securityDeposit;
+
+    const leaseStart = dashboardData.lease_start_date;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let daysUntilStart = 0;
+    if (leaseStart) {
+        const [y, m, d] = leaseStart.split("-").map(Number);
+        const startDate = new Date(y, m - 1, d);
+        startDate.setHours(0, 0, 0, 0);
+        if (startDate > today) {
+            daysUntilStart = Math.round((startDate - today) / 86400000);
+        }
+    }
+
+    previewContent.innerHTML = `
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">
+            <em>Pre-lease cancellation · Lease starts ${formatDate(leaseStart)}</em>
+        </div>
+        <div><strong>Days until lease start:</strong> ${daysUntilStart}</div>
+        <div><strong>Prepaid rent:</strong> ₦${formatNumber(totalPaid.toFixed(2))}</div>
+        <div><strong>Security deposit:</strong> ₦${formatNumber(securityDeposit.toFixed(2))}</div>
+        <hr style="border:none; border-top:1px dashed #cbd5e1; margin: 8px 0;">
+        <div style="color: #10b981; font-size: 15px; margin-top: 6px;">
+            <strong>Estimated refund: ₦${formatNumber(estimatedRefund.toFixed(2))}</strong>
+        </div>
+        <small style="color:#64748b; font-size: 11px; display:block; margin-top: 6px;">
+            A cancellation fee may be deducted at admin's discretion. Final amount confirmed during review.
+        </small>
+    `;
+    preview.style.display = "block";
+}
+async function submitCancellationRequest() {
+    const cancellationDate = document.getElementById("cancellationDate").value;
+    const reason = document.getElementById("cancellationReason").value;
+    const notes = document.getElementById("cancellationNotes").value;
+
+    if (!cancellationDate) {
+        if (window.showToast) window.showToast("Please select a cancellation date", "error");
+        return;
+    }
+    if (!reason) {
+        if (window.showToast) window.showToast("Please select a reason", "error");
+        return;
+    }
+
+    const confirmed = await showEvacuationConfirm({
+        title: "Submit Cancellation Request",
+        icon: "fa-calendar-times",
+        message: "Are you sure you want to cancel this booking?",
+        list: [
+            { icon: "fa-calendar", text: `Cancellation date: ${formatDate(cancellationDate)}` },
+            { icon: "fa-question-circle", text: `Reason: ${reason}` },
+        ],
+        warning: "This request will be reviewed by admin. You cannot undo this action once submitted.",
+        confirmText: "Yes, Submit Cancellation",
+        cancelText: "Go Back",
+    });
+
+    if (!confirmed) return;
+
+    const submitBtn = document.querySelector("#cancelEvacuationModal .btn-primary");
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+    submitBtn.disabled = true;
+
+    try {
+        const response = await fetch(
+            "../backend/tenant/request_prelease_cancellation.php",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    cancellation_date: cancellationDate,
+                    reason: reason,
+                    notes: notes,
+                }),
+            }
+        );
+
+        const data = await response.json();
+
+        if (data.success) {
+            const msg = data.data?.message || data.message || "Cancellation request submitted";
+            if (window.showToast) window.showToast(msg, "success");
+            closeCancelEvacuationModal();
+            await fetchDashboardData();
+            renderDashboard();
+        } else {
+            throw new Error(data.message || "Submission failed");
+        }
+    } catch (error) {
+        console.error("Error submitting cancellation request:", error);
         if (window.showToast) window.showToast(error.message, "error");
     } finally {
         submitBtn.innerHTML = originalText;

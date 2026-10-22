@@ -4,7 +4,8 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notifications.php';
-
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ 
 // ==================== CONSTANTS & CONFIGURATION ====================
 const MAX_LOGIN_ATTEMPTS = 3;
 const LOCKOUT_DURATION_MINUTES = 60; // 1 hour
@@ -13,7 +14,7 @@ const SESSION_DURATION = 1800; // 30 minutes
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-
+ rateLimiter();
 function logWithCaller($message)
 {
     $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);

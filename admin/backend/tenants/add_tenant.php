@@ -318,6 +318,78 @@ try {
     $stmt->close();
     logActivity("Apartment availability check passed. Annual Rent: {$rent_amount}, Deposit: {$security_deposit}");
 
+    // ================================================================
+    // Step 3.2b: TEMPORAL GUARD — Verify no overlap with previous tenant
+    // ================================================================
+    // Even if occupancy_status is 'NOT OCCUPIED', a previous tenant may
+    // have a scheduled move-out date still in the future. If that
+    // move-out date is on or after the new tenant's lease start date,
+    // the two tenancies would overlap and the onboarding must be
+    // rejected.
+    //
+    // We compare against the NEW lease start date (not today), so that
+    // future-dated onboardings are allowed when they don't conflict.
+    // ================================================================
+    logActivity("Step 3.2b: Checking previous tenant's move-out vs new lease start");
+
+    $prevTenantStmt = $conn->prepare("
+        SELECT tenant_code, firstname, lastname, move_out_date, evacuation_status
+        FROM tenants
+        WHERE apartment_code = ?
+          AND evacuation_status = 'evacuated'
+          AND move_out_date IS NOT NULL
+        ORDER BY move_out_date DESC
+        LIMIT 1
+        FOR UPDATE
+    ");
+    $prevTenantStmt->bind_param("s", $inputs['apartment_code']);
+    $prevTenantStmt->execute();
+    $prevTenantResult = $prevTenantStmt->get_result();
+    $prevTenant = $prevTenantResult->fetch_assoc();
+    $prevTenantStmt->close();
+
+    if ($prevTenant) {
+        $moveOutDate = $prevTenant['move_out_date'];
+        $newLeaseStart = $inputs['lease_start_date'];
+
+        logActivity("Previous tenant found: {$prevTenant['tenant_code']} "
+            . "({$prevTenant['firstname']} {$prevTenant['lastname']}) "
+            . "with move-out date {$moveOutDate}. "
+            . "New lease starts {$newLeaseStart}.");
+
+        // Block ONLY if the previous tenant leaves on a date strictly
+        // AFTER the new tenant's lease start.
+        // Same-day handover is allowed (moves out in the morning,
+        // new tenant moves in the same day).
+        if ($moveOutDate > $newLeaseStart) {
+            $daysOfOverlap = (int) ((strtotime($moveOutDate) - strtotime($newLeaseStart)) / 86400);
+
+            logActivity("BLOCKED: Overlap detected. Previous tenant leaves {$moveOutDate} "
+                . "which is {$daysOfOverlap} day(s) AFTER the new lease start {$newLeaseStart}.");
+
+            throw new Exception(
+                "This apartment would be double-booked. "
+                . "The previous tenant ({$prevTenant['firstname']} {$prevTenant['lastname']}, "
+                . "{$prevTenant['tenant_code']}) has a scheduled move-out date of "
+                . date('F j, Y', strtotime($moveOutDate)) . ", but the new tenant's lease "
+                . "would start on " . date('F j, Y', strtotime($newLeaseStart)) . ". "
+                . "These dates overlap by {$daysOfOverlap} day(s). "
+                . "Please either: (a) choose a lease start date on or after "
+                . date('F j, Y', strtotime($moveOutDate)) . ", or (b) update the previous "
+                . "tenant's move-out date if they have already vacated.",
+                409
+            );
+        }
+
+        logActivity("No conflict — previous tenant moves out on {$moveOutDate}, "
+            . "new lease starts {$newLeaseStart} on or after that.");
+    } else {
+        logActivity("No previous evacuated tenant on file. "
+            . "Apartment is clean for onboarding.");
+    }
+
+    logActivity("Temporal availability check passed");
+
     // 3. Check if same photo was already uploaded
     logActivity("Step 3.3: Checking for duplicate photo");
     if (is_file($upload_path)) {
@@ -734,15 +806,6 @@ try {
             // ==================== INSERT INTO RENT PAYMENT HISTORY ====================
             logActivity("Step 3.8d: Inserting into rent_payment_history table");
 
-            // // Verify tracker_id is valid before inserting
-            // if (empty($tracker_id) || $tracker_id <= 0) {
-            //     logActivity("ERROR: Invalid tracker_id: {$tracker_id}");
-            //     throw new Exception("Tracker ID is invalid for rent_payment_history insert");
-            // }
-
-            // ==================== INSERT INTO RENT PAYMENT HISTORY ====================
-            logActivity("Step 3.8d: Inserting into rent_payment_history table");
-
             // Verify tracker_id is valid before inserting
             if (empty($tracker_id) || $tracker_id <= 0) {
                 logActivity("ERROR: Invalid tracker_id: {$tracker_id}");
@@ -976,32 +1039,32 @@ try {
             logActivity("Step 3.8e: Processing settlement for first rent payment");
 
             try {
-                // Get property details and settlement formula
+                // ------------------------------------------------------------------
+                // 1) Get property details and settlement formula
+                // ------------------------------------------------------------------
                 $propertyQuery = "
-                    SELECT 
-                        p.id AS property_id,
-                        p.property_code,
-                        p.client_code,
-                        NULLIF(p.agent_code, '') AS agent_code,
-                        COALESCE(s.admin_percentage, 10.00) AS admin_percentage,
-                        COALESCE(s.agent_percentage, 5.00) AS agent_percentage,
-                        COALESCE(s.client_percentage, 85.00) AS client_percentage
-                    FROM properties p
-                    LEFT JOIN property_settlement s ON p.id = s.property_id
-                    WHERE p.property_code = ? AND p.status = '1'
-                    LIMIT 1
-                ";
-
+        SELECT 
+            p.id AS property_id,
+            p.property_code,
+            p.client_code,
+            NULLIF(p.agent_code, '') AS agent_code,
+            COALESCE(s.admin_percentage, 10.00) AS admin_percentage,
+            COALESCE(s.agent_percentage, 5.00)  AS agent_percentage,
+            COALESCE(s.client_percentage, 85.00) AS client_percentage
+        FROM properties p
+        LEFT JOIN property_settlement s ON p.id = s.property_id
+        WHERE p.property_code = ? AND p.status = '1'
+        LIMIT 1
+    ";
                 $propertyStmt = $conn->prepare($propertyQuery);
-                if ($propertyStmt) {
-                    $propertyStmt->bind_param("s", $inputs['property_code']);
-                    $propertyStmt->execute();
-                    $property = $propertyStmt->get_result()->fetch_assoc();
-                    $propertyStmt->close();
-                } else {
+                if (!$propertyStmt) {
                     logActivity("Failed to prepare property query: " . $conn->error);
                     throw new Exception("Database error occurred");
                 }
+                $propertyStmt->bind_param("s", $inputs['property_code']);
+                $propertyStmt->execute();
+                $property = $propertyStmt->get_result()->fetch_assoc();
+                $propertyStmt->close();
 
                 if (!$property) {
                     logActivity("Property not found for settlement: {$inputs['property_code']}");
@@ -1016,18 +1079,19 @@ try {
                     'client_pct' => $property['client_percentage']
                 ]));
 
-                // Calculate shares
+                // ------------------------------------------------------------------
+                // 2) Calculate shares
+                // ------------------------------------------------------------------
                 $periodAmount = $payment_amount_per_period;
                 $adminShare = round($periodAmount * ($property['admin_percentage'] / 100), 2);
                 $agentShare = round($periodAmount * ($property['agent_percentage'] / 100), 2);
                 $clientShare = round($periodAmount * ($property['client_percentage'] / 100), 2);
 
-                // Handle rounding differences
                 $totalShares = $adminShare + $agentShare + $clientShare;
                 if (abs($totalShares - $periodAmount) > 0.01) {
                     $difference = round($periodAmount - $totalShares, 2);
                     $clientShare += $difference;
-                    logActivity("Rounding adjustment: $difference added to client share");
+                    logActivity("Rounding adjustment: {$difference} added to client share");
                 }
 
                 logActivity("Settlement shares calculated: " . json_encode([
@@ -1037,51 +1101,57 @@ try {
                     'client_share' => $clientShare
                 ]));
 
-                // Get payment ID from rent_payments (reuse $tracker_id from earlier)
+                // ------------------------------------------------------------------
+                // 3) Resolve numeric payment_id and admin unique_id
+                // ------------------------------------------------------------------
                 $paymentId = 0;
-                $paymentIdQuery = "SELECT payment_id FROM rent_payments WHERE rent_payment_id = ? LIMIT 1";
-                $paymentIdStmt = $conn->prepare($paymentIdQuery);
+                $paymentIdStmt = $conn->prepare("SELECT payment_id FROM rent_payments WHERE rent_payment_id = ? LIMIT 1");
                 if ($paymentIdStmt) {
                     $paymentIdStmt->bind_param("s", $rent_payment_id);
                     $paymentIdStmt->execute();
-                    $paymentIdResult = $paymentIdStmt->get_result();
-                    $paymentIdRow = $paymentIdResult->fetch_assoc();
+                    $paymentIdRow = $paymentIdStmt->get_result()->fetch_assoc();
                     $paymentIdStmt->close();
                     if ($paymentIdRow) {
                         $paymentId = (int) $paymentIdRow['payment_id'];
                     }
                 }
-
                 if ($paymentId <= 0) {
                     logActivity("Invalid payment_id for settlement");
                     throw new Exception("Unable to find valid payment record");
                 }
 
-                // Insert settlement transaction
-                // Insert settlement transaction
-                $settlementQuery = "
-    INSERT INTO settlement_transactions 
-    (
-        payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
-        agent_code, client_code, total_rent_amount, admin_share, agent_share,
-        client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
-        settlement_status, rent_payment_date, settlement_date, processed_by, notes,
-        admin_paid, admin_payment_date,
-        agent_paid, agent_payment_date,
-        client_paid, client_payment_date,
-        created_at, updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?,
-            1, NOW(),
-            ?, ?,
-            1, NOW(),
-            NOW(), NOW())
-";
+                // admin_tbl.unique_id is INT(11) per your schema — cast explicitly.
+                $adminUniqueId = is_numeric($userId) ? (int) $userId : 0;
+                if ($adminUniqueId <= 0) {
+                    // If $userId is something like 'SYS-1', admin wallet crediting will fail
+                    // because there's no matching row. Fail loudly rather than silently credit 0.
+                    throw new Exception("Cannot resolve admin numeric unique_id from session (userId={$userId})");
+                }
 
+                // ------------------------------------------------------------------
+                // 4) Insert settlement_transactions
+                // ------------------------------------------------------------------
+                $settlementQuery = "
+        INSERT INTO settlement_transactions 
+        (
+            payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
+            agent_code, client_code, total_rent_amount, admin_share, agent_share,
+            client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
+            settlement_status, rent_payment_date, settlement_date, processed_by, notes,
+            admin_paid, admin_payment_date,
+            agent_paid, agent_payment_date,
+            client_paid, client_payment_date,
+            created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?,
+                1, NOW(),
+                ?, ?,
+                1, NOW(),
+                NOW(), NOW())
+    ";
                 $settlementStmt = $conn->prepare($settlementQuery);
                 if (!$settlementStmt) {
-                    logActivity("Failed to prepare settlement insert: " . $conn->error);
-                    throw new Exception("Database error occurred");
+                    throw new Exception("Prepare failed for settlement insert: " . $conn->error);
                 }
 
                 $settlementStatus = 'completed';
@@ -1091,29 +1161,8 @@ try {
                 $propertyId = (int) $property['property_id'];
                 $agentCode = $property['agent_code'] ?: null;
                 $processedBy = (string) $userId;
-
-                // Agent is only "paid" if an agent actually exists on this property
                 $agentPaid = !empty($agentCode) ? 1 : 0;
 
-                logActivity("Settlement insert params: " . json_encode([
-                    'payment_id' => $paymentId,
-                    'tracker_id' => $tracker_id,
-                    'rent_payment_id' => $rent_payment_id,
-                    'property_id' => $propertyId,
-                    'tenant_id' => $tenantId,
-                    'agent_code' => $agentCode,
-                    'client_code' => $property['client_code'],
-                    'total_rent_amount' => $periodAmount,
-                    'admin_share' => $adminShare,
-                    'agent_share' => $agentShare,
-                    'client_share' => $clientShare,
-                    'admin_percentage_used' => $property['admin_percentage'],
-                    'agent_percentage_used' => $property['agent_percentage'],
-                    'client_percentage_used' => $property['client_percentage']
-                ]));
-
-                // 20 live placeholders now (agent_paid/agent_payment_date are the only
-// remaining "?" params — admin_paid/client_paid are hardcoded to 1 in the SQL)
                 $settlementStmt->bind_param(
                     "iisiissdddddddssssis",
                     $paymentId,
@@ -1135,88 +1184,170 @@ try {
                     $processedBy,
                     $settlementNotes,
                     $agentPaid,
-                    $rentPaymentDate   // agent_payment_date — or use NOW() in SQL like the others if you don't need app-side control
+                    $rentPaymentDate
                 );
 
                 if (!$settlementStmt->execute()) {
-                    logActivity("Settlement insert failed: " . $settlementStmt->error);
-                    throw new Exception("Failed to create settlement record");
+                    throw new Exception("Settlement insert failed: " . $settlementStmt->error);
                 }
-
                 $settlementId = $settlementStmt->insert_id;
                 $settlementStmt->close();
+                logActivity("Settlement created - ID: {$settlementId}, Tracker: {$tracker_id}");
 
-                logActivity("Settlement created for first payment - ID: $settlementId, Tracker: $tracker_id");
+                // ------------------------------------------------------------------
+                // 5) Credit wallets + write ledger rows (atomic per wallet)
+                // ------------------------------------------------------------------
+                $walletRequestId = 'SETTLE-' . $settlementId;
+                $walletNotes = "First rent payment settlement during onboarding (tenant {$tenant_code}, apt {$inputs['apartment_code']})";
+                $createdByInt = $adminUniqueId;
 
-                // ==================== UPDATE BALANCES ====================
-
-                // Update admin balance
+                // ---------- ADMIN ----------
                 if ($adminShare > 0) {
-                    $updateAdminQuery = "
-                        UPDATE admin_tbl 
-                        SET settlement_balance = COALESCE(settlement_balance, 0) + ?,
-                            total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
-                            last_settlement_date = NOW()
-                        WHERE unique_id = ?
-                    ";
-                    $updateAdminStmt = $conn->prepare($updateAdminQuery);
-                    if ($updateAdminStmt) {
-                        $updateAdminStmt->bind_param("dds", $adminShare, $adminShare, $userId);
-                        $updateAdminStmt->execute();
-                        $updateAdminStmt->close();
-                        logActivity("Admin balance updated: +$adminShare");
-                    } else {
-                        logActivity("Warning: Could not update admin balance");
+                    $upd = $conn->prepare("
+            UPDATE admin_tbl 
+            SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
+                settlement_balance      = COALESCE(settlement_balance, 0) + ?,
+                total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                last_settlement_date    = NOW()
+            WHERE unique_id = ?
+        ");
+                    if (!$upd)
+                        throw new Exception("Prepare failed for admin wallet update: " . $conn->error);
+                    $upd->bind_param("dddi", $adminShare, $adminShare, $adminShare, $adminUniqueId);
+                    if (!$upd->execute())
+                        throw new Exception("Admin wallet update failed: " . $upd->error);
+                    if ($upd->affected_rows === 0) {
+                        throw new Exception("Admin wallet update affected 0 rows — admin_tbl.unique_id={$adminUniqueId} not found");
                     }
+                    $upd->close();
+
+                    $balStmt = $conn->prepare("SELECT wallet_balance FROM admin_tbl WHERE unique_id = ? LIMIT 1 FOR UPDATE");
+                    if (!$balStmt)
+                        throw new Exception("Prepare failed for admin balance read: " . $conn->error);
+                    $balStmt->bind_param("i", $adminUniqueId);
+                    $balStmt->execute();
+                    $balRow = $balStmt->get_result()->fetch_assoc();
+                    $balStmt->close();
+                    $adminRunningBalance = (float) ($balRow['wallet_balance'] ?? $adminShare);
+
+                    $ledger = $conn->prepare("
+            INSERT INTO admin_wallet_transactions
+                (unique_id, transaction_type, amount, running_balance,
+                 request_id, notes, created_at, created_by)
+            VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?)
+        ");
+                    if (!$ledger)
+                        throw new Exception("Prepare failed for admin wallet ledger insert: " . $conn->error);
+                    $ledger->bind_param("iddssi", $adminUniqueId, $adminShare, $adminRunningBalance, $walletRequestId, $walletNotes, $createdByInt);
+                    if (!$ledger->execute())
+                        throw new Exception("Admin wallet ledger insert failed: " . $ledger->error);
+                    logActivity("Admin wallet ledger inserted id={$ledger->insert_id}, running_balance={$adminRunningBalance}");
+                    $ledger->close();
                 }
 
-                // Update client balance
+                // ---------- CLIENT ----------
                 if ($clientShare > 0) {
-                    $updateClientQuery = "
-                        UPDATE clients 
-                        SET settlement_balance = COALESCE(settlement_balance, 0) + ?,
-                            total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
-                            last_settlement_date = NOW()
-                        WHERE client_code = ?
-                    ";
-                    $updateClientStmt = $conn->prepare($updateClientQuery);
-                    if ($updateClientStmt) {
-                        $updateClientStmt->bind_param("dds", $clientShare, $clientShare, $property['client_code']);
-                        $updateClientStmt->execute();
-                        $updateClientStmt->close();
-                        logActivity("Client balance updated: +$clientShare");
-                    } else {
-                        logActivity("Warning: Could not update client balance");
+                    $upd = $conn->prepare("
+            UPDATE clients 
+            SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
+                settlement_balance      = COALESCE(settlement_balance, 0) + ?,
+                total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                last_settlement_date    = NOW()
+            WHERE client_code = ?
+        ");
+                    if (!$upd)
+                        throw new Exception("Prepare failed for client wallet update: " . $conn->error);
+                    $upd->bind_param("ddds", $clientShare, $clientShare, $clientShare, $property['client_code']);
+                    if (!$upd->execute())
+                        throw new Exception("Client wallet update failed: " . $upd->error);
+                    if ($upd->affected_rows === 0) {
+                        throw new Exception("Client wallet update affected 0 rows — clients.client_code={$property['client_code']} not found");
                     }
+                    $upd->close();
+
+                    $balStmt = $conn->prepare("SELECT wallet_balance FROM clients WHERE client_code = ? LIMIT 1 FOR UPDATE");
+                    if (!$balStmt)
+                        throw new Exception("Prepare failed for client balance read: " . $conn->error);
+                    $balStmt->bind_param("s", $property['client_code']);
+                    $balStmt->execute();
+                    $balRow = $balStmt->get_result()->fetch_assoc();
+                    $balStmt->close();
+                    $clientRunningBalance = (float) ($balRow['wallet_balance'] ?? $clientShare);
+
+                    $ledger = $conn->prepare("
+            INSERT INTO client_wallet_transactions
+                (client_code, transaction_type, amount, running_balance,
+                 request_id, notes, created_at, created_by)
+            VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?)
+        ");
+                    if (!$ledger)
+                        throw new Exception("Prepare failed for client wallet ledger insert: " . $conn->error);
+                    $ledger->bind_param("sddssi", $property['client_code'], $clientShare, $clientRunningBalance, $walletRequestId, $walletNotes, $createdByInt);
+                    if (!$ledger->execute())
+                        throw new Exception("Client wallet ledger insert failed: " . $ledger->error);
+                    logActivity("Client wallet ledger inserted id={$ledger->insert_id}, running_balance={$clientRunningBalance}");
+                    $ledger->close();
                 }
 
-                // Update agent balance (if agent exists)
+                // ---------- AGENT ----------
                 if (!empty($property['agent_code']) && $agentShare > 0) {
-                    $updateAgentQuery = "
-                        UPDATE agents 
-                        SET settlement_balance = COALESCE(settlement_balance, 0) + ?,
-                            total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
-                            last_settlement_date = NOW()
-                        WHERE agent_code = ?
-                    ";
-                    $updateAgentStmt = $conn->prepare($updateAgentQuery);
-                    if ($updateAgentStmt) {
-                        $updateAgentStmt->bind_param("dds", $agentShare, $agentShare, $property['agent_code']);
-                        $updateAgentStmt->execute();
-                        $updateAgentStmt->close();
-                        logActivity("Agent balance updated: +$agentShare");
-                    } else {
-                        logActivity("Warning: Could not update agent balance");
+                    $upd = $conn->prepare("
+            UPDATE agents 
+            SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
+                settlement_balance      = COALESCE(settlement_balance, 0) + ?,
+                total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                last_settlement_date    = NOW()
+            WHERE agent_code = ?
+        ");
+                    if (!$upd)
+                        throw new Exception("Prepare failed for agent wallet update: " . $conn->error);
+                    $upd->bind_param("ddds", $agentShare, $agentShare, $agentShare, $property['agent_code']);
+                    if (!$upd->execute())
+                        throw new Exception("Agent wallet update failed: " . $upd->error);
+                    if ($upd->affected_rows === 0) {
+                        throw new Exception("Agent wallet update affected 0 rows — agents.agent_code={$property['agent_code']} not found");
                     }
+                    $upd->close();
+
+                    $balStmt = $conn->prepare("SELECT wallet_balance FROM agents WHERE agent_code = ? LIMIT 1 FOR UPDATE");
+                    if (!$balStmt)
+                        throw new Exception("Prepare failed for agent balance read: " . $conn->error);
+                    $balStmt->bind_param("s", $property['agent_code']);
+                    $balStmt->execute();
+                    $balRow = $balStmt->get_result()->fetch_assoc();
+                    $balStmt->close();
+                    $agentRunningBalance = (float) ($balRow['wallet_balance'] ?? $agentShare);
+
+                    $ledger = $conn->prepare("
+            INSERT INTO agent_wallet_transactions
+                (agent_code, transaction_type, amount, running_balance,
+                 request_id, notes, created_at, created_by)
+            VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?)
+        ");
+                    if (!$ledger)
+                        throw new Exception("Prepare failed for agent wallet ledger insert: " . $conn->error);
+                    $ledger->bind_param("sddssi", $property['agent_code'], $agentShare, $agentRunningBalance, $walletRequestId, $walletNotes, $createdByInt);
+                    if (!$ledger->execute())
+                        throw new Exception("Agent wallet ledger insert failed: " . $ledger->error);
+                    logActivity("Agent wallet ledger inserted id={$ledger->insert_id}, running_balance={$agentRunningBalance}");
+                    $ledger->close();
                 }
 
-                logActivity("Settlement completed for first payment - ID: $settlementId");
+                logActivity("Settlement + wallet ledger completed. Settlement ID={$settlementId}, request_id={$walletRequestId}");
 
             } catch (Exception $settlementError) {
-                logActivity("SETTLEMENT ERROR (First Payment): " . $settlementError->getMessage());
-                // Note: We don't throw here because the tenant onboarding shouldn't fail if settlement fails
-                // We just log the error and continue
-                logActivity("WARNING: Settlement processing failed but tenant onboarding continues");
+                logActivity("SETTLEMENT/WALLET ERROR (First Payment): " . $settlementError->getMessage());
+                logActivity("Rethrowing to roll back the entire tenant onboarding.");
+                // Force rollback of everything: tenant insert, apartment status update,
+                // rent_payments, rent_payment_tracker, rent_payment_history, security
+                // deposit, settlement_transactions, and all three wallet credit updates
+                // + wallet ledger inserts. Outer catch will $conn->rollback() and unlink
+                // the uploaded photo. Admin can safely retry.
+                //
+                // Why re-throw? A settlement row without matching wallet ledger rows is
+                // a corrupted ledger state (money credited, no audit trail). Better to
+                // fail the request than to persist partial money-movement.
+                throw $settlementError;
             }
             // ==================== END SETTLEMENT PROCESSING ====================
 
@@ -1332,45 +1463,45 @@ try {
     logActivity("Transaction committed successfully");
 
 
-        // ==================== GENERATE ONBOARDING INVOICE (OUTSIDE TRANSACTION) ====================
+    // ==================== GENERATE ONBOARDING INVOICE (OUTSIDE TRANSACTION) ====================
     logActivity("Step 3.10: Generating onboarding invoice (outside transaction)");
-    
+
     try {
         require_once __DIR__ . '/../utilities/invoice_helper.php';
-        
+
         $invoice_data = [
-            'tenant_code'               => $tenant_code,
-            'tenant_name'               => $inputs['firstname'] . ' ' . $inputs['lastname'],
+            'tenant_code' => $tenant_code,
+            'tenant_name' => $inputs['firstname'] . ' ' . $inputs['lastname'],
             // 'tenant_email'              => $inputs['email'],
-            'tenant_email'              => "adebayoabdulrahmon@gmail.com",
-            'property_code'             => $inputs['property_code'],
-            'property_name'             => $property_name ?? $inputs['property_code'],
-            'apartment_code'            => $inputs['apartment_code'],
-            'apartment_number'          => $apartment_number ?? $inputs['apartment_code'],
-            'rent_payment_id'           => $rent_payment_id,
-            'annual_rent'               => $annual_rent,
-            'security_deposit'          => $security_deposit,
+            'tenant_email' => "adebayoabdulrahmon@gmail.com",
+            'property_code' => $inputs['property_code'],
+            'property_name' => $property_name ?? $inputs['property_code'],
+            'apartment_code' => $inputs['apartment_code'],
+            'apartment_number' => $apartment_number ?? $inputs['apartment_code'],
+            'rent_payment_id' => $rent_payment_id,
+            'annual_rent' => $annual_rent,
+            'security_deposit' => $security_deposit,
             'payment_amount_per_period' => $payment_amount_per_period,
-            'balance'                   => $balance,
-            'payment_frequency'         => $inputs['payment_frequency'],
-            'period_start'              => $rent_period_start,
-            'period_end'                => $rent_period_end,
-            'due_date'                  => $due_date,
-            'reference_number'          => $reference_number,
-            'receipt_number'            => $receipt_number,
-            'created_by'                => $userId,
-            'storage_location'          => STORAGE_LOCATION,
-            'uploaded_by_type'          => UPLOADED_BY_TYPE
+            'balance' => $balance,
+            'payment_frequency' => $inputs['payment_frequency'],
+            'period_start' => $rent_period_start,
+            'period_end' => $rent_period_end,
+            'due_date' => $due_date,
+            'reference_number' => $reference_number,
+            'receipt_number' => $receipt_number,
+            'created_by' => $userId,
+            'storage_location' => STORAGE_LOCATION,
+            'uploaded_by_type' => UPLOADED_BY_TYPE
         ];
-        
+
         $invoice_result = generateOnboardingInvoice($conn, $invoice_data);
-        
+
         if ($invoice_result && $invoice_result['success']) {
             logActivity("Onboarding invoice generated: " . json_encode($invoice_result));
         } else {
             logActivity("WARNING: Invoice generation returned false - check [INVOICE] logs above");
         }
-        
+
     } catch (Exception $invoiceError) {
         // Don't fail onboarding — just log
         logActivity("WARNING: Invoice generation failed (onboarding still succeeded): " . $invoiceError->getMessage());

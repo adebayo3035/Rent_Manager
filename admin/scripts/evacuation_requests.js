@@ -2,6 +2,7 @@
 
 const EvacuationApp = {
   currentStatus: "pending_review",
+  currentRequestType: "evacuation", // ← NEW
   currentRequestId: null,
   currentRequest: null,
   deductions: [],
@@ -16,6 +17,24 @@ const EvacuationApp = {
   },
 
   bindEvents: function () {
+    // Type tabs
+    document.querySelectorAll(".type-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document
+          .querySelectorAll(".type-tab")
+          .forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        this.currentRequestType = btn.dataset.type;
+        this.currentStatus = "pending_review"; // reset status on type switch
+        document.querySelectorAll(".tab-btn").forEach((b) => {
+          b.classList.toggle("active", b.dataset.status === "pending_review");
+        });
+        this.loadRequests(this.currentStatus);
+        this.loadStatistics();
+      });
+    });
+
+    // Existing status tabs
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         document
@@ -29,38 +48,46 @@ const EvacuationApp = {
   },
 
   // ==================== STATS ====================
-  loadStatistics: async function () {
-    try {
-      const response = await fetch(
-        "../backend/tenants/get_evacuation_requests.php?action=stats",
-      );
-      const data = await response.json();
+  // loadStatistics: async function () {
+  //   try {
+  //     const response = await fetch(
+  //       "../backend/tenants/get_evacuation_requests.php?action=stats",
+  //     );
+  //     const data = await response.json();
 
-      if (data.success) {
-        document.getElementById("pendingCount").textContent =
-          data.data.pending_review || 0;
-        document.getElementById("approvedCount").textContent =
-          data.data.approved || 0;
-        document.getElementById("completedCount").textContent =
-          data.data.completed || 0;
-        document.getElementById("rejectedCount").textContent =
-          data.data.rejected || 0;
-      }
-    } catch (error) {
-      console.error("Error loading statistics:", error);
-    }
-  },
+  //     if (data.success) {
+  //       document.getElementById("pendingCount").textContent =
+  //         data.data.pending_review || 0;
+  //       document.getElementById("approvedCount").textContent =
+  //         data.data.approved || 0;
+  //       document.getElementById("completedCount").textContent =
+  //         data.data.completed || 0;
+  //       document.getElementById("rejectedCount").textContent =
+  //         data.data.rejected || 0;
+  //     }
+  //   } catch (error) {
+  //     console.error("Error loading statistics:", error);
+  //   }
+  // },
 
   // ==================== LOAD REQUESTS ====================
+  switchRequestType: function (type) {
+    this.currentRequestType = type;
+    document.querySelectorAll(".type-tab").forEach((el) => {
+      el.classList.toggle("active", el.dataset.type === type);
+    });
+    this.loadRequests(this.currentStatus);
+    this.loadStatistics();
+  },
+
   loadRequests: async function (status) {
     const container = document.getElementById("requestsContainer");
     container.innerHTML =
-      '<div class="loading-state"><div class="spinner"></div><p>Loading requests...</p></div>';
+      '<div class="loading-state"><div class="spinner"></div><p>Loading...</p></div>';
 
     try {
-      const response = await fetch(
-        `../backend/tenants/get_evacuation_requests.php?status=${status}`,
-      );
+      const url = `../backend/tenants/get_evacuation_requests.php?status=${encodeURIComponent(status)}&request_type=${encodeURIComponent(this.currentRequestType)}`;
+      const response = await fetch(url);
       const data = await response.json();
 
       if (data.success) {
@@ -71,36 +98,93 @@ const EvacuationApp = {
     } catch (error) {
       console.error("Error loading requests:", error);
       container.innerHTML =
-        '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Error loading requests. Please try again.</p></div>';
+        '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Error loading requests.</p></div>';
     }
   },
 
+  loadStatistics: async function () {
+    try {
+      const response = await fetch(
+        "../backend/tenants/get_evacuation_requests.php?action=stats",
+      );
+      const data = await response.json();
+
+      if (data.success) {
+        const stats = data.data[this.currentRequestType] || {};
+        document.getElementById("pendingCount").textContent =
+          stats.pending_review || 0;
+        document.getElementById("approvedCount").textContent =
+          stats.approved || 0;
+        document.getElementById("completedCount").textContent =
+          stats.completed || 0;
+        document.getElementById("rejectedCount").textContent =
+          stats.rejected || 0;
+      }
+    } catch (error) {
+      console.error("Error loading statistics:", error);
+    }
+  },
   // ==================== RENDER ====================
   renderRequests: function (requests) {
     const container = document.getElementById("requestsContainer");
 
     if (!requests || requests.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state"><i class="fas fa-inbox"></i><p>No evacuation requests found</p></div>';
+      const emptyLabel =
+        this.currentRequestType === "prelease_cancellation"
+          ? "cancellation requests"
+          : "evacuation requests";
+      container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-inbox"></i>
+                <p>No ${emptyLabel} found</p>
+            </div>`;
       return;
     }
 
     container.innerHTML = requests
-      .map(
-        (request) => `
+      .map((request) => {
+        const isPrelease = request.request_type === "prelease_cancellation";
+
+        // ---- Labels that vary by request type ----
+        const typeBadge = isPrelease
+          ? `<span class="type-badge type-badge-prelease"><i class="fas fa-calendar-times"></i> Pre-Lease</span>`
+          : `<span class="type-badge type-badge-evacuation"><i class="fas fa-sign-out-alt"></i> Evacuation</span>`;
+
+        const dateLabel = isPrelease
+          ? "Cancellation Date"
+          : "Requested Move-out";
+        const actionLabel = isPrelease
+          ? "Process Cancellation"
+          : "Process Move-out";
+
+        // ---- Formatted date fallback (in case the backend doesn't send the *_formatted field) ----
+        const requestedDate =
+          request.requested_move_out_date_formatted ||
+          (request.requested_move_out_date
+            ? this.formatDate(request.requested_move_out_date)
+            : "N/A");
+
+        return `
             <div class="evacuation-card" data-request-id="${request.request_id}">
                 <div class="card-header">
-                    <h3>${this.escapeHtml(request.tenant_name)}</h3>
-                    <span class="status-badge status-${request.status}">${request.status.replace("_", " ").toUpperCase()}</span>
+                    <div class="card-header-left">
+                        <h3>${this.escapeHtml(request.tenant_name)}</h3>
+                        ${typeBadge}
+                    </div>
+                    <span class="status-badge status-${request.status}">
+                        ${request.status.replace("_", " ").toUpperCase()}
+                    </span>
                 </div>
                 <div class="card-body">
                     <div class="info-row">
                         <span class="info-label">Property</span>
-                        <span class="info-value">${this.escapeHtml(request.property_name)} - Apt ${this.escapeHtml(request.apartment_number)}</span>
+                        <span class="info-value">
+                            ${this.escapeHtml(request.property_name)} - Apt ${this.escapeHtml(request.apartment_number)}
+                        </span>
                     </div>
                     <div class="info-row">
-                        <span class="info-label">Requested Move-out</span>
-                        <span class="info-value">${request.requested_move_out_date_formatted || "N/A"}</span>
+                        <span class="info-label">${dateLabel}</span>
+                        <span class="info-value">${requestedDate}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">Reason</span>
@@ -115,7 +199,9 @@ const EvacuationApp = {
                         ? `
                     <div class="info-row">
                         <span class="info-label">Outstanding Balance</span>
-                        <span class="info-value" style="color:#dc2626;">₦${this.formatNumber(request.outstanding_amount)}</span>
+                        <span class="info-value" style="color:#dc2626;">
+                            ₦${this.formatNumber(request.outstanding_amount)}
+                        </span>
                     </div>`
                         : ""
                     }
@@ -124,25 +210,28 @@ const EvacuationApp = {
                     ${
                       request.status === "pending_review"
                         ? `
-                        <button class="btn btn-primary" onclick="EvacuationApp.openReviewModal('${request.request_id}')">
+                        <button class="btn btn-primary"
+                                onclick="EvacuationApp.openReviewModal('${request.request_id}')">
                             <i class="fas fa-clipboard-check"></i> Review Request
                         </button>
                     `
                         : request.status === "approved"
                           ? `
-                        <button class="btn btn-success" onclick="EvacuationApp.openProcessModal('${request.request_id}')">
-                            <i class="fas fa-check-circle"></i> Process Move-out
+                        <button class="btn btn-success"
+                                onclick="EvacuationApp.openProcessModal('${request.request_id}')">
+                            <i class="fas fa-check-circle"></i> ${actionLabel}
                         </button>
                     `
                           : ""
                     }
-                    <button class="btn btn-outline" onclick="EvacuationApp.viewDetails('${request.request_id}')">
+                    <button class="btn btn-outline"
+                            onclick="EvacuationApp.viewDetails('${request.request_id}')">
                         <i class="fas fa-eye"></i> View Details
                     </button>
                 </div>
             </div>
-        `,
-      )
+        `;
+      })
       .join("");
   },
 
@@ -235,7 +324,9 @@ const EvacuationApp = {
 
         </div>
 
-        ${request.outstanding_amount > 0 ? `
+        ${
+          request.outstanding_amount > 0
+            ? `
             <div class="review-info-alert">
                 <i class="fas fa-exclamation-triangle"></i>
                 <div>
@@ -243,11 +334,13 @@ const EvacuationApp = {
                     <div class="review-info-alert-value">₦${this.formatNumber(request.outstanding_amount)}</div>
                 </div>
             </div>
-        ` : ""}
+        `
+            : ""
+        }
     </div>
 `;
 
-document.getElementById("reviewRequestInfo").innerHTML = infoHtml;
+    document.getElementById("reviewRequestInfo").innerHTML = infoHtml;
     document.getElementById("approvedMoveOutDate").value =
       request.requested_move_out_date || "";
     document.getElementById("reviewNotes").value = "";
@@ -301,165 +394,167 @@ document.getElementById("reviewRequestInfo").innerHTML = infoHtml;
   },
 
   // ==================== DECLINE APPROVAL ====================
-declineApproval: async function () {
+  declineApproval: async function () {
     if (!this.currentRequestId) {
-        UI.toast("No request selected", "warning");
-        return;
+      UI.toast("No request selected", "warning");
+      return;
     }
 
     // Confirm — this is destructive
     const confirmed = await this.confirmAction(
-        "Decline Approval",
-        "This will withdraw the approval and return the request to 'pending review'. "
-        + "Any changes made during approval (move-out date, tenant evacuation status) "
-        + "will be reverted. Continue?",
-        "danger"
+      "Decline Approval",
+      "This will withdraw the approval and return the request to 'pending review'. " +
+        "Any changes made during approval (move-out date, tenant evacuation status) " +
+        "will be reverted. Continue?",
+      "danger",
     );
     if (!confirmed) return;
 
     // Ask for a reason (optional but recommended)
-    const reason = await this.promptForReason();
-    if (reason === null) return;  // user cancelled the prompt
+    const reason = await this.promptForReason(
+      "Withdraw Approval",
+      "Optional: Provide a reason for withdrawing this approval. The tenant will see this message.",
+      "e.g. Approved in error, scheduling conflict, etc.",
+    );
+    if (reason === null) return; // user cancelled the prompt
 
     // Get CSRF
     const csrf = await this.getCsrfToken("review_evacuation_form");
     if (!csrf) {
-        UI.toast("Security token missing. Please refresh the page.", "danger");
-        return;
+      UI.toast("Security token missing. Please refresh the page.", "danger");
+      return;
     }
 
     const payload = {
-        request_id: this.currentRequestId,
-        action: "decline",
-        decline_reason: reason || "Approval withdrawn by admin",
-        csrf_token: csrf,
-        token_id: "review_evacuation_form",
+      request_id: this.currentRequestId,
+      action: "decline",
+      decline_reason: reason || "Approval withdrawn by admin",
+      csrf_token: csrf,
+      token_id: "review_evacuation_form",
     };
 
     const declineBtn = document.querySelector("#processModal .btn-danger");
     const originalText = declineBtn.innerHTML;
-    declineBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Withdrawing...';
+    declineBtn.innerHTML =
+      '<i class="fas fa-spinner fa-spin"></i> Withdrawing...';
     declineBtn.disabled = true;
 
     UI.loader.show("Withdrawing approval...");
 
     try {
-        const response = await fetch(
-            "../backend/tenants/review_evacuation_requests.php",
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify(payload),
-            }
-        );
+      const response = await fetch(
+        "../backend/tenants/review_evacuation_requests.php",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        },
+      );
 
-        const contentType = response.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-            const text = await response.text();
-            console.error("Non-JSON response:", text);
-            throw new Error("Server returned an unexpected response.");
-        }
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Non-JSON response:", text);
+        throw new Error("Server returned an unexpected response.");
+      }
 
-        const result = await response.json();
+      const result = await response.json();
 
-        if (response.ok && result.success) {
-            UI.toast(
-                result.data || "Approval withdrawn successfully",
-                "success"
-            );
-            this.closeProcessModal();
-            this.loadRequests(this.currentStatus);
-            this.loadStatistics();
-        } else {
-            const errMsg =
-                (typeof result.message === "string" && result.message) ||
-                result.data?.message ||
-                "Failed to withdraw approval";
-            UI.toast(errMsg, "danger");
-        }
+      if (response.ok && result.success) {
+        UI.toast(result.data || "Approval withdrawn successfully", "success");
+        this.closeProcessModal();
+        this.loadRequests(this.currentStatus);
+        this.loadStatistics();
+      } else {
+        const errMsg =
+          (typeof result.message === "string" && result.message) ||
+          result.data?.message ||
+          "Failed to withdraw approval";
+        UI.toast(errMsg, "danger");
+      }
     } catch (error) {
-        console.error("Decline error:", error);
-        UI.toast(
-            error.message || "An error occurred. Please try again.",
-            "danger"
-        );
+      console.error("Decline error:", error);
+      UI.toast(
+        error.message || "An error occurred. Please try again.",
+        "danger",
+      );
     } finally {
-        declineBtn.innerHTML = originalText;
-        declineBtn.disabled = false;
-        UI.loader.hide();
+      declineBtn.innerHTML = originalText;
+      declineBtn.disabled = false;
+      UI.loader.hide();
     }
-},
+  },
 
-/**
- * Show a small prompt for the decline reason.
- * Returns the string, empty string for "no reason", or null if cancelled.
- */
-promptForReason: function () {
-    return new Promise((resolve) => {
-        const html = `
-            <div id="declineReasonDialog" class="modal active" style="z-index: 10001;">
-                <div class="modal-content" style="max-width: 460px;">
-                    <div class="modal-header">
-                        <h3>Withdraw Approval</h3>
-                        <button class="modal-close" id="declineDialogClose">&times;</button>
-                    </div>
-                    <div class="modal-body">
-                        <p style="margin-bottom: 12px; color: #4b5563;">
-                            Optional: Provide a reason for withdrawing this approval.
-                            The tenant will see this message.
-                        </p>
-                        <textarea id="declineReasonInput"
-                                  class="form-input"
-                                  rows="3"
-                                  placeholder="e.g. Approved in error, scheduling conflict, etc."
-                                  style="width: 100%; resize: vertical;"></textarea>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-outline" id="declineDialogCancel">Cancel</button>
-                        <button class="btn btn-danger" id="declineDialogConfirm">Withdraw Approval</button>
-                    </div>
-                </div>
-            </div>
-        `;
+  /**
+   * Show a small prompt for the decline reason.
+   * Returns the string, empty string for "no reason", or null if cancelled.
+   */
+  // promptForReason: function () {
+  //     return new Promise((resolve) => {
+  //         const html = `
+  //             <div id="declineReasonDialog" class="modal active" style="z-index: 10001;">
+  //                 <div class="modal-content" style="max-width: 460px;">
+  //                     <div class="modal-header">
+  //                         <h3>Withdraw Approval</h3>
+  //                         <button class="modal-close" id="declineDialogClose">&times;</button>
+  //                     </div>
+  //                     <div class="modal-body">
+  //                         <p style="margin-bottom: 12px; color: #4b5563;">
+  //                             Optional: Provide a reason for withdrawing this approval.
+  //                             The tenant will see this message.
+  //                         </p>
+  //                         <textarea id="declineReasonInput"
+  //                                   class="form-input"
+  //                                   rows="3"
+  //                                   placeholder="e.g. Approved in error, scheduling conflict, etc."
+  //                                   style="width: 100%; resize: vertical;"></textarea>
+  //                     </div>
+  //                     <div class="modal-footer">
+  //                         <button class="btn btn-outline" id="declineDialogCancel">Cancel</button>
+  //                         <button class="btn btn-danger" id="declineDialogConfirm">Withdraw Approval</button>
+  //                     </div>
+  //                 </div>
+  //             </div>
+  //         `;
 
-        document.body.insertAdjacentHTML("beforeend", html);
+  //         document.body.insertAdjacentHTML("beforeend", html);
 
-        const dialog = document.getElementById("declineReasonDialog");
-        const input = document.getElementById("declineReasonInput");
-        const confirmBtn = document.getElementById("declineDialogConfirm");
-        const cancelBtn = document.getElementById("declineDialogCancel");
-        const closeBtn = document.getElementById("declineDialogClose");
+  //         const dialog = document.getElementById("declineReasonDialog");
+  //         const input = document.getElementById("declineReasonInput");
+  //         const confirmBtn = document.getElementById("declineDialogConfirm");
+  //         const cancelBtn = document.getElementById("declineDialogCancel");
+  //         const closeBtn = document.getElementById("declineDialogClose");
 
-        const cleanup = () => dialog.remove();
+  //         const cleanup = () => dialog.remove();
 
-        confirmBtn.onclick = () => {
-            const value = input.value.trim();
-            cleanup();
-            resolve(value);   // may be empty string
-        };
+  //         confirmBtn.onclick = () => {
+  //             const value = input.value.trim();
+  //             cleanup();
+  //             resolve(value);   // may be empty string
+  //         };
 
-        cancelBtn.onclick = () => {
-            cleanup();
-            resolve(null);    // cancelled
-        };
+  //         cancelBtn.onclick = () => {
+  //             cleanup();
+  //             resolve(null);    // cancelled
+  //         };
 
-        closeBtn.onclick = () => {
-            cleanup();
-            resolve(null);
-        };
+  //         closeBtn.onclick = () => {
+  //             cleanup();
+  //             resolve(null);
+  //         };
 
-        // Click outside to cancel
-        dialog.onclick = (e) => {
-            if (e.target === dialog) {
-                cleanup();
-                resolve(null);
-            }
-        };
+  //         // Click outside to cancel
+  //         dialog.onclick = (e) => {
+  //             if (e.target === dialog) {
+  //                 cleanup();
+  //                 resolve(null);
+  //             }
+  //         };
 
-        input.focus();
-    });
-},
+  //         input.focus();
+  //     });
+  // },
 
   // ==================== SUBMIT REVIEW ====================
   submitReview: async function (action) {
@@ -640,14 +735,14 @@ promptForReason: function () {
     this.deductions = [];
     this.updateSummary();
 
-     // Show/hide Decline button based on request state
+    // Show/hide Decline button based on request state
     const declineBtn = document.querySelector("#processModal .btn-danger");
     if (declineBtn) {
-        if (request.status === "approved") {
-            declineBtn.style.display = "inline-flex";
-        } else {
-            declineBtn.style.display = "none";
-        }
+      if (request.status === "approved") {
+        declineBtn.style.display = "inline-flex";
+      } else {
+        declineBtn.style.display = "none";
+      }
     }
 
     document.getElementById("processModal").classList.add("active");
@@ -873,19 +968,58 @@ promptForReason: function () {
       (d) => d.type && d.amount > 0,
     );
 
-    const confirmed = await this.confirmAction(
-      "Confirm Move-out",
-      "This will finalize the evacuation and free the apartment. Continue?",
-      "warning",
-    );
-    if (!confirmed) return;
+    // ---- Detect premature processing ----
+    const approvedMoveOutDate = this.currentRequest?.approved_move_out_date;
+    const today = new Date().toISOString().split("T")[0];
+
+    const isEarly = approvedMoveOutDate && today < approvedMoveOutDate;
+
+    let forceEarlyMoveOut = false;
+    let earlyMoveOutReason = "";
+
+    if (isEarly) {
+      const daysEarly = Math.ceil(
+        (new Date(approvedMoveOutDate) - new Date(today)) / 86400000,
+      );
+
+      const confirmedEarly = await this.confirmAction(
+        "Early Move-Out Confirmation",
+        `The approved move-out date is ${this.formatDate(approvedMoveOutDate)}, which is ${daysEarly} day(s) from today. The tenant is still scheduled to occupy this apartment until then.\n\nAre you sure the tenant has physically moved out early?`,
+        "warning",
+      );
+      if (!confirmedEarly) return;
+
+      earlyMoveOutReason = await this.promptForReason(
+        "Reason for Early Move-Out",
+        "Please explain why this evacuation is being processed before the approved move-out date. This will be recorded in the audit log.",
+      );
+      if (earlyMoveOutReason === null) return; // cancelled
+      if (earlyMoveOutReason.trim() === "") {
+        UI.toast("A reason is required for early move-out", "warning");
+        return;
+      }
+
+      forceEarlyMoveOut = true;
+    } else {
+      const confirmed = await this.confirmAction(
+        "Confirm Move-out",
+        "This will finalize the evacuation and free the apartment. Continue?",
+        "warning",
+      );
+      if (!confirmed) return;
+    }
 
     const data = {
       request_id: this.currentRequestId,
       actual_move_out_date: actualMoveOutDate,
       deductions: validDeductions,
-      include_outstanding_fees: this.includeOutstandingFees === true, // ← add
+      include_outstanding_fees: this.includeOutstandingFees === true,
     };
+
+    if (forceEarlyMoveOut) {
+      data.force_early_move_out = true;
+      data.early_move_out_reason = earlyMoveOutReason.trim();
+    }
 
     const csrf = await this.getCsrfToken("process_evacuation_form");
     if (!csrf) {
@@ -970,6 +1104,66 @@ promptForReason: function () {
       UI.loader.hide();
     }
   },
+
+  promptForReason: function (title, message, placeholder = "Reason...") {
+    return new Promise((resolve) => {
+      const html = `
+            <div id="reasonPromptDialog" class="modal active" style="z-index: 10001;">
+                <div class="modal-content" style="max-width: 460px;">
+                    <div class="modal-header">
+                        <h3>${this.escapeHtml(title)}</h3>
+                        <button class="modal-close" id="reasonPromptClose">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p style="margin-bottom: 12px; color: #4b5563;">
+                            ${this.escapeHtml(message)}
+                        </p>
+                        <textarea id="reasonPromptInput"
+                                  class="form-input"
+                                  rows="3"
+                                  placeholder="${this.escapeHtml(placeholder)}"
+                                  style="width: 100%; resize: vertical;"></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline" id="reasonPromptCancel">Cancel</button>
+                        <button class="btn btn-danger" id="reasonPromptConfirm">Confirm</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+      document.body.insertAdjacentHTML("beforeend", html);
+
+      const dialog = document.getElementById("reasonPromptDialog");
+      const input = document.getElementById("reasonPromptInput");
+      const confirmBtn = document.getElementById("reasonPromptConfirm");
+      const cancelBtn = document.getElementById("reasonPromptCancel");
+      const closeBtn = document.getElementById("reasonPromptClose");
+
+      const cleanup = () => dialog.remove();
+
+      confirmBtn.onclick = () => {
+        const value = input.value.trim();
+        cleanup();
+        resolve(value);
+      };
+      cancelBtn.onclick = () => {
+        cleanup();
+        resolve(null);
+      };
+      closeBtn.onclick = () => {
+        cleanup();
+        resolve(null);
+      };
+      dialog.onclick = (e) => {
+        if (e.target === dialog) {
+          cleanup();
+          resolve(null);
+        }
+      };
+      input.focus();
+    });
+  },
   // ==================== DETAILS MODAL ====================
   viewDetails: async function (requestId) {
     UI.loader.show("Loading details...");
@@ -997,44 +1191,44 @@ promptForReason: function () {
     // STATUS PILL
     // ================================================================
     const statusMap = {
-        pending_review: { label: "Pending Review", cls: "status-pending" },
-        approved:       { label: "Approved",       cls: "status-approved" },
-        rejected:       { label: "Rejected",       cls: "status-rejected" },
-        completed:      { label: "Completed",      cls: "status-completed" },
+      pending_review: { label: "Pending Review", cls: "status-pending" },
+      approved: { label: "Approved", cls: "status-approved" },
+      rejected: { label: "Rejected", cls: "status-rejected" },
+      completed: { label: "Completed", cls: "status-completed" },
     };
     const statusInfo = statusMap[request.status] || {
-        label: request.status.replace("_", " ").toUpperCase(),
-        cls: "status-default",
+      label: request.status.replace("_", " ").toUpperCase(),
+      cls: "status-default",
     };
 
     // ================================================================
     // DEDUCTIONS
     // ================================================================
     const deductionRows = request.deductions
-        ? request.deductions
-              .map(
-                  (d) => `
+      ? request.deductions
+          .map(
+            (d) => `
                 <div class="summary-row">
                     <span>${this.escapeHtml(d.deduction_type)}:</span>
                     <span class="text-danger">-₦${this.formatNumber(d.amount)}</span>
                     ${d.description ? `<small>${this.escapeHtml(d.description)}</small>` : ""}
                 </div>
             `,
-              )
-              .join("")
-        : "";
+          )
+          .join("")
+      : "";
 
     // ================================================================
     // OUTSTANDING FEES
     // ================================================================
     const fees = request.outstanding_fees || [];
     const feesSection = fees.length
-        ? `
+      ? `
             <div class="fees-info-section">
                 <h4><i class="fas fa-exclamation-triangle"></i> Outstanding Fees (₦${this.formatNumber(request.outstanding_fees_total)})</h4>
                 ${fees
-                    .map(
-                        (f) => `
+                  .map(
+                    (f) => `
                         <div class="outstanding-fee-row">
                             <div class="fee-name">
                                 ${this.escapeHtml(f.fee_type_name)}
@@ -1046,17 +1240,17 @@ promptForReason: function () {
                             </div>
                         </div>
                     `,
-                    )
-                    .join("")}
+                  )
+                  .join("")}
             </div>
         `
-        : "";
+      : "";
 
     // ================================================================
     // NARRATIVE BLOCKS (reason, notes, admin notes, rejection)
     // ================================================================
     const reasonSection = request.reason
-        ? `
+      ? `
             <div class="detail-block">
                 <div class="detail-block-header">
                     <i class="fas fa-comment-dots"></i> Tenant's Reason
@@ -1064,10 +1258,10 @@ promptForReason: function () {
                 <div class="detail-block-body">${this.escapeHtml(request.reason)}</div>
             </div>
         `
-        : "";
+      : "";
 
     const notesSection = request.notes
-        ? `
+      ? `
             <div class="detail-block">
                 <div class="detail-block-header">
                     <i class="fas fa-sticky-note"></i> Tenant Notes
@@ -1075,10 +1269,10 @@ promptForReason: function () {
                 <div class="detail-block-body">${this.escapeHtml(request.notes)}</div>
             </div>
         `
-        : "";
+      : "";
 
     const rejectionSection = request.rejection_reason
-        ? `
+      ? `
             <div class="detail-block detail-block-danger">
                 <div class="detail-block-header">
                     <i class="fas fa-times-circle"></i>
@@ -1087,10 +1281,10 @@ promptForReason: function () {
                 <div class="detail-block-body">${this.escapeHtml(request.rejection_reason)}</div>
             </div>
         `
-        : "";
+      : "";
 
     const adminNotesSection = request.admin_notes
-        ? `
+      ? `
             <div class="detail-block detail-block-info">
                 <div class="detail-block-header">
                     <i class="fas fa-user-shield"></i> Admin Notes
@@ -1098,7 +1292,7 @@ promptForReason: function () {
                 <div class="detail-block-body">${this.escapeHtml(request.admin_notes)}</div>
             </div>
         `
-        : "";
+      : "";
 
     // ================================================================
     // DETAIL GRID ROWS
@@ -1132,14 +1326,14 @@ promptForReason: function () {
         </div>
 
         ${
-            request.approved_move_out_date
-                ? `
+          request.approved_move_out_date
+            ? `
             <div class="detail-item">
                 <div class="detail-label"><i class="fas fa-check-circle"></i> Approved Move-Out</div>
                 <div class="detail-value accent-green">${this.formatDate(request.approved_move_out_date)}</div>
             </div>
         `
-                : ""
+            : ""
         }
     `;
 
@@ -1176,6 +1370,18 @@ promptForReason: function () {
                 </div>
 
                 <div class="summary-box">
+                <div class="summary-row">
+                        <strong>Rent Balance:</strong>
+                        <span>₦${this.formatNumber(request.unused_rent || 0)}</span>
+                    </div>
+                <div class="summary-row">
+                        <strong>Landlord Share:</strong>
+                        <span>₦${this.formatNumber(request.landlord_rent_share || 0)}</span>
+                    </div>
+                    <div class="summary-row">
+                        <strong>Tenant Share:</strong>
+                        <span>₦${this.formatNumber(request.tenant_rent_share || 0)}</span>
+                    </div>
                     <div class="summary-row">
                         <strong>Security Deposit:</strong>
                         <span>₦${this.formatNumber(request.security_deposit || 0)}</span>
@@ -1189,9 +1395,9 @@ promptForReason: function () {
                     ${deductionRows}
 
                     ${
-                        request.final_settlement_amount !== null &&
-                        request.final_settlement_amount !== undefined
-                            ? `
+                      request.final_settlement_amount !== null &&
+                      request.final_settlement_amount !== undefined
+                        ? `
                         <div class="summary-row summary-total">
                             <strong>Final Settlement:</strong>
                             <strong class="${request.final_settlement_amount > 0 ? "text-success" : request.final_settlement_amount < 0 ? "text-danger" : ""}">
@@ -1200,7 +1406,7 @@ promptForReason: function () {
                             </strong>
                         </div>
                     `
-                            : ""
+                        : ""
                     }
                 </div>
             </div>
@@ -1210,7 +1416,7 @@ promptForReason: function () {
 
     document.getElementById("detailsBody").innerHTML = detailsHtml;
     document.getElementById("detailsModal").classList.add("active");
-},
+  },
   closeDetailsModal: function () {
     document.getElementById("detailsModal").classList.remove("active");
   },

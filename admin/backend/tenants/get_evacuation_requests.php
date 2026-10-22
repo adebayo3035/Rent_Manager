@@ -19,17 +19,38 @@ $auth = requireAuth([
 // Handle statistics request
 if (isset($_GET['action']) && $_GET['action'] === 'stats') {
     $statsQuery = "
-        SELECT 
-            COUNT(CASE WHEN status = 'pending_review' THEN 1 END) as pending_review,
-            COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
-            COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
-            COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected
-        FROM evacuation_requests
-    ";
-    $statsResult = $conn->query($statsQuery);
-    $stats = $statsResult->fetch_assoc();
+    SELECT 
+        request_type,
+        COUNT(CASE WHEN status = 'pending_review' THEN 1 END) as pending_review,
+        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected
+    FROM evacuation_requests
+    GROUP BY request_type
+";
 
-    json_success("Statistics retrieved successfully", $stats);
+$statsResult = $conn->query($statsQuery);
+$stats = [
+    'evacuation' => [
+        'pending_review' => 0, 'approved' => 0,
+        'completed' => 0, 'rejected' => 0,
+    ],
+    'prelease_cancellation' => [
+        'pending_review' => 0, 'approved' => 0,
+        'completed' => 0, 'rejected' => 0,
+    ],
+];
+while ($row = $statsResult->fetch_assoc()) {
+    $type = $row['request_type'] ?: 'evacuation';
+    $stats[$type] = [
+        'pending_review' => (int) $row['pending_review'],
+        'approved'       => (int) $row['approved'],
+        'completed'      => (int) $row['completed'],
+        'rejected'       => (int) $row['rejected'],
+    ];
+}
+
+json_success("Statistics retrieved successfully", $stats);
     exit();
 }
 
@@ -151,10 +172,17 @@ if (isset($_GET['request_id'])) {
 }
 
 // Handle list requests
-$status = isset($_GET['status']) ? $_GET['status'] : 'pending_review';
-$page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
-$limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 20;
-$offset = ($page - 1) * $limit;
+// Handle list requests
+$status      = isset($_GET['status']) ? $_GET['status'] : 'pending_review';
+$requestType = isset($_GET['request_type']) ? $_GET['request_type'] : 'evacuation';
+$page        = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$limit       = isset($_GET['limit']) ? (int)$_GET['limit'] : 20;
+$offset      = ($page - 1) * $limit;
+
+// Validate request_type
+if (!in_array($requestType, ['evacuation', 'prelease_cancellation'], true)) {
+    $requestType = 'evacuation';
+}
 
 $query = "
     SELECT 
@@ -171,13 +199,13 @@ $query = "
     JOIN apartments a ON er.apartment_code = a.apartment_code
     JOIN properties p ON a.property_code = p.property_code
     LEFT JOIN admin_tbl adm ON er.reviewed_by = adm.unique_id
-    WHERE er.status = ?
+    WHERE er.status = ? AND er.request_type = ?
     ORDER BY er.created_at ASC
     LIMIT ? OFFSET ?
 ";
 
 $stmt = $conn->prepare($query);
-$stmt->bind_param("sii", $status, $limit, $offset);
+$stmt->bind_param("ssii", $status, $requestType, $limit, $offset);
 $stmt->execute();
 $result = $stmt->get_result();
 
@@ -191,9 +219,9 @@ while ($row = $result->fetch_assoc()) {
 $stmt->close();
 
 // Get count
-$countQuery = "SELECT COUNT(*) as total FROM evacuation_requests WHERE status = ?";
+$countQuery = "SELECT COUNT(*) as total FROM evacuation_requests WHERE status = ? AND request_type = ?";
 $countStmt = $conn->prepare($countQuery);
-$countStmt->bind_param("s", $status);
+$countStmt->bind_param("ss", $status, $requestType);
 $countStmt->execute();
 $total = $countStmt->get_result()->fetch_assoc()['total'];
 $countStmt->close();

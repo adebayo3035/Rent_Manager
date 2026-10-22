@@ -584,7 +584,7 @@ function saveInvoiceDocument($conn, $data) {
             storage_location,
             uploaded_by,
             uploaded_at,
-            uploaded_by_type,
+            uploaded_by_type
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
     ";
     

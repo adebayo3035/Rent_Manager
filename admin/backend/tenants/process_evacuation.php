@@ -121,7 +121,8 @@ try {
     // ================================================================
     $stmt = ev_prepare($conn, "
         SELECT er.request_id, er.tenant_code, er.apartment_code, er.status,
-               t.rent_balance, t.created_by,
+           er.request_type, er.settled_rent_payment_id,
+           t.rent_balance, t.created_by,
                t.wallet_balance AS tenant_wallet_balance,
                a.security_deposit, a.rent_amount, a.property_code,
                p.client_code,
@@ -147,6 +148,76 @@ try {
 
     if ($userRole !== 'Super Admin' && (int) $request['created_by'] !== $adminId) {
         throw new Exception("You can only process requests for tenants you onboarded", 403);
+    }
+
+    // ================================================================
+    // TIMING GUARD: prevent premature evacuation processing
+    // ================================================================
+    // The request carries an approved_move_out_date. If TODAY is still
+    // BEFORE that date, the tenant is (per the approved schedule) still
+    // occupying the apartment. Processing now would free the apartment
+    // prematurely and create overlapping tenancies when a new tenant is
+    // onboarded.
+    //
+    // To override (e.g., the tenant genuinely left early), the admin must
+    // explicitly set force_early_move_out = true and provide a reason.
+    // ================================================================
+    $approvedMoveOutDate = $request['approved_move_out_date'] ?? null;
+
+    if ($approvedMoveOutDate) {
+        $today = date('Y-m-d');   // server's "today" in Africa/Lagos
+
+        if ($today < $approvedMoveOutDate) {
+            $forceEarlyMoveOut = filter_var(
+                $input['force_early_move_out'] ?? false,
+                FILTER_VALIDATE_BOOLEAN
+            );
+
+            if (!$forceEarlyMoveOut) {
+                $daysEarly = (int) (
+                    (strtotime($approvedMoveOutDate) - strtotime($today)) / 86400
+                );
+
+                logActivity(
+                    "BLOCKED premature processing: approved={$approvedMoveOutDate}, "
+                    . "today={$today}, days_early={$daysEarly}, "
+                    . "request={$request_id}"
+                );
+
+                throw new Exception(
+                    "This evacuation cannot be processed yet. "
+                    . "The approved move-out date is "
+                    . date('F j, Y', strtotime($approvedMoveOutDate))
+                    . " — that is {$daysEarly} day(s) from today. "
+                    . "The tenant is still scheduled to occupy the apartment until then. "
+                    . "If the tenant has genuinely moved out early, please confirm by "
+                    . "resubmitting with force_early_move_out set to true and providing "
+                    . "an early_move_out_reason.",
+                    400
+                );
+            }
+
+            // Admin is forcing early move-out — require a reason
+            $earlyMoveOutReason = trim((string) ($input['early_move_out_reason'] ?? ''));
+            if ($earlyMoveOutReason === '') {
+                throw new Exception(
+                    "When forcing early move-out, please provide a reason "
+                    . "(early_move_out_reason field is required).",
+                    400
+                );
+            }
+
+            // Log the override for audit
+            $daysEarly = (int) (
+                (strtotime($approvedMoveOutDate) - strtotime($today)) / 86400
+            );
+            logActivity(
+                "EARLY MOVE-OUT OVERRIDE: request {$request_id} processed "
+                . "before approved move-out date ({$approvedMoveOutDate}). "
+                . "Today: {$today}. Days early: {$daysEarly}. "
+                . "Reason: {$earlyMoveOutReason} | Overridden by admin {$adminId}"
+            );
+        }
     }
 
     // ================================================================
@@ -204,10 +275,63 @@ try {
     // ================================================================
     // RE-IDENTIFY CURRENT CYCLE
     // ================================================================
-    try {
-        $currentCycle = getCurrentRentCycle($conn, $request['tenant_code']);
-    } catch (Exception $cycleErr) {
-        throw new Exception($cycleErr->getMessage(), 500);
+    // ================================================================
+    // IDENTIFY CYCLE (prefer the one captured at request time)
+    // ================================================================
+    // The request row carries `settled_rent_payment_id` — the cycle
+    // that was identified when the request was submitted. Prefer that
+    // to a live `getCurrentRentCycle()` lookup because:
+    //
+    //   1. For pre-lease cancellations, the "current" cycle is in the
+    //      future — `getCurrentRentCycle()` needs the future-cycle
+    //      fallback to find it, but we don't need to guess. The
+    //      request already knows the exact cycle.
+    //
+    //   2. For standard evacuations, the row's cycle is the one the
+    //      admin reviewed and approved. Even if the tenant made an
+    //      extra payment between request and process, the approved
+    //      settlement must apply to that specific cycle.
+    //
+    //   3. Idempotent: reprocessing always uses the same cycle.
+    // ================================================================
+    $storedCycleId = $request['settled_rent_payment_id'] ?? null;
+
+    if ($storedCycleId) {
+        $cycleStmt = ev_prepare($conn, "
+            SELECT rent_payment_id,
+                   amount AS cycle_rent_amount,
+                   amount_paid AS cycle_amount_paid,
+                   balance AS cycle_balance,
+                   period_start_date,
+                   period_end_date,
+                   payment_amount_per_period
+            FROM rent_payments
+            WHERE rent_payment_id = ?
+              AND tenant_code = ?
+            LIMIT 1
+        ");
+        $cycleStmt->bind_param("ss", $storedCycleId, $request['tenant_code']);
+        ev_execute($cycleStmt, "Failed to fetch stored cycle");
+        $currentCycle = $cycleStmt->get_result()->fetch_assoc();
+        $cycleStmt->close();
+
+        if ($currentCycle) {
+            logActivity("Using STORED cycle from request: {$storedCycleId} "
+                . "({$currentCycle['period_start_date']} to {$currentCycle['period_end_date']})");
+        } else {
+            logActivity("WARNING: Stored cycle {$storedCycleId} not found; falling back to lookup");
+            $currentCycle = null;
+        }
+    }
+
+    // Fallback: live lookup if the stored cycle is missing or invalid
+    if (!$currentCycle) {
+        try {
+            $currentCycle = getCurrentRentCycle($conn, $request['tenant_code']);
+            logActivity("Using LIVE cycle lookup: {$currentCycle['rent_payment_id']}");
+        } catch (Exception $cycleErr) {
+            throw new Exception($cycleErr->getMessage(), 500);
+        }
     }
 
     $cycle_start = new DateTime($currentCycle['period_start_date']);
@@ -231,17 +355,106 @@ try {
     // ================================================================
     // COMPUTE SETTLEMENT
     // ================================================================
-    try {
-        $breakdown = computeSettlementBreakdown(
-            (float) $currentCycle['cycle_rent_amount'],
-            $cycle_total_days,
-            $cycle_days_used,
-            $total_paid_in_cycle,
-            (float) $request['security_deposit'],
-            $total_deductions
-        );
-    } catch (Exception $calcErr) {
-        throw new Exception($calcErr->getMessage(), 400);
+// BRANCH: Pre-lease cancellation vs standard evacuation
+// ================================================================
+    $requestType = $request['request_type'] ?? 'evacuation';
+
+    if ($requestType === 'prelease_cancellation') {
+        // ----- Validate the request was legitimately pre-lease at submission -----
+        $createdAt = $request['created_at'];
+        $moveOutDate = $request['requested_move_out_date'];
+
+        $leaseStmt = ev_prepare($conn, "
+        SELECT lease_start_date FROM tenants WHERE tenant_code = ?
+    ");
+        $leaseStmt->bind_param("s", $request['tenant_code']);
+        ev_execute($leaseStmt, "Failed to check lease start");
+        $leaseRow = $leaseStmt->get_result()->fetch_assoc();
+        $leaseStmt->close();
+
+        $leaseStartDate = $leaseRow['lease_start_date'] ?? null;
+        $today = date('Y-m-d');
+
+        if (!$leaseStartDate) {
+            throw new Exception("Cannot determine lease start date for tenant", 500);
+        }
+
+        // Check 1: Must have been submitted before lease start
+        if ($createdAt >= $leaseStartDate . ' 00:00:00' && substr($createdAt, 0, 10) >= $leaseStartDate) {
+            throw new Exception(
+                "This request was submitted on "
+                . date('F j, Y', strtotime($createdAt))
+                . ", which is on or after the lease start date ("
+                . date('F j, Y', strtotime($leaseStartDate))
+                . "). Pre-lease cancellation is only valid for requests "
+                . "submitted before the lease starts.",
+                400
+            );
+        }
+
+        // Check 2: Move-out date must be before or on lease start
+        if ($moveOutDate > $leaseStartDate) {
+            throw new Exception(
+                "The requested cancellation date ("
+                . date('F j, Y', strtotime($moveOutDate))
+                . ") is after the lease start date ("
+                . date('F j, Y', strtotime($leaseStartDate))
+                . "). This is not a valid pre-lease cancellation.",
+                400
+            );
+        }
+
+        // Check 3: Log any delay (audit trail, not a blocker)
+        if ($today > $leaseStartDate) {
+            $daysDelayed = (int) (
+                (strtotime($today) - strtotime($leaseStartDate)) / 86400
+            );
+            logActivity(
+                "DELAYED PRELEASE PROCESSING: request {$request_id} for tenant "
+                . "{$request['tenant_code']} processed {$daysDelayed} day(s) after "
+                . "lease start. Request submitted {$createdAt}, approved, processed "
+                . "{$today}. Refund honored per pre-lease policy. "
+                . "Admin {$adminId} should be reviewed for SLA compliance."
+            );
+        }
+
+        // ----- Compute pre-lease settlement (100% to tenant, no pro-rating) -----
+        $totalPaidInCycle = (float) $total_paid_in_cycle;
+        $securityDeposit = (float) $request['security_deposit'];
+
+        $breakdown = [
+            'rent_used' => 0.0,
+            'unused_rent' => $totalPaidInCycle,
+            'tenant_rent_share' => $totalPaidInCycle,   // 100% to tenant
+            'landlord_rent_share' => 0.0,
+            'damages_from_deposit' => min($securityDeposit, $total_deductions),
+            'damages_from_share' => max(0, $total_deductions - $securityDeposit),
+            'damages_owed_by_tenant' => max(0, $total_deductions - $securityDeposit - $totalPaidInCycle),
+            'final_settlement_amount' => round(
+                $totalPaidInCycle + $securityDeposit - $total_deductions,
+                2
+            ),
+            'security_deposit_refund' => round(
+                max(0, $securityDeposit - min($securityDeposit, $total_deductions)),
+                2
+            ),
+        ];
+
+        logActivity("Pre-lease cancellation settlement computed: " . json_encode($breakdown));
+    } else {
+        // ----- Standard evacuation -----
+        try {
+            $breakdown = computeSettlementBreakdown(
+                (float) $currentCycle['cycle_rent_amount'],
+                $cycle_total_days,
+                $cycle_days_used,
+                $total_paid_in_cycle,
+                (float) $request['security_deposit'],
+                $total_deductions
+            );
+        } catch (Exception $calcErr) {
+            throw new Exception($calcErr->getMessage(), 400);
+        }
     }
 
     $final_settlement = round((float) $breakdown['final_settlement_amount'], 2);
@@ -833,21 +1046,22 @@ try {
                 . " was processed for tenant {$request['tenant_code']}. "
                 . "Your wallet balance is now ₦" . number_format($clientWalletNewBalance, 2) . ".";
 
-            createNotification(
+            createClientNotification(
                 $conn,
                 $request['client_code'],
-                'wallet',
-                'Wallet Debited — Tenant Refund',
-                $clientNotifMessage,
-                [
+                'wallet',                              // notification_type
+                'Wallet Debited — Tenant Refund',      // title
+                $clientNotifMessage,                   // message
+                [                                      // details (stored as JSON)
                     'request_id' => $request_id,
                     'amount_debited' => $refundAmount,
                     'new_wallet_balance' => $clientWalletNewBalance,
                     'tenant_code' => $request['tenant_code'],
+                    'request_type' => $request['request_type'] ?? 'evacuation',
                 ],
-                'high',
-                '../wallet.php',
-                'View Wallet'
+                'high',                                // priority
+                '../wallet.php',                       // action_url
+                'View Wallet'                          // action_text
             );
         } elseif ($isDebt && $offsetApplied > 0) {
             $clientNotifMessage = "Tenant {$request['tenant_code']} owed ₦"
@@ -859,7 +1073,7 @@ try {
                     . " remains outstanding and is being tracked.";
             }
 
-            createNotification(
+            createClientNotification(
                 $conn,
                 $request['client_code'],
                 'wallet',
@@ -871,6 +1085,7 @@ try {
                     'recovered' => $offsetApplied,
                     'remaining' => $remainingDebt,
                     'new_wallet_balance' => $clientWalletNewBalance,
+                    'request_type' => $request['request_type'] ?? 'evacuation',
                 ],
                 'high',
                 '../wallet.php',

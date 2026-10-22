@@ -75,6 +75,7 @@ try {
                 token_expiry,
                 onboarded_by,
                 last_updated_by,
+                wallet_balance,
                 total_settlement_earned
               FROM admin_tbl 
               WHERE unique_id = ? AND status = '1'";

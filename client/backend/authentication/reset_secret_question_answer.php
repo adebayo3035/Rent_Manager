@@ -6,8 +6,10 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
+require_once __DIR__ . '/../utilities/rate_limit.php';
+ if (!isset($_SESSION)) session_start();
+ rateLimiter();
 
-session_start();
 
 // Define allowed secret questions mapping
 $question_map = [

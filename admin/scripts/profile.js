@@ -138,9 +138,12 @@ document.getElementById('lastUpdated').textContent = data.updated_at_formatted;
   const statsSection = document.getElementById("statsSection");
   statsSection.innerHTML = `
         <div class="stat-item">
-            <div class="stat-label">Wallet Balance</div>
+            <div class="stat-label">Total Seelement Earned</div>
             <div class="stat-value">₦ ${formatNumber(data.total_settlement_earned) || "0"}</div>
+             <div class="stat-label">Wallet Balance</div>
+            <div class="stat-value">₦ ${formatNumber(data.wallet_balance) || "0"}</div>
         </div>
+      
         <div class="stat-item">
             <div class="stat-value">${data.stats?.total_logins || 0}</div>
             <div class="stat-label">Total Logins</div>
