@@ -247,6 +247,28 @@
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
+.wallet-form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    background: white;
+    transition: all 0.15s;
+}
+.wallet-form-group select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Read-only beneficiary display */
+.wallet-form-group input[readonly] {
+    background: #f8fafc;
+    color: #475569;
+    cursor: not-allowed;
+}
 .wallet-form-group .hint {
     font-size: 12px;
     color: #64748b;

@@ -1,6 +1,6 @@
 <?php
 // admin/backend/wallet/list_requests.php
-// Lists top-ups and withdrawals for admin review
+// Lists top-ups and withdrawals for admin review.
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
@@ -19,12 +19,18 @@ $auth = requireAuth([
     'roles'    => ['Super Admin', 'Admin'],
 ]);
 
+$adminId = (int) $auth['user_id'];
+
 $type   = in_array($_GET['type'] ?? '', ['topup','withdrawal']) ? $_GET['type'] : 'topup';
-$status = in_array($_GET['status'] ?? '', ['pending','approved','rejected','cancelled']) 
+$status = in_array($_GET['status'] ?? '', ['pending','approved','rejected','cancelled'])
     ? $_GET['status'] : 'pending';
 $page   = max(1, (int) ($_GET['page'] ?? 1));
 $limit  = min(50, max(10, (int) ($_GET['limit'] ?? 20)));
 $offset = ($page - 1) * $limit;
+
+logActivity("[LIST_REQUESTS] ========== START ==========");
+logActivity("[LIST_REQUESTS] Admin: {$adminId} | type={$type}, status={$status}, "
+    . "page={$page}, limit={$limit}");
 
 try {
     // -- Build query
@@ -36,7 +42,6 @@ try {
             wr.bank_name, wr.bank_account_name, wr.bank_account_number,
             wr.rejection_reason, wr.notes, wr.approved_by, wr.approved_at,
             wr.created_at,
-            -- join names
             CASE
                 WHEN wr.user_type = 'client' THEN CONCAT(c.firstname, ' ', c.lastname)
                 WHEN wr.user_type = 'tenant' THEN CONCAT(t.firstname, ' ', t.lastname)
@@ -51,8 +56,9 @@ try {
     ";
 
     $stmt = $conn->prepare($sql);
+    if (!$stmt) throw new Exception("Prepare failed (list): " . $conn->error);
     $stmt->bind_param("ssii", $type, $status, $limit, $offset);
-    $stmt->execute();
+    if (!$stmt->execute()) throw new Exception("List execute failed: " . $stmt->error);
     $res = $stmt->get_result();
 
     $requests = [];
@@ -85,6 +91,7 @@ try {
         SELECT COUNT(*) AS total FROM wallet_requests
         WHERE request_type = ? AND status = ?
     ");
+    if (!$countStmt) throw new Exception("Prepare failed (count): " . $conn->error);
     $countStmt->bind_param("ss", $type, $status);
     $countStmt->execute();
     $total = (int) $countStmt->get_result()->fetch_assoc()['total'];
@@ -99,11 +106,18 @@ try {
     ");
     $stats = $statsStmt->fetch_assoc();
 
+    logActivity("[LIST_REQUESTS] Result: " . count($requests) . " rows, "
+        . "total={$total}, "
+        . "pending_topups=" . (int)($stats['pending_topups'] ?? 0) . ", "
+        . "pending_withdrawals=" . (int)($stats['pending_withdrawals'] ?? 0));
+
+    logActivity("[LIST_REQUESTS] ========== SUCCESS ==========");
+
     json_success('Requests retrieved', [
         'requests' => $requests,
         'stats' => [
-            'pending_topups'      => (int) $stats['pending_topups'],
-            'pending_withdrawals' => (int) $stats['pending_withdrawals'],
+            'pending_topups'      => (int) ($stats['pending_topups'] ?? 0),
+            'pending_withdrawals' => (int) ($stats['pending_withdrawals'] ?? 0),
         ],
         'pagination' => [
             'total'       => $total,
@@ -114,6 +128,8 @@ try {
     ]);
 
 } catch (Throwable $e) {
-    logActivity("Admin wallet list error: " . $e->getMessage(), 'ERROR');
+    logActivity("[LIST_REQUESTS] ERROR: " . $e->getMessage(), 'ERROR');
+    logActivity("[LIST_REQUESTS] Stack: " . $e->getTraceAsString(), 'ERROR');
+    logActivity("[LIST_REQUESTS] ========== FAILED ==========");
     json_error("Failed to load requests", 500);
 }

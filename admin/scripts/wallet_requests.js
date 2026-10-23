@@ -189,8 +189,10 @@ async function approveRequest(requestCode, type) {
                     credentials: 'same-origin',
                 });
                 const data = await res.json();
-                if (!data.success) throw new Error(data.message || 'Failed');
-
+                if (!data.success){
+                    UI.toast(data.message || "Unable to Approve withdrawal request", 'error');
+                    // throw new Error(data.message || 'Failed');
+                } 
                 UI.toast(data.message || 'Request approved', 'success');
                 loadRequests();
             } catch (err) {
@@ -275,8 +277,10 @@ async function submitReject(requestCode) {
                     credentials: 'same-origin',
                 });
                 const data = await res.json();
-                if (!data.success) throw new Error(data.message || 'Failed');
-
+                if (!data.success){
+                    UI.toast(data.message || "Unable to Approve withdrawal request", 'error');
+                    // throw new Error(data.message || 'Failed');
+                } 
                 closeRejectModal();
                 UI.toast(data.message || 'Request rejected', 'success');
                 loadRequests();

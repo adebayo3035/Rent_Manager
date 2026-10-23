@@ -1,6 +1,9 @@
 <?php
 // tenant/backend/wallet/request_withdrawal.php
-// Tenant requests withdrawal to a bank account, authenticated via secret answer
+// Tenant requests withdrawal to their saved bank account, authenticated via secret answer
+// SECURITY MODEL: The beneficiary name is looked up server-side from the tenant's saved
+// bank record. The client CANNOT supply or override the beneficiary name — it is
+// ignored if sent. This prevents DevTools-based tampering.
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
@@ -10,49 +13,56 @@ require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 
-if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE)
+    session_start();
 rateLimiter();
 
 $auth = requireAuth([
-    'method'     => 'POST',
-    'rate_key'   => 'tenant_withdrawal',
+    'method' => 'POST',
+    'rate_key' => 'tenant_withdrawal',
     'rate_limit' => [3, 600],   // 3 per 10 min
-    'csrf'       => ['enabled' => true, 'form_name' => 'tenant_withdrawal_form'],
-    'roles'      => ['Tenant'],
+    'csrf' => ['enabled' => true, 'form_name' => 'tenant_withdrawal_form'],
+    'roles' => ['Tenant'],
 ]);
 
 $tenantCode = $_SESSION['tenant_code'] ?? null;
-if (!$tenantCode) json_error("Session expired", 401);
+if (!$tenantCode)
+    json_error("Session expired", 401);
 
 $input = json_decode(file_get_contents('php://input'), true);
 if (!is_array($input) && !empty($_POST)) {
     $input = $_POST;
 }
 
-$amountRaw   = trim($input['amount'] ?? '');
-$bankName    = trim($input['bank_name'] ?? '');
-$accountName = trim($input['bank_account_name'] ?? '');
-$accountNo   = trim($input['bank_account_number'] ?? '');
-$secretAns   = trim($input['secret_answer'] ?? '');
+$amountRaw = trim($input['amount'] ?? '');
+$accountNo = trim($input['account_number'] ?? '');
+$bankCode = trim($input['bank_code'] ?? '');   // from bank dropdown
+$secretAns = trim($input['secret_answer'] ?? '');
+// NOTE: bank_name and beneficiary_name are IGNORED if sent by the client.
+// They are always resolved server-side from the tenant's saved bank record.
 
 // ---- Validation ----
 $amount = round((float) str_replace(',', '', $amountRaw), 2);
-if ($amount <= 0) json_error("Enter a valid amount", 400);
-if ($amount < 1000) json_error("Minimum withdrawal is ₦1,000", 400);
-if ($bankName === '') json_error("Bank name is required", 400);
-if ($accountName === '') json_error("Account name is required", 400);
-if ($accountNo === '') json_error("Account number is required", 400);
-if (!preg_match('/^\d{10}$/', $accountNo)) {
+if ($amount <= 0)
+    json_error("Enter a valid amount", 400);
+if ($amount < 1000)
+    json_error("Minimum withdrawal is ₦1,000", 400);
+if ($accountNo === '')
+    json_error("Account number is required", 400);
+if (!preg_match('/^\d{10}$/', $accountNo))
     json_error("Account number must be 10 digits", 400);
-}
-if ($secretAns === '') json_error("Please provide your secret answer", 400);
+if ($bankCode === '')
+    json_error("Bank is required", 400);
+if ($secretAns === '')
+    json_error("Please provide your secret answer", 400);
 
 $conn->begin_transaction();
 
 try {
-    // Lock tenant row
+    // Lock tenant row + fetch saved bank + wallet
     $stmt = $conn->prepare("
-        SELECT wallet_balance, secret_answer, has_secret_set
+        SELECT wallet_balance, secret_answer, has_secret_set,
+               bank_name, bank_account_name, bank_account_number, bank_code
         FROM tenants
         WHERE tenant_code = ?
         FOR UPDATE
@@ -62,24 +72,35 @@ try {
     $tenant = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$tenant) throw new Exception("Tenant not found", 404);
+    if (!$tenant)
+        throw new Exception("Tenant not found", 404);
 
-    // Verify secret answer
+    // ---- Verify the account number matches the saved beneficiary ----
+    // The client cannot transfer to an arbitrary account. It must be the one on file.
+    if (empty($tenant['bank_account_number'])) {
+        throw new Exception("No bank account on file. Please add one first.", 400);
+    }
+    if ($tenant['bank_account_number'] !== $accountNo) {
+        logActivity("Withdrawal: account number mismatch for {$tenantCode} (submitted: ******" .
+            substr($accountNo, -4) . ", on file: ******" . substr($tenant['bank_account_number'], -4) . ")", 'WARN');
+        throw new Exception("Account number does not match the account on file. Please update your bank details first.", 400);
+    }
+    if ((string) $tenant['bank_code'] !== (string) $bankCode) {
+        throw new Exception("Bank does not match the account on file.", 400);
+    }
+    $accountName = $tenant['bank_account_name'];   // <-- server-side truth
+    $bankName = $tenant['bank_name'];
+
+    // ---- Verify secret answer ----
     if ((int) $tenant['has_secret_set'] !== 1 || empty($tenant['secret_answer'])) {
         throw new Exception("Please set up your secret question first", 400);
     }
 
-    // Answer is hashed? Depends on your schema. If plain text, compare directly.
-    // If hashed, use password_verify.
     $storedAnswer = $tenant['secret_answer'];
     $answerMatches = false;
-
-    // Support both plain and hashed (bcrypt) storage
     if (strlen($storedAnswer) >= 60 && strpos($storedAnswer, '$') === 0) {
-        // Looks like a bcrypt hash
         $answerMatches = password_verify(strtolower($secretAns), $storedAnswer);
     } else {
-        // Plain text comparison (case-insensitive)
         $answerMatches = (strcasecmp(trim($secretAns), trim($storedAnswer)) === 0);
     }
 
@@ -111,62 +132,53 @@ try {
     }
     $pendingCheck->close();
 
-    // Reserve the funds: debit the wallet NOW; refund if rejected
+
+    // Create the wallet request — use server-side name, not client-supplied
+    $requestCode = 'WRQ_' . strtoupper(bin2hex(random_bytes(6)));
+    $referenceNumber = 'WRQ-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(5)));
+    // Reserve the funds
     $newBalance = round($walletBalance - $amount, 2);
 
-    $debit = $conn->prepare("
-        UPDATE tenants
-        SET wallet_balance = wallet_balance - ?
-        WHERE tenant_code = ?
-    ");
+    $debit = $conn->prepare("UPDATE tenants SET wallet_balance = wallet_balance - ? WHERE tenant_code = ?");
     $debit->bind_param("ds", $amount, $tenantCode);
-    if (!$debit->execute()) throw new Exception("Failed to reserve funds: " . $debit->error);
+    if (!$debit->execute())
+        throw new Exception("Failed to reserve funds: " . $debit->error);
     $debit->close();
 
-    // Ledger entry (debit with 'withdrawal' type, note pending)
+    // Ledger entry — masked account number in the note
     $ledger = $conn->prepare("
-        INSERT INTO tenant_wallet_transactions
-            (tenant_code, transaction_type, amount, running_balance,
-             request_id, notes, created_by)
-        VALUES (?, 'withdrawal', ?, ?, NULL, ?, NULL)
-    ");
-    $note = "Withdrawal request to {$bankName} ({$accountNo}) — pending admin approval";
+    INSERT INTO tenant_wallet_transactions
+        (tenant_code, transaction_type, amount,running_balance,
+         request_id, status, notes, created_by)
+    VALUES (?, 'withdrawal', ?, ?, ?, 'Pending', ?, NULL)
+");
+    $maskedAcct = '******' . substr($accountNo, -4);
+    $note = "Withdrawal request to {$bankName} ({$maskedAcct}) — pending admin approval";
     $debitAmt = -$amount;
-    $ledger->bind_param("sdds", $tenantCode, $debitAmt, $newBalance, $note);
+    $ledger->bind_param("sddss", $tenantCode, $debitAmt, $newBalance, $requestCode, $note);
     $ledger->execute();
     $ledger->close();
 
-    // Create the wallet request
-    $requestCode = 'WRQ_' . strtoupper(bin2hex(random_bytes(6)));
-
     $reqStmt = $conn->prepare("
         INSERT INTO wallet_requests
-            (request_code, user_type, user_code, request_type, amount,
+            (request_code, user_type, user_code, request_type, amount, reference_number, 
              bank_name, bank_account_name, bank_account_number,
              status, created_at)
-        VALUES (?, 'tenant', ?, 'withdrawal', ?, ?, ?, ?, 'pending', NOW())
+        VALUES (?, 'tenant', ?, 'withdrawal', ?, ?, ?, ?, ?, 'pending', NOW())
     ");
     $reqStmt->bind_param(
-        "ssdsss",
+        "ssdssss",
         $requestCode,
         $tenantCode,
         $amount,
+        $referenceNumber,
         $bankName,
         $accountName,
         $accountNo
     );
-    if (!$reqStmt->execute()) throw new Exception("Failed to save request: " . $reqStmt->error);
+    if (!$reqStmt->execute())
+        throw new Exception("Failed to save request: " . $reqStmt->error);
     $reqStmt->close();
-
-    // Save bank details as defaults for next time
-    $saveBank = $conn->prepare("
-        UPDATE tenants
-        SET bank_name = ?, bank_account_name = ?, bank_account_number = ?
-        WHERE tenant_code = ?
-    ");
-    $saveBank->bind_param("ssss", $bankName, $accountName, $accountNo, $tenantCode);
-    $saveBank->execute();
-    $saveBank->close();
 
     // Notify admins
     try {
@@ -178,7 +190,7 @@ try {
                 'wallet',
                 'New Tenant Withdrawal Request',
                 "Tenant {$tenantCode} requested a withdrawal of ₦" . number_format($amount, 2)
-                . " to {$bankName} ({$accountNo}).",
+                . " to {$bankName} ({$maskedAcct}).",
                 ['request_code' => $requestCode, 'amount' => $amount],
                 'high',
                 '../wallet_requests.php',
@@ -191,13 +203,16 @@ try {
 
     $conn->commit();
 
-    json_success('Withdrawal request submitted. Admin will review and process.', [
-        'request_code'         => $requestCode,
-        'amount'               => $amount,
-        'amount_formatted'     => '₦' . number_format($amount, 2),
-        'new_wallet_balance'   => $newBalance,
-        'status'               => 'pending',
-    ]);
+    json_success([
+        'request_code' => $requestCode,
+        'amount' => $amount,
+        'amount_formatted' => '₦' . number_format($amount, 2),
+        'beneficiary_name' => $accountName,
+        'bank_name' => $bankName,
+        'masked_account' => $maskedAcct,
+        'new_wallet_balance' => $newBalance,
+        'status' => 'pending',
+    ], 'Withdrawal request submitted. Admin will review and process.');
 
 } catch (Throwable $e) {
     $conn->rollback();

@@ -22,7 +22,7 @@ if (!$tenantCode) json_error("Session expired", 401);
 
 try {
     $stmt = $conn->prepare("
-        SELECT wallet_balance, bank_name, bank_account_name, bank_account_number
+        SELECT wallet_balance, bank_name, bank_code, bank_account_name, bank_account_number
         FROM tenants WHERE tenant_code = ? LIMIT 1
     ");
     $stmt->bind_param("s", $tenantCode);
@@ -32,9 +32,19 @@ try {
 
     if (!$tenant) json_error("Tenant not found", 404);
 
+    // --- Has bank on file? ---
+    // A bank account is considered "on file" only when we have both the
+    // account number and the bank code. A half-saved row (e.g. from an
+    // older flow) shouldn't trigger the withdrawal path.
+    $hasBankAccount = !empty($tenant['bank_account_number']) && !empty($tenant['bank_code']);
+
+    $accountNumberMasked = $hasBankAccount
+        ? '******' . substr($tenant['bank_account_number'], -4)
+        : null;
+
     // Recent transactions
     $txStmt = $conn->prepare("
-        SELECT id, transaction_type, amount, running_balance,
+        SELECT id, transaction_type, amount, running_balance, status,
                request_id, notes, created_at
         FROM tenant_wallet_transactions
         WHERE tenant_code = ?
@@ -55,6 +65,7 @@ try {
             'request_id'      => $row['request_id'],
             'notes'           => $row['notes'],
             'created_at'      => $row['created_at'],
+            'status'          =>$row['status']
         ];
     }
     $txStmt->close();
@@ -86,9 +97,15 @@ try {
     json_success([
         'wallet_balance'           => (float) $tenant['wallet_balance'],
         'wallet_balance_formatted' => formatNaira((float) $tenant['wallet_balance']),
+
+        // Bank details
+        'has_bank_account'         => $hasBankAccount,
         'bank_name'                => $tenant['bank_name'],
+        'bank_code'                => $tenant['bank_code'],
         'bank_account_name'        => $tenant['bank_account_name'],
-        'bank_account_number'      => $tenant['bank_account_number'],
+        'bank_account_number'      => $tenant['bank_account_number'],       // full — used to submit withdrawal
+        'bank_account_number_masked' => $accountNumberMasked,                // display
+
         'transactions'             => $transactions,
         'pending_requests'         => $pendingRequests,
     ], 'Wallet data retrieved');

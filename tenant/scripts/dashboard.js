@@ -153,6 +153,11 @@ function renderDashboard() {
       ? "Fully Paid"
       : "Not Scheduled";
 
+  if (dashboardData.days_remaining > 360) {
+    days_upcoming = true;
+    days_before_move_in = dashboardData.days_remaining - 360;
+  }
+
   const html = `
         <div class="dashboard-container">
             <!-- Welcome Section -->
@@ -177,18 +182,21 @@ function renderDashboard() {
                         <span>${rentProgress}%</span>
                     </div>
                     <div class="lease-overview-meta">
-                        <span class="status-pill status-${leaseTone.toLowerCase().replace(/\s+/g, "-")}">${leaseTone}</span>
-                        <h3>${dashboardData.days_remaining || 0} days left</h3>
-                        <p>Next payment: ${nextPaymentLabel}</p>
+                      <span class="status-pill status-${leaseTone.toLowerCase().replace(/\s+/g, "-")}">${leaseTone}</span>
+                      <h3>${formatLeaseCountdown(dashboardData.days_remaining)}</h3>
+                      <p>Next payment: ${nextPaymentLabel}</p>
                     </div>
                 </div>
             </div>
-             ${isPreleaseTenant() ? `
+             ${
+               isPreleaseTenant()
+                 ? `
 <div class="prelease-banner">
     <i class="fas fa-info-circle"></i>
     <div>
         <strong>Your tenancy starts on ${formatDate(
-            dashboardData.current_cycle?.cycle_start_date || dashboardData.lease_start_date
+          dashboardData.current_cycle?.cycle_start_date ||
+            dashboardData.lease_start_date,
         )}</strong>
         <p>
             You have ${daysUntilLeaseStart()} day${daysUntilLeaseStart() === 1 ? "" : "s"} until move-in.
@@ -196,7 +204,9 @@ function renderDashboard() {
         </p>
     </div>
 </div>
-` : ""}
+`
+                 : ""
+             }
 
             <!-- Stats Grid -->
             <div class="stats-grid">
@@ -599,22 +609,28 @@ function renderDashboard() {
                         <span>Contact Agent</span>
                     </div>
                     
-                   ${!dashboardData.can_request_evacuation ? `
-    <div class="action-card disabled" title="${escapeHtml(dashboardData.evacuation_block_reason || 'Not available')}" style="opacity: 0.5; cursor: not-allowed;">
+                   ${
+                     !dashboardData.can_request_evacuation
+                       ? `
+    <div class="action-card disabled" title="${escapeHtml(dashboardData.evacuation_block_reason || "Not available")}" style="opacity: 0.5; cursor: not-allowed;">
         <i class="fas fa-sign-out-alt"></i>
-        <span>${isPreleaseTenant() ? 'Cancel Booking' : 'Request Move-out'}</span>
+        <span>${isPreleaseTenant() ? "Cancel Booking" : "Request Move-out"}</span>
     </div>
-` : isPreleaseTenant() ? `
+`
+                       : isPreleaseTenant()
+                         ? `
     <div class="action-card prelease-action" onclick="openCancelEvacuationRequestModal()">
         <i class="fas fa-calendar-times"></i>
         <span>Cancel Booking</span>
     </div>
-` : `
+`
+                         : `
     <div class="action-card" onclick="openEvacuationRequestModal()">
         <i class="fas fa-sign-out-alt"></i>
         <span>Request Move-out</span>
     </div>
-`}
+`
+                   }
                 </div>
             </div>
 
@@ -1319,49 +1335,48 @@ async function openEvacuationRequestModal() {
     ?.addEventListener("change", previewSettlement);
 }
 
-
 function closeEvacuationModal() {
   const modal = document.getElementById("evacuationModal");
   if (modal) modal.remove();
 }
 
 async function previewSettlement() {
-    const moveOutDate = document.getElementById('evacuationDate').value;
-    if (!moveOutDate) return;
+  const moveOutDate = document.getElementById("evacuationDate").value;
+  if (!moveOutDate) return;
 
-    function parseLocalDate(s) {
-        const [y, m, d] = s.split('-').map(Number);
-        return new Date(y, m - 1, d);
-    }
+  function parseLocalDate(s) {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
 
-    // ==================== USE CURRENT CYCLE (NOT TOP-LEVEL LEASE DATES) ====================
-    const cycle = dashboardData.current_cycle;
+  // ==================== USE CURRENT CYCLE (NOT TOP-LEVEL LEASE DATES) ====================
+  const cycle = dashboardData.current_cycle;
 
-    if (!cycle) {
-        // No current cycle found — do not show a preview
-        const preview = document.getElementById('settlementPreview');
-        if (preview) {
-            preview.style.display = 'block';
-            document.getElementById('settlementPreviewContent').innerHTML = `
+  if (!cycle) {
+    // No current cycle found — do not show a preview
+    const preview = document.getElementById("settlementPreview");
+    if (preview) {
+      preview.style.display = "block";
+      document.getElementById("settlementPreviewContent").innerHTML = `
                 <div style="color: #dc2626;">
                     <i class="fas fa-exclamation-triangle"></i>
                     Unable to determine your current rent cycle. Please contact support.
                 </div>
             `;
-        }
-        return;
     }
+    return;
+  }
 
-    const cycleStart = parseLocalDate(cycle.cycle_start_date);
-    const cycleEnd   = parseLocalDate(cycle.cycle_end_date);
-    const moveOut    = parseLocalDate(moveOutDate);
+  const cycleStart = parseLocalDate(cycle.cycle_start_date);
+  const cycleEnd = parseLocalDate(cycle.cycle_end_date);
+  const moveOut = parseLocalDate(moveOutDate);
 
-    // Validate move-out is within the current cycle
-    if (moveOut < cycleStart || moveOut > cycleEnd) {
-        const preview = document.getElementById('settlementPreview');
-        if (preview) {
-            preview.style.display = 'block';
-            document.getElementById('settlementPreviewContent').innerHTML = `
+  // Validate move-out is within the current cycle
+  if (moveOut < cycleStart || moveOut > cycleEnd) {
+    const preview = document.getElementById("settlementPreview");
+    if (preview) {
+      preview.style.display = "block";
+      document.getElementById("settlementPreviewContent").innerHTML = `
                 <div style="color: #dc2626;">
                     <i class="fas fa-exclamation-triangle"></i>
                     Move-out date must be between
@@ -1369,25 +1384,27 @@ async function previewSettlement() {
                     <strong>${formatDate(cycle.cycle_end_date)}</strong>.
                 </div>
             `;
-        }
-        return;
     }
+    return;
+  }
 
-    const cycleRent = parseFloat(cycle.cycle_rent_amount || 0);
-    const totalPaid = parseFloat(cycle.amount_paid_in_cycle || 0);
+  const cycleRent = parseFloat(cycle.cycle_rent_amount || 0);
+  const totalPaid = parseFloat(cycle.amount_paid_in_cycle || 0);
 
-    const totalDays = Math.round((cycleEnd - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
-    const daysUsed  = Math.round((moveOut - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
-    const dailyRate = cycleRent / totalDays;
-    const rentUsed  = dailyRate * daysUsed;
+  const totalDays =
+    Math.round((cycleEnd - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
+  const daysUsed =
+    Math.round((moveOut - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
+  const dailyRate = cycleRent / totalDays;
+  const rentUsed = dailyRate * daysUsed;
 
-    const unusedRent = Math.max(0, totalPaid - rentUsed);
-    const tenantShare = unusedRent * 0.5;
+  const unusedRent = Math.max(0, totalPaid - rentUsed);
+  const tenantShare = unusedRent * 0.5;
 
-    const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
-    const estimatedRefund = securityDeposit + tenantShare;
+  const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
+  const estimatedRefund = securityDeposit + tenantShare;
 
-    document.getElementById('settlementPreviewContent').innerHTML = `
+  document.getElementById("settlementPreviewContent").innerHTML = `
         <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">
             <em>Current cycle: ${formatDate(cycle.cycle_start_date)} → ${formatDate(cycle.cycle_end_date)}</em>
         </div>
@@ -1403,7 +1420,7 @@ async function previewSettlement() {
             <strong>Estimated refund before damages: ₦${formatNumber(estimatedRefund.toFixed(2))}</strong>
         </div>
     `;
-    document.getElementById('settlementPreview').style.display = 'block';
+  document.getElementById("settlementPreview").style.display = "block";
 }
 async function previewEarlyTerminationFee() {
   const moveOutDate = document.getElementById("evacuationDate").value;
@@ -1438,87 +1455,93 @@ async function previewEarlyTerminationFee() {
 }
 
 async function submitEvacuationRequest() {
-    const moveOutDate = document.getElementById("evacuationDate").value;
-    const reason = document.getElementById("evacuationReason").value;
-    const notes = document.getElementById("evacuationNotes").value;
+  const moveOutDate = document.getElementById("evacuationDate").value;
+  const reason = document.getElementById("evacuationReason").value;
+  const notes = document.getElementById("evacuationNotes").value;
 
-    if (!moveOutDate) {
-        if (window.showToast) window.showToast("Please select a move-out date", "error");
-        return;
-    }
-    if (!reason) {
-        if (window.showToast) window.showToast("Please select a reason for leaving", "error");
-        return;
-    }
+  if (!moveOutDate) {
+    if (window.showToast)
+      window.showToast("Please select a move-out date", "error");
+    return;
+  }
+  if (!reason) {
+    if (window.showToast)
+      window.showToast("Please select a reason for leaving", "error");
+    return;
+  }
 
-    const confirmed = await showEvacuationConfirm({
-        title: "Submit Move-out Request",
-        icon: "fa-sign-out-alt",
-        message: "Are you sure you want to submit a move-out request?",
-        list: [
-            { icon: "fa-calendar", text: `Proposed move-out date: ${formatDate(moveOutDate)}` },
-            { icon: "fa-question-circle", text: `Reason: ${reason}` },
-        ],
-        warning: "This request will be reviewed by admin. You cannot undo this action once submitted.",
-        confirmText: "Yes, Submit Request",
-        cancelText: "Cancel",
+  const confirmed = await showEvacuationConfirm({
+    title: "Submit Move-out Request",
+    icon: "fa-sign-out-alt",
+    message: "Are you sure you want to submit a move-out request?",
+    list: [
+      {
+        icon: "fa-calendar",
+        text: `Proposed move-out date: ${formatDate(moveOutDate)}`,
+      },
+      { icon: "fa-question-circle", text: `Reason: ${reason}` },
+    ],
+    warning:
+      "This request will be reviewed by admin. You cannot undo this action once submitted.",
+    confirmText: "Yes, Submit Request",
+    cancelText: "Cancel",
+  });
+
+  if (!confirmed) return;
+
+  const submitBtn = document.querySelector("#evacuationModal .btn-primary");
+  const originalText = submitBtn.innerHTML;
+  submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+  submitBtn.disabled = true;
+
+  try {
+    const response = await fetch("../backend/tenant/request_evacuation.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ move_out_date: moveOutDate, reason, notes }),
     });
 
-    if (!confirmed) return;
+    const data = await response.json();
 
-    const submitBtn = document.querySelector("#evacuationModal .btn-primary");
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
-    submitBtn.disabled = true;
-
-    try {
-        const response = await fetch("../backend/tenant/request_evacuation.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ move_out_date: moveOutDate, reason, notes }),
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            const msg = data.data.message || "Request submitted";
-            if (window.showToast) window.showToast(msg, "success");
-            closeEvacuationModal();
-            await fetchDashboardData();
-            renderDashboard();
-        } else {
-            throw new Error(data.message || "Submission failed");
-        }
-    } catch (error) {
-        console.error("Error submitting evacuation request:", error);
-        if (window.showToast) window.showToast(error.message, "error");
-    } finally {
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
+    if (data.success) {
+      const msg = data.data.message || "Request submitted";
+      if (window.showToast) window.showToast(msg, "success");
+      closeEvacuationModal();
+      await fetchDashboardData();
+      renderDashboard();
+    } else {
+      throw new Error(data.message || "Submission failed");
     }
+  } catch (error) {
+    console.error("Error submitting evacuation request:", error);
+    if (window.showToast) window.showToast(error.message, "error");
+  } finally {
+    submitBtn.innerHTML = originalText;
+    submitBtn.disabled = false;
+  }
 }
-
 
 // PRE LEASE EVACUATION REQUEST
 async function openCancelEvacuationRequestModal() {
-    if (!dashboardData.can_request_evacuation) {
-        if (window.showToast) {
-            window.showToast(
-                dashboardData.evacuation_block_reason ||
-                "You cannot cancel this booking at this time.",
-                "warning"
-            );
-        }
-        return;
+  if (!dashboardData.can_request_evacuation) {
+    if (window.showToast) {
+      window.showToast(
+        dashboardData.evacuation_block_reason ||
+          "You cannot cancel this booking at this time.",
+        "warning",
+      );
     }
+    return;
+  }
 
-    const today = new Date().toISOString().split("T")[0];
-    const leaseStart = dashboardData.lease_start_date;
+  const today = new Date().toISOString().split("T")[0];
+  const leaseStart = dashboardData.lease_start_date;
 
-    // Cancellation must happen before the lease starts
-    const maxCancellationDate = leaseStart && leaseStart > today ? leaseStart : today;
+  // Cancellation must happen before the lease starts
+  const maxCancellationDate =
+    leaseStart && leaseStart > today ? leaseStart : today;
 
-    const modalHtml = `
+  const modalHtml = `
         <div id="cancelEvacuationModal" class="modal active" style="display: flex;">
             <div class="modal-content" style="max-width: 550px;">
                 <div class="modal-header">
@@ -1580,43 +1603,43 @@ async function openCancelEvacuationRequestModal() {
         </div>
     `;
 
-    const existingModal = document.getElementById("cancelEvacuationModal");
-    if (existingModal) existingModal.remove();
+  const existingModal = document.getElementById("cancelEvacuationModal");
+  if (existingModal) existingModal.remove();
 
-    document.body.insertAdjacentHTML("beforeend", modalHtml);
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
 
-    // Show the preview immediately since the date is prefilled
-    previewCancellationRefund();
+  // Show the preview immediately since the date is prefilled
+  previewCancellationRefund();
 }
 
 function closeCancelEvacuationModal() {
-    const modal = document.getElementById("cancelEvacuationModal");
-    if (modal) modal.remove();
+  const modal = document.getElementById("cancelEvacuationModal");
+  if (modal) modal.remove();
 }
 function previewCancellationRefund() {
-    const preview = document.getElementById("cancellationPreview");
-    const previewContent = document.getElementById("cancellationPreviewContent");
-    if (!preview || !previewContent) return;
+  const preview = document.getElementById("cancellationPreview");
+  const previewContent = document.getElementById("cancellationPreviewContent");
+  if (!preview || !previewContent) return;
 
-    const totalPaid       = parseFloat(dashboardData.total_paid || 0);
-    const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
-    const estimatedRefund = totalPaid + securityDeposit;
+  const totalPaid = parseFloat(dashboardData.total_paid || 0);
+  const securityDeposit = parseFloat(dashboardData.security_deposit || 0);
+  const estimatedRefund = totalPaid + securityDeposit;
 
-    const leaseStart = dashboardData.lease_start_date;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  const leaseStart = dashboardData.lease_start_date;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-    let daysUntilStart = 0;
-    if (leaseStart) {
-        const [y, m, d] = leaseStart.split("-").map(Number);
-        const startDate = new Date(y, m - 1, d);
-        startDate.setHours(0, 0, 0, 0);
-        if (startDate > today) {
-            daysUntilStart = Math.round((startDate - today) / 86400000);
-        }
+  let daysUntilStart = 0;
+  if (leaseStart) {
+    const [y, m, d] = leaseStart.split("-").map(Number);
+    const startDate = new Date(y, m - 1, d);
+    startDate.setHours(0, 0, 0, 0);
+    if (startDate > today) {
+      daysUntilStart = Math.round((startDate - today) / 86400000);
     }
+  }
 
-    previewContent.innerHTML = `
+  previewContent.innerHTML = `
         <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">
             <em>Pre-lease cancellation · Lease starts ${formatDate(leaseStart)}</em>
         </div>
@@ -1631,74 +1654,109 @@ function previewCancellationRefund() {
             A cancellation fee may be deducted at admin's discretion. Final amount confirmed during review.
         </small>
     `;
-    preview.style.display = "block";
+  preview.style.display = "block";
 }
 async function submitCancellationRequest() {
-    const cancellationDate = document.getElementById("cancellationDate").value;
-    const reason = document.getElementById("cancellationReason").value;
-    const notes = document.getElementById("cancellationNotes").value;
+  const cancellationDate = document.getElementById("cancellationDate").value;
+  const reason = document.getElementById("cancellationReason").value;
+  const notes = document.getElementById("cancellationNotes").value;
 
-    if (!cancellationDate) {
-        if (window.showToast) window.showToast("Please select a cancellation date", "error");
-        return;
+  if (!cancellationDate) {
+    if (window.showToast)
+      window.showToast("Please select a cancellation date", "error");
+    return;
+  }
+  if (!reason) {
+    if (window.showToast) window.showToast("Please select a reason", "error");
+    return;
+  }
+
+  const confirmed = await showEvacuationConfirm({
+    title: "Submit Cancellation Request",
+    icon: "fa-calendar-times",
+    message: "Are you sure you want to cancel this booking?",
+    list: [
+      {
+        icon: "fa-calendar",
+        text: `Cancellation date: ${formatDate(cancellationDate)}`,
+      },
+      { icon: "fa-question-circle", text: `Reason: ${reason}` },
+    ],
+    warning:
+      "This request will be reviewed by admin. You cannot undo this action once submitted.",
+    confirmText: "Yes, Submit Cancellation",
+    cancelText: "Go Back",
+  });
+
+  if (!confirmed) return;
+
+  const submitBtn = document.querySelector(
+    "#cancelEvacuationModal .btn-primary",
+  );
+  const originalText = submitBtn.innerHTML;
+  submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+  submitBtn.disabled = true;
+
+  try {
+    const response = await fetch(
+      "../backend/tenant/request_prelease_cancellation.php",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cancellation_date: cancellationDate,
+          reason: reason,
+          notes: notes,
+        }),
+      },
+    );
+
+    const data = await response.json();
+
+    if (data.success) {
+      const msg =
+        data.data?.message || data.message || "Cancellation request submitted";
+      if (window.showToast) window.showToast(msg, "success");
+      closeCancelEvacuationModal();
+      await fetchDashboardData();
+      renderDashboard();
+    } else {
+      throw new Error(data.message || "Submission failed");
     }
-    if (!reason) {
-        if (window.showToast) window.showToast("Please select a reason", "error");
-        return;
+  } catch (error) {
+    console.error("Error submitting cancellation request:", error);
+    if (window.showToast) window.showToast(error.message, "error");
+  } finally {
+    submitBtn.innerHTML = originalText;
+    submitBtn.disabled = false;
+  }
+}
+
+/**
+ * Render the lease countdown message.
+ *
+ * days_remaining is assumed to be DATEDIFF(lease_end_date, CURDATE())
+ * with lease_end_date = lease_start_date + 1 year - 1 day.
+ * Under that convention:
+ *   - days_remaining >= 365  → tenant has not moved in yet
+ *   - days_remaining === 364 → moved in today
+ *   - days_remaining < 364   → days left until lease end
+ *
+ * Adjust the threshold if your backend computes days_remaining differently.
+ */
+function formatLeaseCountdown(daysRemaining) {
+    const days = parseInt(daysRemaining, 10) || 0;
+
+    // Not moved in yet: show countdown to move-in
+    if (days >= 365) {
+        const n = days - 364;  // "moves in tomorrow" (365) → 1 day before
+        const unit = n === 1 ? 'day' : 'days';
+        return `${n} ${unit} before your move-in`;
     }
 
-    const confirmed = await showEvacuationConfirm({
-        title: "Submit Cancellation Request",
-        icon: "fa-calendar-times",
-        message: "Are you sure you want to cancel this booking?",
-        list: [
-            { icon: "fa-calendar", text: `Cancellation date: ${formatDate(cancellationDate)}` },
-            { icon: "fa-question-circle", text: `Reason: ${reason}` },
-        ],
-        warning: "This request will be reviewed by admin. You cannot undo this action once submitted.",
-        confirmText: "Yes, Submit Cancellation",
-        cancelText: "Go Back",
-    });
-
-    if (!confirmed) return;
-
-    const submitBtn = document.querySelector("#cancelEvacuationModal .btn-primary");
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
-    submitBtn.disabled = true;
-
-    try {
-        const response = await fetch(
-            "../backend/tenant/request_prelease_cancellation.php",
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    cancellation_date: cancellationDate,
-                    reason: reason,
-                    notes: notes,
-                }),
-            }
-        );
-
-        const data = await response.json();
-
-        if (data.success) {
-            const msg = data.data?.message || data.message || "Cancellation request submitted";
-            if (window.showToast) window.showToast(msg, "success");
-            closeCancelEvacuationModal();
-            await fetchDashboardData();
-            renderDashboard();
-        } else {
-            throw new Error(data.message || "Submission failed");
-        }
-    } catch (error) {
-        console.error("Error submitting cancellation request:", error);
-        if (window.showToast) window.showToast(error.message, "error");
-    } finally {
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
-    }
+    // Moved in: standard countdown to lease end
+    const unit = days === 1 ? 'day' : 'days';
+    return `${days} ${unit} left`;
 }
 // Start auto-refresh when page is visible
 document.addEventListener("visibilitychange", function () {

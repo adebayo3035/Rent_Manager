@@ -20,7 +20,6 @@
         </div>
     </main>
 
-<script src="../scripts/navbar.js"></script>
 <script src="../scripts/wallet.js"></script>
 </body>
 </html>
