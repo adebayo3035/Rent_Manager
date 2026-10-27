@@ -284,3 +284,350 @@
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
+
+/* ============================================
+   V2 additions — reporting layout
+   ============================================ */
+
+.admin-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+.header-summary {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.summary-pill {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 16px;
+    display: flex;
+    flex-direction: column;
+    min-width: 120px;
+}
+.summary-label {
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+.summary-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1a1f36;
+}
+.summary-value.inflow  { color: #059669; }
+.summary-value.outflow { color: #dc2626; }
+
+/* Tabs (v2) */
+.report-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 20px;
+}
+.report-tab {
+    background: none;
+    border: none;
+    padding: 12px 22px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.report-tab:hover { color: #1a1f36; }
+.report-tab.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+    font-weight: 600;
+}
+.tab-badge {
+    background: #ef4444;
+    color: white;
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 20px;
+    text-align: center;
+}
+.tab-badge[data-zero="true"] { display: none; }
+
+/* Filter bar */
+.filter-bar {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;          /* was flex-end */
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 130px;
+}
+.filter-group.grow { flex: 1; min-width: 200px; }
+.filter-group label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    /* Force labels to occupy the same line-height so alignment is consistent */
+    line-height: 1.2;
+    min-height: 14px;
+}
+
+/* Uniform control height for select, input, and button */
+.filter-group select,
+.filter-group input {
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    background: white;
+    box-sizing: border-box;
+}
+.filter-group select:focus,
+.filter-group input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Button matches input height and centers icon + text */
+.filter-group .btn {
+    height: 38px;
+    padding: 0 18px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    margin-top: 7px;
+}
+/* Ledger table */
+.ledger-table-wrap {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.ledger-table thead th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.ledger-table tbody td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+}
+.ledger-table tbody tr:last-child td { border-bottom: none; }
+.ledger-table tbody tr:hover { background: #f9fafb; }
+.amount-in  { color: #059669; font-weight: 600; }
+.amount-out { color: #dc2626; font-weight: 600; }
+
+.user-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.user-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.user-type-badge.tenant { background: #e0e7ff; color: #3730a3; }
+.user-type-badge.client { background: #dbeafe; color: #1e40af; }
+.user-type-badge.admin  { background: #fce7f3; color: #9d174d; }
+.user-type-badge.agent  { background: #fef3c7; color: #92400e; }
+.user-code {
+    font-family: monospace;
+    font-size: 12px;
+    color: #475569;
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 20px 0;
+}
+.page-btn {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    min-width: 36px;
+    height: 36px;
+    padding: 0 10px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #475569;
+    font-weight: 500;
+}
+.page-btn:hover:not(:disabled) { background: #f1f5f9; }
+.page-btn.active { background: #667eea; color: white; border-color: #667eea; }
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.page-ellipsis { color: #94a3b8; padding: 0 4px; }
+.page-info { margin-left: 12px; font-size: 12px; color: #64748b; }
+
+/* Detail drawer */
+.drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 3000;
+    display: flex;
+    justify-content: flex-end;
+}
+.drawer {
+    width: 100%;
+    max-width: 720px;
+    background: white;
+    height: 100vh;
+    overflow-y: auto;
+    animation: drawerSlideIn 0.25s ease;
+    display: flex;
+    flex-direction: column;
+}
+@keyframes drawerSlideIn {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+}
+.drawer-header {
+    padding: 24px;
+    border-bottom: 1px solid #eef2f6;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.drawer-header h2 {
+    font-size: 20px;
+    color: #1a1f36;
+    font-family: monospace;
+    margin-bottom: 4px;
+}
+.drawer-header .sub { font-size: 13px; color: #64748b; }
+.drawer-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #94a3b8;
+    line-height: 1;
+}
+.drawer-body { padding: 24px; flex: 1; }
+.detail-section {
+    margin-bottom: 28px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid #f1f5f9;
+}
+.detail-section:last-child { border-bottom: none; }
+.detail-section h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1f36;
+    margin-bottom: 12px;
+}
+.detail-section.alert-section {
+    background: #fef2f2;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid #fecaca;
+}
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px 20px;
+}
+.detail-grid label {
+    display: block;
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.detail-grid > div > div {
+    font-size: 14px;
+    color: #1e293b;
+    font-weight: 500;
+}
+.ledger-mini {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.ledger-mini thead th {
+    background: #f8fafc;
+    color: #475569;
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-bottom: 1px solid #e2e8f0;
+}
+.ledger-mini tbody td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f1f5f9;
+}
+.empty-inline {
+    padding: 20px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+/* Small btn variant */
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+
+/* Modal hint */
+.modal-hint {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 14px;
+}
+
+@media (max-width: 640px) {
+    .filter-group.grow { min-width: 100%; order: -1; }
+    .filter-group { flex: 1; min-width: calc(50% - 6px); }
+}

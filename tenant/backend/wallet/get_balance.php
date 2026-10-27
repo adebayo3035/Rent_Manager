@@ -21,58 +21,148 @@ $tenantCode = $_SESSION['tenant_code'] ?? null;
 if (!$tenantCode) json_error("Session expired", 401);
 
 try {
+    // ---- Wallet snapshot ----
     $stmt = $conn->prepare("
-        SELECT wallet_balance, bank_name, bank_code, bank_account_name, bank_account_number
+        SELECT wallet_balance, bank_name, bank_code,
+               bank_account_name, bank_account_number
         FROM tenants WHERE tenant_code = ? LIMIT 1
     ");
     $stmt->bind_param("s", $tenantCode);
     $stmt->execute();
     $tenant = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-
     if (!$tenant) json_error("Tenant not found", 404);
 
-    // --- Has bank on file? ---
-    // A bank account is considered "on file" only when we have both the
-    // account number and the bank code. A half-saved row (e.g. from an
-    // older flow) shouldn't trigger the withdrawal path.
     $hasBankAccount = !empty($tenant['bank_account_number']) && !empty($tenant['bank_code']);
-
     $accountNumberMasked = $hasBankAccount
         ? '******' . substr($tenant['bank_account_number'], -4)
         : null;
 
-    // Recent transactions
-    $txStmt = $conn->prepare("
-        SELECT id, transaction_type, amount, running_balance, status,
-               request_id, notes, created_at
-        FROM tenant_wallet_transactions
-        WHERE tenant_code = ?
-        ORDER BY id DESC
-        LIMIT 30
+    // ---- Parse transaction filters ----
+    $status   = in_array($_GET['status'] ?? '', ['all', 'Pending', 'Approved', 'Rejected', 'Failed'])
+        ? $_GET['status'] : 'all';
+    $type     = in_array($_GET['type'] ?? '', [
+        'all', 'withdrawal', 'refund_credit', 'rent_credit', 'admin_adjustment',
+        'deposit_release', 'debt_recovery', 'settlement_debit', 'topup'
+    ]) ? $_GET['type'] : 'all';
+    $search   = trim($_GET['search'] ?? '');
+    $dateFrom = trim($_GET['date_from'] ?? '');
+    $dateTo   = trim($_GET['date_to'] ?? '');
+    $page     = max(1, (int) ($_GET['page'] ?? 1));
+    $limit    = min(50, max(10, (int) ($_GET['limit'] ?? 20)));
+    $offset   = ($page - 1) * $limit;
+
+    $dateFromValid = $dateFrom !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom);
+    $dateToValid   = $dateTo !== ''   && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo);
+
+    // ---- Build filter clauses (all prefixed with t.) ----
+    $where  = ['t.tenant_code = ?'];
+    $params = [$tenantCode];
+    $types  = 's';
+
+    if ($status !== 'all') {
+        $where[] = 't.status = ?';
+        $params[] = $status;
+        $types .= 's';
+    }
+    if ($type !== 'all') {
+        $where[] = 't.transaction_type = ?';
+        $params[] = $type;
+        $types .= 's';
+    }
+    if ($search !== '') {
+        $where[] = '(t.request_id LIKE ? OR t.notes LIKE ?)';
+        $like = "%{$search}%";
+        $params[] = $like;
+        $params[] = $like;
+        $types .= 'ss';
+    }
+    if ($dateFromValid) {
+        $where[] = 't.created_at >= ?';
+        $params[] = $dateFrom . ' 00:00:00';
+        $types .= 's';
+    }
+    if ($dateToValid) {
+        $where[] = 't.created_at <= ?';
+        $params[] = $dateTo . ' 23:59:59';
+        $types .= 's';
+    }
+    $whereSql = 'WHERE ' . implode(' AND ', $where);
+
+    // ---- Count ----
+    $countStmt = $conn->prepare("
+        SELECT COUNT(*) AS total
+        FROM tenant_wallet_transactions t
+        {$whereSql}
     ");
-    $txStmt->bind_param("s", $tenantCode);
+    if (!$countStmt) throw new Exception("Count prepare failed: " . $conn->error);
+    $countStmt->bind_param($types, ...$params);
+    $countStmt->execute();
+    $total = (int) $countStmt->get_result()->fetch_assoc()['total'];
+    $countStmt->close();
+
+    // ---- Transactions (paginated, joined with wallet_requests) ----
+    $txStmt = $conn->prepare("
+        SELECT
+            t.id,
+            t.transaction_type,
+            t.amount,
+            t.running_balance,
+            t.status,
+            t.request_id,
+            t.notes,
+            t.created_at,
+            wr.status AS request_status
+        FROM tenant_wallet_transactions t
+        LEFT JOIN wallet_requests wr
+            ON wr.request_code = t.request_id
+            AND wr.user_type = 'tenant'
+            AND wr.user_code = t.tenant_code
+        {$whereSql}
+        ORDER BY t.id DESC
+        LIMIT ? OFFSET ?
+    ");
+    if (!$txStmt) throw new Exception("List prepare failed: " . $conn->error);
+    $rowParams = [...$params, $limit, $offset];
+    $txStmt->bind_param($types . 'ii', ...$rowParams);
     $txStmt->execute();
     $txRes = $txStmt->get_result();
+
     $transactions = [];
     while ($row = $txRes->fetch_assoc()) {
+        $amt = (float) $row['amount'];
         $transactions[] = [
-            'id'              => (int) $row['id'],
-            'type'            => $row['transaction_type'],
-            'amount'          => (float) $row['amount'],
-            'amount_formatted'=> formatNaira((float) $row['amount']),
-            'running_balance' => (float) $row['running_balance'],
-            'request_id'      => $row['request_id'],
-            'notes'           => $row['notes'],
-            'created_at'      => $row['created_at'],
-            'status'          =>$row['status']
+            'id'               => (int) $row['id'],
+            'type'             => $row['transaction_type'],
+            'amount'           => $amt,
+            'amount_formatted' => formatNaira($amt),
+            'running_balance'  => (float) $row['running_balance'],
+            'request_id'       => $row['request_id'],
+            'request_status'   => $row['request_status'],   // ← NEW
+            'notes'            => $row['notes'],
+            'created_at'       => $row['created_at'],
+            'status'           => $row['status'],
         ];
     }
     $txStmt->close();
 
-    // Pending withdrawal requests
+    // ---- Wallet totals (for summary bar) ----
+    $sumStmt = $conn->prepare("
+        SELECT
+            COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS total_in,
+            COALESCE(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END), 0) AS total_out
+        FROM tenant_wallet_transactions
+        WHERE tenant_code = ?
+    ");
+    $sumStmt->bind_param("s", $tenantCode);
+    $sumStmt->execute();
+    $sumRow = $sumStmt->get_result()->fetch_assoc();
+    $sumStmt->close();
+
+    // ---- Pending requests ----
     $reqStmt = $conn->prepare("
-        SELECT request_code, request_type, amount, status, created_at
+        SELECT request_code, request_type, amount, status, created_at,
+               reference_number, bank_name, bank_account_number
         FROM wallet_requests
         WHERE user_type = 'tenant' AND user_code = ? AND status = 'pending'
         ORDER BY created_at DESC
@@ -84,30 +174,44 @@ try {
     $pendingRequests = [];
     while ($row = $reqRes->fetch_assoc()) {
         $pendingRequests[] = [
-            'request_code' => $row['request_code'],
-            'type'         => $row['request_type'],
-            'amount'       => (float) $row['amount'],
+            'request_code'     => $row['request_code'],
+            'type'             => $row['request_type'],
+            'amount'           => (float) $row['amount'],
             'amount_formatted' => formatNaira((float) $row['amount']),
-            'status'       => $row['status'],
-            'created_at'   => $row['created_at'],
+            'status'           => $row['status'],
+            'created_at'       => $row['created_at'],
+            'reference_number' => $row['reference_number'],
+            'bank_name'        => $row['bank_name'],
+            'bank_account_last4'=> $row['bank_account_number']
+                ? substr($row['bank_account_number'], -4) : null,
         ];
     }
     $reqStmt->close();
 
     json_success([
-        'wallet_balance'           => (float) $tenant['wallet_balance'],
-        'wallet_balance_formatted' => formatNaira((float) $tenant['wallet_balance']),
+        'wallet_balance'             => (float) $tenant['wallet_balance'],
+        'wallet_balance_formatted'   => formatNaira((float) $tenant['wallet_balance']),
 
-        // Bank details
-        'has_bank_account'         => $hasBankAccount,
-        'bank_name'                => $tenant['bank_name'],
-        'bank_code'                => $tenant['bank_code'],
-        'bank_account_name'        => $tenant['bank_account_name'],
-        'bank_account_number'      => $tenant['bank_account_number'],       // full — used to submit withdrawal
-        'bank_account_number_masked' => $accountNumberMasked,                // display
+        'has_bank_account'           => $hasBankAccount,
+        'bank_name'                  => $tenant['bank_name'],
+        'bank_code'                  => $tenant['bank_code'],
+        'bank_account_name'          => $tenant['bank_account_name'],
+        'bank_account_number'        => $tenant['bank_account_number'],
+        'bank_account_number_masked' => $accountNumberMasked,
 
-        'transactions'             => $transactions,
-        'pending_requests'         => $pendingRequests,
+        'total_in'                   => (float) $sumRow['total_in'],
+        'total_in_formatted'         => formatNaira((float) $sumRow['total_in']),
+        'total_out'                  => (float) $sumRow['total_out'],
+        'total_out_formatted'        => formatNaira((float) $sumRow['total_out']),
+
+        'transactions'               => $transactions,
+        'pending_requests'           => $pendingRequests,
+        'pagination'                 => [
+            'total'       => $total,
+            'page'        => $page,
+            'limit'       => $limit,
+            'total_pages' => (int) ceil($total / max(1, $limit)),
+        ],
     ], 'Wallet data retrieved');
 
 } catch (Throwable $e) {

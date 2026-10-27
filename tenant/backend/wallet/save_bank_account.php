@@ -1,7 +1,12 @@
 <?php
 // tenant/backend/wallet/save_bank_account.php
-// Save a tenant's first bank account. Refuses if one already exists — changing
-// an existing bank is a separate, harder flow (see notes).
+// Save a tenant's first bank account. Refuses if one already exists —
+// changing an existing bank is a separate flow.
+//
+// SECURITY:
+//   - Secret answer verified with lockout (3 fails → 15 min lock)
+//   - Bank account cannot be reused across tenants (cross-tenant uniqueness)
+//   - Records claim in tenant_bank_history for future uniqueness checks
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
@@ -9,6 +14,7 @@ require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
+require_once __DIR__ . '/../../../utilities/wallet_security.php';
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 rateLimiter();
@@ -16,7 +22,7 @@ rateLimiter();
 $auth = requireAuth([
     'method'     => 'POST',
     'rate_key'   => 'tenant_setup_bank',
-    'rate_limit' => [5, 600],   // 5 per 10 min — enough for retries
+    'rate_limit' => [5, 600],
     'csrf'       => ['enabled' => true, 'form_name' => 'tenant_withdrawal_form'],
     'roles'      => ['Tenant'],
 ]);
@@ -33,7 +39,10 @@ $accountName = trim($input['account_name'] ?? '');
 $accountNo   = trim($input['account_number'] ?? '');
 $secretAns   = trim($input['secret_answer'] ?? '');
 
-// ---- Validation ----
+logActivity("[TENANT_SAVE_BANK] ========== START ==========");
+logActivity("[TENANT_SAVE_BANK] Tenant: {$tenantCode}");
+
+// ---- Input validation ----
 if ($bankName === '')    json_error("Bank name is required", 400);
 if ($bankCode === '')    json_error("Bank code is required", 400);
 if ($accountName === '') json_error("Account name is required", 400);
@@ -42,8 +51,10 @@ if (!preg_match('/^\d{10}$/', $accountNo)) json_error("Account number must be 10
 if ($secretAns === '')   json_error("Please provide your secret answer", 400);
 
 $conn->begin_transaction();
+logActivity("[TENANT_SAVE_BANK] Transaction started");
 
 try {
+    // ---- 1) Lock tenant row ----
     $stmt = $conn->prepare("
         SELECT secret_answer, has_secret_set, bank_account_number
         FROM tenants
@@ -57,29 +68,46 @@ try {
 
     if (!$tenant) throw new Exception("Tenant not found", 404);
 
-    // Refuse if a bank account already exists — changing bank is a separate flow
+    // ---- 2) Refuse if bank already exists ----
     if (!empty($tenant['bank_account_number'])) {
+        logActivity("[TENANT_SAVE_BANK] Refused: bank already on file for {$tenantCode}", 'WARN');
         throw new Exception(
-            "A bank account is already on file. Please contact support to change it.",
+            "A bank account is already on file. Please use the change-bank flow to update it.",
             409
         );
     }
 
-    // Verify secret answer (same logic as request_withdrawal.php)
+    // ---- 3) Lockout check FIRST ----
+    $lockState = checkSecretLockout($conn, 'tenant', $tenantCode);
+    if ($lockState['locked']) {
+        logActivity("[TENANT_SAVE_BANK] Blocked: account locked for {$tenantCode}", 'WARN');
+        throw new Exception($lockState['message'], 429);
+    }
+
+    // ---- 4) Secret verification with lockout ----
     if ((int)$tenant['has_secret_set'] !== 1 || empty($tenant['secret_answer'])) {
         throw new Exception("Please set up your secret question first", 400);
     }
-    $stored = $tenant['secret_answer'];
-    $ok = (strlen($stored) >= 60 && strpos($stored, '$') === 0)
-        ? password_verify(strtolower($secretAns), $stored)
-        : (strcasecmp(trim($secretAns), trim($stored)) === 0);
 
-    if (!$ok) {
-        logActivity("Failed bank-setup auth for {$tenantCode}", 'WARN');
-        throw new Exception("Incorrect secret answer", 401);
+    $verify = verifySecretAnswer($conn, 'tenant', $tenantCode, $tenant['secret_answer'], $secretAns);
+    if (!$verify['ok']) {
+        logActivity("[TENANT_SAVE_BANK] Secret answer failed for {$tenantCode}: "
+            . ($verify['message'] ?? ''), 'WARN');
+        throw new Exception(
+            $verify['message'] ?? 'Incorrect secret answer',
+            $verify['locked'] ? 429 : 401
+        );
     }
 
-    // Save bank details
+    // ---- 5) Bank uniqueness (must be BEFORE writing) ----
+    $bankAvail = checkTenantBankAvailability($conn, $bankCode, $accountNo, $tenantCode);
+    if (!$bankAvail['available']) {
+        logActivity("[TENANT_SAVE_BANK] Bank reuse refused for {$tenantCode}: "
+            . ($bankAvail['reason'] ?? ''), 'WARN');
+        throw new Exception($bankAvail['reason'] ?? 'This bank account is not available', 409);
+    }
+
+    // ---- 6) Save bank details ----
     $save = $conn->prepare("
         UPDATE tenants
         SET bank_name = ?, bank_code = ?, bank_account_name = ?, bank_account_number = ?
@@ -89,22 +117,31 @@ try {
     if (!$save->execute()) throw new Exception("Failed to save bank details: " . $save->error);
     $save->close();
 
+    // ---- 7) Record bank claim for uniqueness ----
+    recordTenantBankClaim($conn, $tenantCode, $bankCode, $accountNo, $accountName);
+
+    // ---- 8) Reset lockout on success ----
+    setSecretAttempts($conn, 'tenant', $tenantCode, 0, null);
+
     $conn->commit();
+    logActivity("[TENANT_SAVE_BANK] Transaction committed");
 
     $masked = '******' . substr($accountNo, -4);
-    logActivity("Bank account saved for {$tenantCode}: {$bankName} ({$masked})");
+    logActivity("[TENANT_SAVE_BANK] ========== SUCCESS ==========");
+    logActivity("[TENANT_SAVE_BANK] tenant={$tenantCode}, bank={$bankName} ({$masked})");
 
     json_success([
-        'bank_name'          => $bankName,
-        'bank_code'          => $bankCode,
-        'bank_account_name'  => $accountName,
-        'bank_account_number'=> $accountNo,     // echo back for immediate pre-fill
-        'masked_account'     => $masked,
-        'has_bank_account'   => true,
+        'bank_name'           => $bankName,
+        'bank_code'           => $bankCode,
+        'bank_account_name'   => $accountName,
+        'bank_account_number' => $accountNo,
+        'masked_account'      => $masked,
+        'has_bank_account'    => true,
     ], "Bank account saved");
 
 } catch (Throwable $e) {
     $conn->rollback();
-    logActivity("Bank setup error for {$tenantCode}: " . $e->getMessage(), 'ERROR');
+    logActivity("[TENANT_SAVE_BANK] ROLLBACK: " . $e->getMessage(), 'ERROR');
+    logActivity("[TENANT_SAVE_BANK] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
 }

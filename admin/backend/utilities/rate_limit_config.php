@@ -68,7 +68,7 @@ return [
             'seconds' => 60
         ],
         'report' => [
-            'limit' => 3,
+            'limit' => 60,
             'seconds' => 60
         ],
 
