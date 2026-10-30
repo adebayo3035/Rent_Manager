@@ -366,3 +366,123 @@ function recordBankClaim(
     $ins->close();
     return $ok;
 }
+
+// ============================================================
+// PASSWORD VERIFICATION WITH LOCKOUT
+// ============================================================
+// Reuses the existing tenant_login_attempts table (shared with login).
+// On failure: increments attempts, locks after 3 for 60 minutes.
+// On success: resets attempts to 0.
+//
+// Mirrors verifySecretAnswer() but for password-based reauthentication.
+
+/**
+ * Verify a tenant's password with the same lockout mechanism as login.
+ *
+ * @param mysqli $conn
+ * @param string $tenantCode
+ * @param string $submittedPassword
+ * @param string $storedHash      (bcrypt hash from tenants.password)
+ * @return array ['ok' => bool, 'locked' => bool, 'message' => ?string]
+ */
+function verifyTenantPasswordWithLockout(
+    mysqli $conn,
+    string $tenantCode,
+    string $submittedPassword,
+    string $storedHash
+): array {
+    // ---- 1) Check current lockout ----
+    $stmt = $conn->prepare("
+        SELECT attempts, locked_until
+        FROM tenant_login_attempts
+        WHERE tenant_code = ?
+        LIMIT 1
+    ");
+    if (!$stmt) {
+        return ['ok' => false, 'locked' => true, 'message' => 'Unable to verify at this time. Please try again later.'];
+    }
+    $stmt->bind_param("s", $tenantCode);
+    $stmt->execute();
+    $state = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $attempts = (int) ($state['attempts'] ?? 0);
+    $lockedUntil = $state['locked_until'] ?? null;
+
+    if ($attempts >= 3 && $lockedUntil) {
+        $until = new DateTime($lockedUntil);
+        $now = new DateTime();
+        if ($now < $until) {
+            $diff = $now->diff($until);
+            $mins = $diff->i + ($diff->h * 60);
+            $secs = $diff->s;
+            return [
+                'ok' => false,
+                'locked' => true,
+                'message' => "Account is temporarily locked due to failed attempts. Try again in {$mins}m {$secs}s.",
+            ];
+        }
+        // Expired — reset and continue
+        $reset = $conn->prepare("DELETE FROM tenant_login_attempts WHERE tenant_code = ?");
+        if ($reset) { $reset->bind_param("s", $tenantCode); $reset->execute(); $reset->close(); }
+        $attempts = 0;
+    }
+
+    // ---- 2) Verify password ----
+    if (!password_verify($submittedPassword, $storedHash)) {
+        $attempts++;
+        $lockedUntil = null;
+        $nowLocked = false;
+
+        if ($attempts >= 3) {
+            $lockedUntil = date('Y-m-d H:i:s', time() + 3600); // 60 min, same as login
+            $nowLocked = true;
+
+            // Log to tenant_lock_history
+            try {
+                $hist = $conn->prepare("
+                    INSERT INTO tenant_lock_history
+                        (tenant_code, status, locked_by, lock_reason, lock_method, locked_at)
+                    VALUES (?, 'locked', 0, ?, 'Automatic lock (password reauth)', NOW())
+                ");
+                if ($hist) {
+                    $reason = "Account locked after {$attempts} failed password attempts during secret reset";
+                    $hist->bind_param("ss", $tenantCode, $reason);
+                    $hist->execute();
+                    $hist->close();
+                }
+            } catch (Throwable $_) {}
+
+            logActivity("[SECRET_RESET] Password lockout triggered: tenant={$tenantCode} after {$attempts} attempts", 'WARN');
+        }
+
+        // Upsert attempt state
+        $up = $conn->prepare("
+            INSERT INTO tenant_login_attempts (tenant_code, attempts, last_attempt, locked_until)
+            VALUES (?, ?, NOW(), ?)
+            ON DUPLICATE KEY UPDATE
+                attempts = VALUES(attempts),
+                last_attempt = NOW(),
+                locked_until = VALUES(locked_until)
+        ");
+        if ($up) {
+            $up->bind_param("sis", $tenantCode, $attempts, $lockedUntil);
+            $up->execute();
+            $up->close();
+        }
+
+        return [
+            'ok' => false,
+            'locked' => $nowLocked,
+            'message' => $nowLocked
+                ? "Incorrect password. Account locked for 60 minutes."
+                : "Incorrect password. " . (3 - $attempts) . " attempt(s) remaining.",
+        ];
+    }
+
+    // ---- 3) Success — reset attempts ----
+    $reset = $conn->prepare("DELETE FROM tenant_login_attempts WHERE tenant_code = ?");
+    if ($reset) { $reset->bind_param("s", $tenantCode); $reset->execute(); $reset->close(); }
+
+    return ['ok' => true, 'locked' => false, 'message' => null];
+}

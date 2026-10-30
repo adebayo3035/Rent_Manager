@@ -3,8 +3,21 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
+require_once __DIR__ . '/../utilities/auth_guard.php';
+
+if (!isset($_SESSION)) session_start();
 rateLimiter();
+
+$auth = requireAuth([
+    'method'                 => 'POST',
+    'rate_key'               => 'tenant_update_profile',
+    'rate_limit'             => [10, 300],
+    'csrf'                   => ['enabled' => true, 'form_name' => 'tenant_profile_form'],
+    'roles'                  => ['Tenant'],
+    'require_active_tenancy' => true,
+]);
 
 // Error handling setup
 error_reporting(E_ALL);

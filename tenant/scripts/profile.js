@@ -137,7 +137,7 @@ function getTabsHtml(showSecretTab) {
 }
 
 function renderPersonalTab() {
-  return `
+    return `
         <form class="profile-form" id="profileForm">
             <div class="form-row">
                 <div class="form-group">
@@ -151,11 +151,13 @@ function renderPersonalTab() {
             </div>
             <div class="form-group">
                 <label>Email Address *</label>
-                <input type="email" id="email" value="${escapeHtml(currentUser.email)}" required>
+                <input type="email" id="email" value="${escapeHtml(currentUser.email)}" required
+                       oninput="checkIfReauthNeeded()">
             </div>
             <div class="form-group">
                 <label>Phone Number *</label>
-                <input type="tel" id="phone" value="${escapeHtml(currentUser.phone)}" required>
+                <input type="tel" id="phone" value="${escapeHtml(currentUser.phone)}" required
+                       oninput="checkIfReauthNeeded()">
             </div>
             <div class="form-group">
                 <label>Gender</label>
@@ -169,10 +171,43 @@ function renderPersonalTab() {
                 <label>Apartment Number</label>
                 <input type="text" value="${escapeHtml(currentUser.apartment_number || "Not Assigned")}" readonly disabled>
             </div>
+
+            <!-- Hidden by default; shown when email or phone changes -->
+            <div class="form-group" id="reauthPasswordGroup" style="display:none;">
+                <label>Current Password *</label>
+                <input type="password" id="profileCurrentPassword" autocomplete="off">
+                <div class="hint" style="font-size:12px;color:#64748b;margin-top:4px;">
+                    <i class="fas fa-lock" style="font-size:10px;"></i>
+                    Password required because you're changing your email or phone number.
+                </div>
+            </div>
+
             <button type="button" class="btn-save" onclick="updateProfile()">
                 <i class="fas fa-save"></i> Update Profile
             </button>
         </form>`;
+}
+
+function checkIfReauthNeeded() {
+    const email = document.getElementById("email")?.value.trim() || '';
+    const phone = document.getElementById("phone")?.value.trim() || '';
+    const originalEmail = currentUser?.email || '';
+    const originalPhone = currentUser?.phone || '';
+
+    const needsPassword =
+        email.toLowerCase() !== originalEmail.toLowerCase() ||
+        phone !== originalPhone;
+
+    const group = document.getElementById("reauthPasswordGroup");
+    if (!group) return;
+
+    if (needsPassword) {
+        group.style.display = "block";
+    } else {
+        group.style.display = "none";
+        const input = document.getElementById("profileCurrentPassword");
+        if (input) input.value = "";
+    }
 }
 
 function renderSecurityTab() {
@@ -524,54 +559,97 @@ function attachTabListeners() {
 
 // ==================== PROFILE FUNCTIONS ====================
 async function updateProfile() {
-  const firstname = document.getElementById("firstname")?.value.trim();
-  const lastname = document.getElementById("lastname")?.value.trim();
-  const email = document.getElementById("email")?.value.trim();
-  const phone = document.getElementById("phone")?.value.trim();
-  const gender = document.getElementById("gender")?.value;
+    const firstname = document.getElementById("firstname")?.value.trim();
+    const lastname = document.getElementById("lastname")?.value.trim();
+    const email = document.getElementById("email")?.value.trim();
+    const phone = document.getElementById("phone")?.value.trim();
+    const gender = document.getElementById("gender")?.value;
 
-  if (!firstname || !lastname || !email || !phone) {
-    displayMessage("Please fill in all required fields", "error");
-    return;
-  }
-
-  const btn = document.querySelector("#personalTab .btn-save");
-  const originalText = btn.innerHTML;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-  btn.disabled = true;
-
-  try {
-    const response = await fetch("../backend/tenant/update_profile.php", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ firstname, lastname, email, phone, gender }),
-    });
-    const data = await response.json();
-
-    if (data.success) {
-      displayMessage("Profile updated successfully", "success");
-
-      if (currentUser) {
-        currentUser.firstname = firstname;
-        currentUser.lastname = lastname;
-        currentUser.email = email;
-        currentUser.phone = phone;
-        currentUser.gender = gender;
-        window.currentUser = currentUser;
-      }
-
-      renderProfile();
-    } else {
-      throw new Error(data.message || "Update failed");
+    if (!firstname || !lastname || !email || !phone) {
+        displayMessage("Please fill in all required fields", "error");
+        return;
     }
-  } catch (error) {
-    console.error("Error updating profile:", error);
-    displayMessage(error.message, "error");
-    btn.innerHTML = originalText;
-    btn.disabled = false;
-  }
-}
 
+    // Check if reauth is needed and if the password was provided
+    const emailChanged = (currentUser?.email || '').toLowerCase() !== email.toLowerCase();
+    const phoneChanged = (currentUser?.phone || '') !== phone;
+    const needsReauth = emailChanged || phoneChanged;
+
+    const currentPassword = document.getElementById("profileCurrentPassword")?.value || '';
+
+    if (needsReauth && !currentPassword) {
+        displayMessage("Please enter your current password to change your email or phone", "error");
+        return;
+    }
+
+    const btn = document.querySelector("#personalTab .btn-save");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    btn.disabled = true;
+
+    try {
+        const body = { firstname, lastname, email, phone, gender };
+        if (needsReauth) {
+            body.current_password = currentPassword;
+        }
+
+        const csrf = await getCsrfToken('tenant_profile_form');
+        if (csrf) { body.csrf_token = csrf; body.token_id = 'tenant_profile_form'; }
+
+        const response = await fetch("../backend/tenant/update_profile.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            credentials: "same-origin",
+        });
+
+        // Guard: server may return HTML on fatal error
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Non-JSON response:', text.slice(0, 500));
+            throw new Error('Server returned an unexpected response. Check console.');
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+            displayMessage("Profile updated successfully", "success");
+            if (currentUser) {
+                currentUser.firstname = firstname;
+                currentUser.lastname = lastname;
+                currentUser.email = email;
+                currentUser.phone = phone;
+                currentUser.gender = gender;
+                window.currentUser = currentUser;
+            }
+            renderProfile();
+            return;
+        }
+
+        // Handle specific status codes
+        if (response.status === 423) {
+            displayMessage(data.message || "Account temporarily locked. Please try again later.", "error");
+        } else if (response.status === 401) {
+            displayMessage(data.message || "Incorrect password.", "error");
+            const pwInput = document.getElementById("profileCurrentPassword");
+            if (pwInput) { pwInput.value = ''; pwInput.focus(); }
+        } else if (response.status === 409) {
+            displayMessage(data.message || "A conflict occurred. Please refresh and try again.", "error");
+        } else {
+            displayMessage(data.message || "Update failed", "error");
+        }
+
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+
+    } catch (error) {
+        console.error("Error updating profile:", error);
+        displayMessage(error.message || "Something went wrong", "error");
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
 // ==================== PASSWORD FUNCTIONS ====================
 function validatePassword() {
   const password = document.getElementById("newPassword")?.value || "";
@@ -626,86 +704,78 @@ function isPasswordValid() {
 }
 
 async function changePassword() {
-  const currentPassword = document.getElementById("currentPassword")?.value;
-  const newPassword = document.getElementById("newPassword")?.value;
-  const confirmPassword = document.getElementById("confirmPassword")?.value;
-  const secretAnswer = document.getElementById("secretAnswer")?.value;
+    const currentPassword = document.getElementById("currentPassword")?.value;
+    const newPassword = document.getElementById("newPassword")?.value;
+    const confirmPassword = document.getElementById("confirmPassword")?.value;
+    const secretAnswer = document.getElementById("secretAnswer")?.value;
 
-  if (!currentPassword || !newPassword || !confirmPassword || !secretAnswer) {
-    displayMessage("Please fill in all fields", "error");
-    return;
-  }
-
-  if (newPassword !== confirmPassword) {
-    displayMessage("New passwords do not match", "error");
-    return;
-  }
-
-  if (!isPasswordValid()) {
-    displayMessage("Please meet all password requirements", "error");
-    return;
-  }
-
-  const btn = document.querySelector("#securityTab .btn-save");
-  const originalText = btn.innerHTML;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Changing...';
-  btn.disabled = true;
-
-  try {
-    // Step 1: Change password
-    const response = await fetch(
-      "../backend/authentication/change_password.php",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          new_password: newPassword,
-          secret_answer: secretAnswer,
-        }),
-      },
-    );
-    const data = await response.json();
-
-    console.log("Change password response:", data); // Debug log
-
-    if (data.success) {
-      displayMessage(
-        data.message || "Password changed successfully!",
-        "success",
-      );
-
-      // Step 2: Call logout endpoint with tenant_code from response
-      // Check different possible response structures
-      const tenantCode = data.data?.tenant_code || data.tenant_code;
-      const requireLogout = data.data?.require_logout || data.require_logout;
-
-      console.log("Tenant code for logout:", tenantCode); // Debug log
-
-      if (requireLogout && tenantCode) {
-        await callLogoutEndpoint(tenantCode);
-      } else {
-        console.warn("Logout not required or tenant code missing");
-        // Fallback: clear local session data
-        clearLocalSession();
-      }
-
-      // Step 3: Redirect to login page
-      const redirectUrl =
-        data.data?.redirect_url || data.redirect_url || "../login.php";
-      setTimeout(() => {
-        window.location.href = redirectUrl;
-      }, 2000);
-    } else {
-      throw new Error(data.message || "Password change failed");
+    if (!currentPassword || !newPassword || !confirmPassword || !secretAnswer) {
+        displayMessage("Please fill in all fields", "error");
+        return;
     }
-  } catch (error) {
-    console.error("Error changing password:", error);
-    displayMessage(error.message, "error");
-  } finally {
-    btn.innerHTML = originalText;
-    btn.disabled = false;
-  }
+    if (newPassword !== confirmPassword) {
+        displayMessage("New passwords do not match", "error");
+        return;
+    }
+    if (!isPasswordValid()) {
+        displayMessage("Please meet all password requirements", "error");
+        return;
+    }
+
+    const btn = document.querySelector("#securityTab .btn-save");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Changing...';
+    btn.disabled = true;
+
+    try {
+        const body = {
+            current_password: currentPassword,
+            new_password: newPassword,
+            secret_answer: secretAnswer,
+        };
+        const csrf = await getCsrfToken('tenant_change_password');
+        if (csrf) { body.csrf_token = csrf; body.token_id = 'tenant_change_password'; }
+
+        const response = await fetch("../backend/authentication/change_password.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            credentials: "same-origin",
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            displayMessage(data.message || "Password changed successfully!", "success");
+            const tenantCode = data.data?.tenant_code || data.tenant_code;
+            const requireLogout = data.data?.require_logout || data.require_logout;
+            if (requireLogout && tenantCode) {
+                await callLogoutEndpoint(tenantCode);
+            } else {
+                clearLocalSession();
+            }
+            const redirectUrl = data.data?.redirect_url || data.redirect_url || "../login.php";
+            setTimeout(() => { window.location.href = redirectUrl; }, 2000);
+            return;
+        } else {
+            // Handle lockout specifically
+            if (response.status === 423) {
+                displayMessage(data.message, "error");
+            } else if (response.status === 401 && data.remaining_attempts !== undefined) {
+                displayMessage(
+                    `${data.message} (${data.remaining_attempts} remaining)`,
+                    "error"
+                );
+            } else {
+                throw new Error(data.message || "Password change failed");
+            }
+        }
+    } catch (error) {
+        console.error("Error changing password:", error);
+        displayMessage(error.message, "error");
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
 }
 
 // Helper function to call logout endpoint
@@ -868,88 +938,122 @@ async function setSecretAnswer() {
 
 //================== RESET SECRET QUESTION AND ANSWER FUNCTION =======================
 async function resetSecretAnswer() {
-  const resecretQuestionInput = document.getElementById("resetSecretQuestion")?.value;
-  const resetAnswerInput = document.getElementById("resetAnswer")?.value;
-  const confirmResetAnswerInput = document.getElementById("confirmResetAnswer")?.value;
-  const resetSecretPasswordInput = document.getElementById("resetSecretPassword")?.value;
+    const resecretQuestionInput       = document.getElementById("resetSecretQuestion")?.value;
+    const resetAnswerInput            = document.getElementById("resetAnswer")?.value;
+    const confirmResetAnswerInput     = document.getElementById("confirmResetAnswer")?.value;
+    const resetSecretPasswordInput    = document.getElementById("resetSecretPassword")?.value;
 
-  // Validate all inputs
-  if (!resecretQuestionInput) {
-    displayMessage("Secret Question is Required", "error");
-    return;
-  }
-  if (!resetAnswerInput) {
-    displayMessage("Secret Answer is Required", "error");
-    return;
-  }
-  if (!confirmResetAnswerInput) {
-    displayMessage("Confirm Secret Answer is Required", "error");
-    return;
-  }
-  if (!resetSecretPasswordInput) {
-    displayMessage("Your Password is Required", "error");
-    return;
-  }
-
-  // Check if answers match
-  if (resetAnswerInput !== confirmResetAnswerInput) {
-    displayMessage("Secret answers do not match", "error");
-    return;
-  }
-
-  // Check minimum length (FIXED: use correct variable name)
-  if (resetAnswerInput.length < 8) {
-    displayMessage("Secret answer must be at least 8 characters", "error");
-    return;
-  }
-
-  // Check if user has secret set (FIXED: proper condition)
-  if (currentUser && currentUser.has_secret_set !== 1) {
-    displayMessage("Please set your Secret Question and answer first", "error");
-    return;
-  }
-
-  const btn = document.querySelector("#resetSecretTab .btn-save");
-  const originalText = btn.innerHTML;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Resetting...';
-  btn.disabled = true;
-
-  try {
-    const response = await fetch("../backend/authentication/reset_secret_question_answer.php", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        secret_question: resecretQuestionInput,
-        secret_answer: resetAnswerInput,
-        confirm_answer: confirmResetAnswerInput,
-        password: resetSecretPasswordInput,
-      }),
-    });
-    
-    const data = await response.json();
-
-    if (data.success) {
-      displayMessage(data.message || "Secret Details Reset Successfully", "success");
-
-      // Update currentUser object
-      if (currentUser) {
-        currentUser.has_secret_set = 1;
-        currentUser.secret_question = data.secret_question;
-        window.currentUser = currentUser;
-      }
-
-      setTimeout(() => window.location.reload(), 2000);
-    } else {
-      throw new Error(data.message || "Failed to reset secret question");
+    // ---- Client-side validation ----
+    if (!resecretQuestionInput) {
+        displayMessage("Secret Question is Required", "error");
+        return;
     }
-  } catch (error) {
-    console.error("Error resetting secret question and answer:", error);
-    displayMessage(error.message, "error");
-    btn.innerHTML = originalText;
-    btn.disabled = false;
-  }
-}
+    if (!resetAnswerInput) {
+        displayMessage("Secret Answer is Required", "error");
+        return;
+    }
+    if (!confirmResetAnswerInput) {
+        displayMessage("Confirm Secret Answer is Required", "error");
+        return;
+    }
+    if (!resetSecretPasswordInput) {
+        displayMessage("Your Password is Required", "error");
+        return;
+    }
+    if (resetAnswerInput !== confirmResetAnswerInput) {
+        displayMessage("Secret answers do not match", "error");
+        return;
+    }
+    if (resetAnswerInput.length < 8) {
+        displayMessage("Secret answer must be at least 8 characters", "error");
+        return;
+    }
+    if (currentUser && Number(currentUser.has_secret_set) !== 1) {
+        displayMessage("Please set your Secret Question and answer first", "error");
+        return;
+    }
 
+    const btn = document.querySelector("#resetSecretTab .btn-save");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Resetting...';
+    btn.disabled = true;
+
+    try {
+        // ---- Build request body ----
+        const body = {
+            secret_question: resecretQuestionInput,
+            secret_answer:   resetAnswerInput,
+            confirm_answer:  confirmResetAnswerInput,
+            password:        resetSecretPasswordInput,
+        };
+
+        // ---- Fetch CSRF token ----
+        const csrf = await getCsrfToken('reset_secret_form');
+        if (csrf) {
+            body.csrf_token = csrf;
+            body.token_id   = 'reset_secret_form';
+        }
+
+        // ---- Send request ----
+        const response = await fetch("../backend/authentication/reset_secret_question_answer.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            credentials: "same-origin",
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            displayMessage(data.message || "Secret Details Reset Successfully", "success");
+
+            if (currentUser) {
+                currentUser.has_secret_set  = 1;
+                currentUser.secret_question = data.secret_question;
+                window.currentUser = currentUser;
+            }
+
+            setTimeout(() => window.location.reload(), 2000);
+            return;
+        }
+
+        // ---- Handle specific error codes ----
+        if (response.status === 423) {
+            // Account locked due to failed password attempts
+            displayMessage(data.message || "Account temporarily locked. Please try again later.", "error");
+        } else if (response.status === 429) {
+            // 24-hour cooldown active
+            displayMessage(data.message || "Please wait before resetting again.", "error");
+        } else if (response.status === 401) {
+            // Wrong password — may include remaining attempts
+            const attempts = data.remaining_attempts;
+            if (typeof attempts === "number" && attempts >= 0) {
+                displayMessage(
+                    `${data.message || "Incorrect password."} (${attempts} attempt${attempts === 1 ? "" : "s"} remaining)`,
+                    "error"
+                );
+            } else {
+                displayMessage(data.message || "Incorrect password.", "error");
+            }
+        } else if (response.status === 403) {
+            // CSRF or role issue
+            displayMessage(data.message || "Session expired. Please refresh and try again.", "error");
+        } else {
+            // 400 validation, 404 not found, 500 server error
+            displayMessage(data.message || "Failed to reset secret question", "error");
+        }
+
+        // Re-enable the button so the user can retry after fixing the error
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+
+    } catch (error) {
+        console.error("Error resetting secret question and answer:", error);
+        displayMessage(error.message || "Something went wrong. Please try again.", "error");
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
 // ==================== UTILITY FUNCTIONS ====================
 // Replace the displayMessage function with this:
 function displayMessage(message, type = "info") {
@@ -971,4 +1075,17 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+async function getCsrfToken(formName) {
+    try {
+        const res = await fetch(
+            `../backend/utilities/get_token.php?form=${encodeURIComponent(formName)}`,
+            { method: 'POST', credentials: 'include' }
+        );
+        const data = await res.json();
+        return data.success ? data.token : null;
+    } catch (err) {
+        console.error('CSRF token fetch failed:', err);
+        return null;
+    }
 }
