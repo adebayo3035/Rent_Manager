@@ -27,10 +27,11 @@ require_once __DIR__ . '/utils.php';
 function getSecretAttempts(mysqli $conn, string $userType, string $userCode): array
 {
     $table = $userType === 'tenant' ? 'tenant_secret_attempts' : 'client_secret_attempts';
-    $col   = $userType === 'tenant' ? 'tenant_code' : 'client_code';
+    $col = $userType === 'tenant' ? 'tenant_code' : 'client_code';
 
     $stmt = $conn->prepare("SELECT attempts, locked_until FROM {$table} WHERE {$col} = ? LIMIT 1");
-    if (!$stmt) return ['attempts' => 0, 'locked_until' => null];
+    if (!$stmt)
+        return ['attempts' => 0, 'locked_until' => null];
     $stmt->bind_param("s", $userCode);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
@@ -49,7 +50,7 @@ function setSecretAttempts(
     ?string $lockedUntil
 ): bool {
     $table = $userType === 'tenant' ? 'tenant_secret_attempts' : 'client_secret_attempts';
-    $col   = $userType === 'tenant' ? 'tenant_code' : 'client_code';
+    $col = $userType === 'tenant' ? 'tenant_code' : 'client_code';
 
     $stmt = $conn->prepare("
         INSERT INTO {$table} ({$col}, attempts, locked_until, created_at, updated_at)
@@ -58,7 +59,8 @@ function setSecretAttempts(
                                 locked_until = VALUES(locked_until),
                                 updated_at = NOW()
     ");
-    if (!$stmt) return false;
+    if (!$stmt)
+        return false;
     $stmt->bind_param("sis", $userCode, $attempts, $lockedUntil);
     $ok = $stmt->execute();
     $stmt->close();
@@ -78,15 +80,15 @@ function checkSecretLockout(mysqli $conn, string $userType, string $userCode): a
 
     if ($attempts >= 3 && $lockedUntil) {
         $until = new DateTime($lockedUntil);
-        $now   = new DateTime();
+        $now = new DateTime();
         if ($now < $until) {
-            $diff  = $now->diff($until);
-            $mins  = $diff->i + ($diff->h * 60);
-            $secs  = $diff->s;
+            $diff = $now->diff($until);
+            $mins = $diff->i + ($diff->h * 60);
+            $secs = $diff->s;
             return [
-                'locked'       => true,
+                'locked' => true,
                 'locked_until' => $lockedUntil,
-                'message'      => "Too many failed attempts. Try again in {$mins} min {$secs} sec.",
+                'message' => "Too many failed attempts. Try again in {$mins} min {$secs} sec.",
             ];
         }
         // Lock expired — reset
@@ -160,7 +162,8 @@ function verifySecretAnswer(
                     $hist->close();
                 }
             }
-        } catch (Throwable $_) { /* non-fatal */ }
+        } catch (Throwable $_) { /* non-fatal */
+        }
 
         logActivity("Secret answer lockout triggered: {$userType}={$userCode} after {$attempts} attempts", 'WARN');
     }
@@ -168,8 +171,8 @@ function verifySecretAnswer(
     setSecretAttempts($conn, $userType, $userCode, $attempts, $lockedUntil);
 
     return [
-        'ok'      => false,
-        'locked'  => $isNowLocked,
+        'ok' => false,
+        'locked' => $isNowLocked,
         'message' => $isNowLocked
             ? "Incorrect answer. Your account has been temporarily locked for 15 minutes."
             : "Incorrect secret answer. " . (3 - $attempts) . " attempts remaining.",
@@ -248,7 +251,8 @@ function recordBankClaim(
             (client_code, bank_code, account_number, account_name, is_current)
         VALUES (?, ?, ?, ?, 1)
     ");
-    if (!$ins) return false;
+    if (!$ins)
+        return false;
     $ins->bind_param("ssss", $clientCode, $bankCode, $accountNumber, $accountName);
     $ok = $ins->execute();
     $ins->close();
@@ -270,7 +274,8 @@ function countPendingWithdrawals(mysqli $conn, string $userType, string $userCod
         WHERE user_type = ? AND user_code = ?
           AND request_type = 'withdrawal' AND status = 'pending'
     ");
-    if (!$stmt) return PHP_INT_MAX; // fail safe: treat as blocked
+    if (!$stmt)
+        return PHP_INT_MAX; // fail safe: treat as blocked
     $stmt->bind_param("ss", $userType, $userCode);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
@@ -278,3 +283,158 @@ function countPendingWithdrawals(mysqli $conn, string $userType, string $userCod
     return (int) ($row['n'] ?? 0);
 }
 
+// ============================================================
+// PASSWORD VERIFICATION WITH LOCKOUT
+// ============================================================
+// Reuses the existing tenant_login_attempts table (shared with login).
+// On failure: increments attempts, locks after 3 for 60 minutes.
+// On success: resets attempts to 0.
+//
+// Mirrors verifySecretAnswer() but for password-based reauthentication.
+
+/**
+ * Verify a tenant's password with the same lockout mechanism as login.
+ *
+ * @param mysqli $conn
+ * @param string $clientCode
+ * @param string $submittedPassword
+ * @param string $storedHash      (bcrypt hash from tenants.password)
+ * @return array ['ok' => bool, 'locked' => bool, 'message' => ?string]
+ */
+function verifyClientPasswordWithLockout(
+    mysqli $conn,
+    string $clientCode,
+    string $submittedPassword,
+    string $storedHash,
+    ?string $currentSessionId = null
+): array {
+    // ---- 1) Check current lockout ----
+    $stmt = $conn->prepare("
+        SELECT attempts, locked_until
+        FROM client_login_attempts
+        WHERE client_code = ?
+        LIMIT 1
+    ");
+    if (!$stmt) {
+        return ['ok' => false, 'locked' => true, 'message' => 'Unable to verify at this time. Please try again later.'];
+    }
+    $stmt->bind_param("s", $clientCode);
+    $stmt->execute();
+    $state = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $attempts = (int) ($state['attempts'] ?? 0);
+    $lockedUntil = $state['locked_until'] ?? null;
+
+    if ($attempts >= 3 && $lockedUntil) {
+        $until = new DateTime($lockedUntil);
+        $now = new DateTime();
+        if ($now < $until) {
+            $diff = $now->diff($until);
+            $mins = $diff->i + ($diff->h * 60);
+            $secs = $diff->s;
+            return [
+                'ok' => false,
+                'locked' => true,
+                'message' => "Account is temporarily locked due to failed attempts. Try again in {$mins}m {$secs}s.",
+            ];
+        }
+        // Expired — reset and continue
+        $reset = $conn->prepare("DELETE FROM client_login_attempts WHERE client_code = ?");
+        if ($reset) {
+            $reset->bind_param("s", $clientCode);
+            $reset->execute();
+            $reset->close();
+        }
+        $attempts = 0;
+    }
+
+    // ---- 2) Verify password ----
+    if (!password_verify($submittedPassword, $storedHash)) {
+        $attempts++;
+        $lockedUntil = null;
+        $nowLocked = false;
+
+        if ($attempts >= 3) {
+            $lockedUntil = date('Y-m-d H:i:s', time() + 3600);
+            $nowLocked = true;
+
+            // Log to lock history
+            try {
+                $hist = $conn->prepare("
+                    INSERT INTO client_lock_history
+                        (client_code, status, locked_by, lock_reason, lock_method, locked_at)
+                    VALUES (?, 'locked', 0, ?, 'Automatic lock (password reauth)', NOW())
+                ");
+                if ($hist) {
+                    $reason = "Account locked after {$attempts} failed password attempts";
+                    $hist->bind_param("ss", $clientCode, $reason);
+                    $hist->execute();
+                    $hist->close();
+                }
+            } catch (Throwable $_) {}
+
+            // Kill active sessions — spare the caller's own session if provided
+            try {
+                if ($currentSessionId !== null) {
+                    $kill = $conn->prepare("
+                        UPDATE client_active_sessions
+                        SET status = 'Inactive', logged_out_at = NOW()
+                        WHERE client_code = ? AND status = 'Active' AND session_id <> ?
+                    ");
+                    if ($kill) {
+                        $kill->bind_param("ss", $clientCode, $currentSessionId);
+                        $kill->execute();
+                        $kill->close();
+                    }
+                } else {
+                    $kill = $conn->prepare("
+                        UPDATE client_active_sessions
+                        SET status = 'Inactive', logged_out_at = NOW()
+                        WHERE client_code = ? AND status = 'Active'
+                    ");
+                    if ($kill) {
+                        $kill->bind_param("s", $clientCode);
+                        $kill->execute();
+                        $kill->close();
+                    }
+                }
+            } catch (Throwable $_) {}
+
+            logActivity("Client password lockout triggered: client={$clientCode} after {$attempts} attempts", 'WARN');
+        }
+
+        // Upsert attempt state
+        $up = $conn->prepare("
+            INSERT INTO client_login_attempts (client_code, attempts, last_attempt, locked_until)
+            VALUES (?, ?, NOW(), ?)
+            ON DUPLICATE KEY UPDATE
+                attempts = VALUES(attempts),
+                last_attempt = NOW(),
+                locked_until = VALUES(locked_until)
+        ");
+        if ($up) {
+            $up->bind_param("sis", $clientCode, $attempts, $lockedUntil);
+            $up->execute();
+            $up->close();
+        }
+
+        return [
+            'ok' => false,
+            'locked' => $nowLocked,
+            'message' => $nowLocked
+                ? "Incorrect password. Account locked for 60 minutes."
+                : "Incorrect password. " . (3 - $attempts) . " attempt(s) remaining.",
+        ];
+    }
+
+    // ---- 3) Success — reset attempts ----
+    $reset = $conn->prepare("DELETE FROM client_login_attempts WHERE client_code = ?");
+    if ($reset) {
+        $reset->bind_param("s", $clientCode);
+        $reset->execute();
+        $reset->close();
+    }
+
+    return ['ok' => true, 'locked' => false, 'message' => null];
+}

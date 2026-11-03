@@ -406,6 +406,7 @@ let tempAuthToken = null;
 
 // Main DOMContentLoaded event handler
 document.addEventListener("DOMContentLoaded", () => {
+  // On login page load:
   // Initialize modals
   const resetPasswordBtn = document.getElementById("resetPasswordBtn");
   const getSecretQuestionBtn = document.getElementById("getSecretQuestionBtn");
@@ -427,8 +428,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (action === "reset-password") {
     toggleModal("passwordResetModal", "flex");
-  }
-
+  } 
   // Event handlers for modal buttons
   if (resetPasswordBtn) {
     resetPasswordBtn.addEventListener("click", (e) => {

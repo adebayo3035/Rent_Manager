@@ -1,6 +1,6 @@
 <?php
 
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
@@ -9,7 +9,8 @@ require_once __DIR__ . '/../utilities/rate_limit.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/wallet_security.php';   // verifyTenantPasswordWithLockout
 
-if (!isset($_SESSION)) session_start();
+if (session_status() === PHP_SESSION_NONE)
+    session_start();
 rateLimiter();
 
 $auth = requireAuth([
@@ -31,7 +32,7 @@ try {
     $raw_input = file_get_contents('php://input');
     $input = json_decode($raw_input, true);
 
-    if (!$input) {
+    if (!is_array($input)) {
         json_error("Invalid input data", 400);
     }
 
@@ -49,7 +50,7 @@ try {
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         json_error("Invalid email format", 400);
     }
-    if (!validate_phone($phone)) {
+    if (function_exists('validate_phone') && !validate_phone($phone)) {
         json_error("Invalid phone number format", 400);
     }
     if (!empty($gender) && !in_array($gender, ['Male', 'Female', 'Other'], true)) {
@@ -91,13 +92,17 @@ try {
 
         // Verify password — outside any transaction so the lockout counter persists
         $pwCheck = verifyTenantPasswordWithLockout(
-            $conn, $tenant_code, $current_password, $current['password']
+            $conn, $tenant_code, $current_password, $current['password'], session_id()
         );
         if (!$pwCheck['ok']) {
-            logActivity("[UPDATE_PROFILE] Password reauth failed: " . ($pwCheck['message'] ?? ''), 'WARN');
+            $isLocked = !empty($pwCheck['locked']);
+            logActivity("[UPDATE_PROFILE] Password reauth rejected: " . ($pwCheck['message'] ?? ''), 'WARN');
             json_error(
                 $pwCheck['message'] ?? 'Incorrect password',
-                $pwCheck['locked'] ? 423 : 401
+                $isLocked ? 423 : 401,
+                null,
+                $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_PASSWORD',
+                $isLocked ? ['tenant_code' => $tenant_code] : null
             );
         }
         logActivity("[UPDATE_PROFILE] Password reauth succeeded for sensitive change");
@@ -169,7 +174,9 @@ try {
 
         // ---- Notification (inside transaction, atomic with update) ----
         try {
-            createSecurityNotification($conn, $tenant_code, 'profile_updated');
+            if (function_exists('createSecurityNotification')) {
+                createSecurityNotification($conn, $tenant_code, 'profile_updated');
+            }
         } catch (Throwable $notifErr) {
             logActivity("[UPDATE_PROFILE] Notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
             // Don't throw — notification failure shouldn't block the profile update
@@ -212,4 +219,8 @@ try {
     $code = $e->getCode();
     if ($code < 400 || $code >= 600) $code = 500;
     json_error($e->getMessage(), $code);
+} finally {
+    if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+        $conn->close();
+    }
 }

@@ -50,35 +50,32 @@ function json_success($data = null, $message = "Operation successful", $code = 2
  * @param mixed $errors Optional detailed error information
  * @param string $error_code Optional error code for client-side handling
  */
-function json_error($message, $code = 400, $errors = null, $error_code = null)
+function json_error($message, $code = 400, $errors = null, $error_code = null, $data = null)
 {
     http_response_code($code);
-    
+
     $payload = [
         'success' => false,
         'status_code' => $code,
         'message' => $message,
-        'timestamp' => date('Y-m-d H:i:s')
+        'timestamp' => date('Y-m-d H:i:s'),
     ];
-    
-    // Add error code if provided
-    if ($error_code !== null) {
+
+    if ($error_code !== null)
         $payload['error_code'] = $error_code;
-    }
-    
-    // Add detailed errors if provided (for validation errors)
-    if ($errors !== null) {
+    if ($errors !== null)
         $payload['errors'] = $errors;
-    }
-    
-    // Log the error
-    $safeMessage = is_array($message) ? json_encode($message) : (string)$message;
-    $logMessage  = "Response Error [{$code}]: {$safeMessage}";
-    if ($errors !== null) {
+    if ($data !== null)
+        $payload['data'] = $data;   // ← NEW
+
+    $safeMessage = is_array($message) ? json_encode($message) : (string) $message;
+    $logMessage = "Response Error [{$code}]: {$safeMessage}";
+    if ($errors !== null)
         $logMessage .= " | Details: " . json_encode($errors);
-    }
+    if ($data !== null)
+        $logMessage .= " | Data: " . json_encode($data);
     logActivity($logMessage);
-    
+
     echo json_encode($payload);
     exit();
 }
