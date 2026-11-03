@@ -6,8 +6,6 @@ class AccountUnlockManager {
     this.selectedAccounts = new Set();
     this.currentUserType = "admin";
     this.apiUrl = "../backend/utilities/unlock_account.php";
-    this.lockHistoryPage = 1;
-    this.lockHistoryFilters = {};
     this.init();
   }
 
@@ -15,374 +13,10 @@ class AccountUnlockManager {
     this.loadAccounts();
     this.setupEventListeners();
     this.setupModals();
-    this.setupUserTypeSelector();
     this.setupToasts();
-    this.setupLockHistoryListener();
-    this.setupLockHistoryFilters();
   }
 
-  // ==================== LOCK HISTORY METHODS ====================
-
-  setupLockHistoryListener() {
-    const viewHistoryBtn = document.getElementById("viewLockHistory");
-    if (viewHistoryBtn) {
-      viewHistoryBtn.addEventListener("click", () => {
-        this.showLockHistoryModal();
-      });
-    }
-  }
-
-  // In your AccountUnlockManager class
-  async showLockHistoryModal() {
-    const modal = document.getElementById("lockHistoryModal");
-    if (!modal) {
-      console.error("Lock history modal not found");
-      return;
-    }
-
-    // Show modal using your existing showModal method
-    this.showModal(modal);
-
-    // Or directly:
-    // modal.classList.add('show');
-    // document.body.style.overflow = 'hidden';
-
-    // Load history data
-    this.lockHistoryPage = 1;
-    this.lockHistoryFilters = {
-      user_type: this.currentUserType || "all",
-      action_type: "all",
-      status: "all",
-      search: "",
-      date_from: "",
-      date_to: "",
-    };
-
-    await this.loadLockHistory();
-  }
-
-  async loadLockHistory() {
-    const loadingRow = document.getElementById("historyLoadingRow");
-    const emptyState = document.getElementById("historyEmptyState");
-    const tableBody = document.getElementById("lockHistoryBody");
-
-    if (loadingRow) loadingRow.style.display = "";
-    if (emptyState) emptyState.style.display = "none";
-
-    if (tableBody) {
-      Array.from(tableBody.children).forEach((row) => {
-        if (row.id !== "historyLoadingRow") {
-          row.remove();
-        }
-      });
-    }
-
-    try {
-      const params = new URLSearchParams({
-        page: this.lockHistoryPage || 1,
-        limit: 20,
-        user_type: this.lockHistoryFilters.user_type || "all",
-        action_type: this.lockHistoryFilters.action_type || "all",
-        status: this.lockHistoryFilters.status || "all",
-        search: this.lockHistoryFilters.search || "",
-      });
-
-      if (this.lockHistoryFilters.date_from) {
-        params.append("date_from", this.lockHistoryFilters.date_from);
-      }
-      if (this.lockHistoryFilters.date_to) {
-        params.append("date_to", this.lockHistoryFilters.date_to);
-      }
-
-      const response = await fetch(
-        `../backend/utilities/lock_history.php?${params}`,
-      );
-      const data = await response.json();
-
-      if (data.success) {
-        this.renderLockHistory(data.history);
-        this.renderLockHistoryPagination(data.pagination);
-        this.updateLockHistoryStats(data.stats);
-        this.updateLockHistoryFilters(data.filters);
-
-        if (data.history.length === 0) {
-          if (loadingRow) loadingRow.style.display = "none";
-          if (emptyState) emptyState.style.display = "block";
-        } else {
-          if (loadingRow) loadingRow.style.display = "none";
-        }
-      } else {
-        this.showError(
-          "Failed to load lock history: " + (data.message || "Unknown error"),
-        );
-        if (loadingRow) loadingRow.style.display = "none";
-        if (emptyState) emptyState.style.display = "block";
-      }
-    } catch (error) {
-      console.error("Error loading lock history:", error);
-      this.showError("Failed to load lock history");
-      if (loadingRow) loadingRow.style.display = "none";
-      if (emptyState) emptyState.style.display = "block";
-    }
-  }
-
-  renderLockHistory(history) {
-    const tableBody = document.getElementById("lockHistoryBody");
-    if (!tableBody) return;
-
-    history.forEach((record) => {
-      const row = document.createElement("tr");
-
-      const statusClass =
-        record.status === "locked" ? "status-locked" : "status-unlocked";
-      const statusText = record.status === "locked" ? "LOCKED" : "UNLOCKED";
-
-      const lockTypeText =
-        record.lock_type === "login_attempts" ? "Failed Logins" : "Manual Lock";
-      const lockTypeClass =
-        record.lock_type === "login_attempts"
-          ? "lock-type-login"
-          : "lock-type-manual";
-
-      const userIcon = this.getUserTypeIcon(record.user_type);
-
-      row.innerHTML = `
-                <td><i class="fas ${userIcon}"></i> ${this.escapeHtml(record.user_id)}</td>
-                <td><strong>${this.escapeHtml(record.name)}</strong></td>
-                <td>${this.escapeHtml(record.email)}</td>
-                <td>${record.role}</td>
-                <td><span class="lock-type-badge ${lockTypeClass}">${lockTypeText}</span></td>
-                <td>${this.escapeHtml(record.lock_reason)}</td>
-                <td>${this.formatDateTime(record.locked_at)}</td>
-                <td>${record.unlocked_at ? this.formatDateTime(record.unlocked_at) : "N/A"}</td>
-                <td>${record.unlocked_by ? this.escapeHtml(record.unlocked_by) : "N/A"}</td>
-                <td>${record.unlock_method ? this.escapeHtml(record.unlock_method) : "N/A"}</td>
-                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
-            `;
-
-      tableBody.appendChild(row);
-    });
-  }
-
-  renderLockHistoryPagination(pagination) {
-    const paginationContainer = document.getElementById(
-      "lockHistoryPagination",
-    );
-    if (!paginationContainer) return;
-
-    if (pagination.total_pages <= 1) {
-      paginationContainer.innerHTML = "";
-      return;
-    }
-
-    let buttons = "";
-
-    if (this.lockHistoryPage > 1) {
-      buttons += `
-                <button class="page-btn" data-page="${this.lockHistoryPage - 1}">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-            `;
-    }
-
-    const maxVisible = 5;
-    let startPage = Math.max(
-      1,
-      this.lockHistoryPage - Math.floor(maxVisible / 2),
-    );
-    let endPage = Math.min(pagination.total_pages, startPage + maxVisible - 1);
-
-    for (let i = startPage; i <= endPage; i++) {
-      buttons += `
-                <button class="page-btn ${i === this.lockHistoryPage ? "active" : ""}" 
-                        data-page="${i}">
-                    ${i}
-                </button>
-            `;
-    }
-
-    if (this.lockHistoryPage < pagination.total_pages) {
-      buttons += `
-                <button class="page-btn" data-page="${this.lockHistoryPage + 1}">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            `;
-    }
-
-    const pageInfo = `
-            <div class="page-info">
-                Page ${this.lockHistoryPage} of ${pagination.total_pages}
-                (${pagination.total} total records)
-            </div>
-        `;
-
-    paginationContainer.innerHTML = buttons + pageInfo;
-
-    document
-      .querySelectorAll("#lockHistoryPagination .page-btn[data-page]")
-      .forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const page = parseInt(btn.dataset.page);
-          if (page && page !== this.lockHistoryPage) {
-            this.lockHistoryPage = page;
-            this.loadLockHistory();
-            document
-              .getElementById("lockHistoryBody")
-              .scrollIntoView({ behavior: "smooth" });
-          }
-        });
-      });
-  }
-
-  updateLockHistoryStats(stats) {
-    const elements = {
-      historyTotalLocks: stats.total_locks || 0,
-      historyLoginAttempts: stats.login_attempt_locks || 0,
-      historyManualLocks: stats.manual_locks || 0,
-      historyUnlocked: stats.unlocked || 0,
-      historyStillLocked: stats.still_locked || 0,
-    };
-
-    Object.entries(elements).forEach(([id, value]) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = value;
-    });
-  }
-
-  updateLockHistoryFilters(filters) {
-    const filterMap = {
-      historyUserTypeFilter: "user_type",
-      historyActionTypeFilter: "action_type",
-      historyStatusFilter: "status",
-      historySearchInput: "search",
-      historyDateFrom: "date_from",
-      historyDateTo: "date_to",
-    };
-
-    Object.entries(filterMap).forEach(([elementId, filterKey]) => {
-      const el = document.getElementById(elementId);
-      if (el && filters[filterKey]) {
-        el.value = filters[filterKey];
-      }
-    });
-  }
-
-  setupLockHistoryFilters() {
-    const applyBtn = document.getElementById("applyHistoryFilters");
-    if (applyBtn) {
-      applyBtn.addEventListener("click", () => {
-        this.applyHistoryFilters();
-      });
-    }
-
-    const resetBtn = document.getElementById("resetHistoryFilters");
-    if (resetBtn) {
-      resetBtn.addEventListener("click", () => {
-        this.resetHistoryFilters();
-      });
-    }
-
-    const searchInput = document.getElementById("historySearchInput");
-    if (searchInput) {
-      searchInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-          this.applyHistoryFilters();
-        }
-      });
-    }
-  }
-
-  applyHistoryFilters() {
-    const userType =
-      document.getElementById("historyUserTypeFilter")?.value || "all";
-    const actionType =
-      document.getElementById("historyActionTypeFilter")?.value || "all";
-    const status =
-      document.getElementById("historyStatusFilter")?.value || "all";
-    const search = document.getElementById("historySearchInput")?.value || "";
-    const dateFrom = document.getElementById("historyDateFrom")?.value || "";
-    const dateTo = document.getElementById("historyDateTo")?.value || "";
-
-    this.lockHistoryFilters = {
-      user_type: userType,
-      action_type: actionType,
-      status: status,
-      search: search,
-      date_from: dateFrom,
-      date_to: dateTo,
-    };
-
-    this.lockHistoryPage = 1;
-    this.loadLockHistory();
-  }
-
-  resetHistoryFilters() {
-    const elements = [
-      "historyUserTypeFilter",
-      "historyActionTypeFilter",
-      "historyStatusFilter",
-      "historySearchInput",
-      "historyDateFrom",
-      "historyDateTo",
-    ];
-
-    elements.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) {
-        if (el.tagName === "SELECT") {
-          el.value = "all";
-        } else {
-          el.value = "";
-        }
-      }
-    });
-
-    this.lockHistoryFilters = {
-      user_type: "all",
-      action_type: "all",
-      status: "all",
-      search: "",
-      date_from: "",
-      date_to: "",
-    };
-
-    this.lockHistoryPage = 1;
-    this.loadLockHistory();
-  }
-
-  // ==================== ACCOUNT MANAGEMENT METHODS ====================
-
-  setupUserTypeSelector() {
-    const controlsDiv = document.querySelector(".controls");
-    if (controlsDiv) {
-      const userTypeHtml = `
-                <div class="user-type-filter">
-                    <label><i class="fas fa-users"></i> User Type:</label>
-                    <select id="userTypeSelect" class="user-type-select">
-                        <option value="admin">Administrators</option>
-                        <option value="tenant">Tenants</option>
-                        <option value="agent">Agents</option>
-                        <option value="client">Clients</option>
-                    </select>
-                </div>
-            `;
-
-      const searchBox = document.querySelector(".search-box");
-      if (searchBox) {
-        searchBox.insertAdjacentHTML("afterend", userTypeHtml);
-      }
-    }
-
-    const userTypeSelect = document.getElementById("userTypeSelect");
-    if (userTypeSelect) {
-      userTypeSelect.addEventListener("change", (e) => {
-        this.currentUserType = e.target.value;
-        this.currentPage = 1;
-        this.selectedAccounts.clear();
-        this.loadAccounts();
-      });
-    }
-  }
+  // ==================== ACCOUNT MANAGEMENT ====================
 
   async loadAccounts() {
     const loadingRow = document.getElementById("loadingRow");
@@ -394,9 +28,7 @@ class AccountUnlockManager {
 
     if (tableBody) {
       Array.from(tableBody.children).forEach((row) => {
-        if (row.id !== "loadingRow") {
-          row.remove();
-        }
+        if (row.id !== "loadingRow") row.remove();
       });
     }
 
@@ -407,9 +39,7 @@ class AccountUnlockManager {
         user_type: this.currentUserType,
       });
 
-      if (this.searchTerm) {
-        params.append("search", this.searchTerm);
-      }
+      if (this.searchTerm) params.append("search", this.searchTerm);
 
       const response = await fetch(`${this.apiUrl}?${params}`);
       const data = await response.json();
@@ -457,29 +87,34 @@ class AccountUnlockManager {
         account.lock_type === "login_attempts"
           ? "lock-type-login"
           : "lock-type-manual";
-      const statusClass = "status-locked";
+      const attemptsSuffix = account.attempts ? ` · ${account.attempts}` : "";
       const userIcon = this.getUserTypeIcon(account.user_type);
+      const isSelected = this.selectedAccounts.has(
+        `${account.user_type}|${account.user_id}`,
+      );
 
       row.innerHTML = `
-                <td>
-                    <input type="checkbox" class="account-checkbox" 
+                <td data-label="">
+                    <input type="checkbox" class="account-checkbox"
                            data-id="${account.user_id}"
-                           data-user-type="${account.user_type}">
+                           data-user-type="${account.user_type}"
+                           ${isSelected ? "checked" : ""}>
                 </td>
-                <td><i class="fas ${userIcon}"></i> ${this.escapeHtml(account.user_id)}</td>
-                <td><strong>${this.escapeHtml(account.name)}</strong></td>
-                <td>${this.escapeHtml(account.email)}</td>
-                <td>${account.role}</td>
-                <td><span class="lock-type-badge ${lockTypeClass}">${lockTypeText}</span></td>
-                <td>${this.escapeHtml(account.lock_reason)}</td>
-                <td>${account.attempts || "N/A"}</td>
-                <td>${this.formatDateTime(account.locked_until) || "N/A"}</td>
-                <td><span class="status-badge ${statusClass}">LOCKED</span></td>
-                <td>
-                    <button class="btn-unlock" 
+                <td data-label="User">
+                    <i class="fas ${userIcon}" style="color:#667eea;margin-right:6px;"></i>
+                    <strong>${this.escapeHtml(account.name)}</strong>
+                </td>
+                <td data-label="Email">${this.escapeHtml(account.email)}</td>
+                <td data-label="Role">${this.escapeHtml(account.role)}</td>
+                <td data-label="Lock Type">
+                    <span class="lock-type-badge ${lockTypeClass}">${lockTypeText}${attemptsSuffix}</span>
+                </td>
+                <td data-label="Locked Until">${this.formatDateTime(account.locked_until) || "—"}</td>
+                <td data-label="Action">
+                    <button class="btn-unlock"
                             data-id="${account.user_id}"
                             data-user-type="${account.user_type}"
-                            data-email="${this.escapeHtml(account.email)}" 
+                            data-email="${this.escapeHtml(account.email)}"
                             data-name="${this.escapeHtml(account.name)}"
                             data-reason="${this.escapeHtml(account.lock_reason || "")}">
                         <i class="fas fa-unlock-alt"></i> Unlock
@@ -515,11 +150,8 @@ class AccountUnlockManager {
     let buttons = "";
 
     if (this.currentPage > 1) {
-      buttons += `
-                <button class="page-btn" data-page="${this.currentPage - 1}">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-            `;
+      buttons += `<button class="page-btn" data-page="${this.currentPage - 1}">
+                <i class="fas fa-chevron-left"></i></button>`;
     }
 
     const maxVisible = 5;
@@ -531,28 +163,18 @@ class AccountUnlockManager {
     }
 
     for (let i = startPage; i <= endPage; i++) {
-      buttons += `
-                <button class="page-btn ${i === this.currentPage ? "active" : ""}" 
-                        data-page="${i}">
-                    ${i}
-                </button>
-            `;
+      buttons += `<button class="page-btn ${i === this.currentPage ? "active" : ""}" data-page="${i}">${i}</button>`;
     }
 
     if (this.currentPage < pagination.total_pages) {
-      buttons += `
-                <button class="page-btn" data-page="${this.currentPage + 1}">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            `;
+      buttons += `<button class="page-btn" data-page="${this.currentPage + 1}">
+                <i class="fas fa-chevron-right"></i></button>`;
     }
 
-    const pageInfo = `
-            <div class="page-info">
-                Page ${this.currentPage} of ${pagination.total_pages}
-                (${pagination.total} total accounts)
-            </div>
-        `;
+    const pageInfo = `<div class="page-info">
+            Page ${this.currentPage} of ${pagination.total_pages}
+            (${pagination.total} total accounts)
+        </div>`;
 
     paginationContainer.innerHTML = buttons + pageInfo;
     this.setupPaginationEventListeners();
@@ -566,13 +188,12 @@ class AccountUnlockManager {
     const manualLocks = accounts.filter(
       (a) => a.lock_type === "manual_lock",
     ).length;
-    const unlockedToday = 0;
 
     const elements = {
       totalLocked: totalLocked,
       loginLocks: loginLocks,
       manualLocks: manualLocks,
-      unlockedToday: unlockedToday,
+      unlockedToday: 0,
     };
 
     Object.entries(elements).forEach(([id, value]) => {
@@ -584,17 +205,16 @@ class AccountUnlockManager {
   updateSelectedCount() {
     const selectedCount = this.selectedAccounts.size;
     const selectedCountSpan = document.getElementById("selectedCount");
-    const bulkUnlockBtn = document.getElementById("bulkUnlockBtn");
+    const bulkBarCount = document.getElementById("bulkBarCount");
+    const bulkActionBar = document.getElementById("bulkActionBar");
     const selectAllHeader = document.getElementById("selectAllHeader");
     const selectAll = document.getElementById("selectAll");
 
-    if (selectedCountSpan) {
+    if (selectedCountSpan)
       selectedCountSpan.textContent = `${selectedCount} selected`;
-    }
+    if (bulkBarCount) bulkBarCount.textContent = selectedCount;
 
-    if (bulkUnlockBtn) {
-      bulkUnlockBtn.disabled = selectedCount === 0;
-    }
+    if (bulkActionBar) bulkActionBar.hidden = selectedCount === 0;
 
     const totalCheckboxes = document.querySelectorAll(
       ".account-checkbox:not(:disabled)",
@@ -610,31 +230,26 @@ class AccountUnlockManager {
   }
 
   setupEventListeners() {
-    const searchBtn = document.getElementById("searchBtn");
     const searchInput = document.getElementById("searchInput");
     const refreshBtn = document.getElementById("refreshBtn");
     const bulkUnlockBtn = document.getElementById("bulkUnlockBtn");
+    const clearSelectionBtn = document.getElementById("clearSelectionBtn");
     const exportBtn = document.getElementById("exportBtn");
     const selectAllHeader = document.getElementById("selectAllHeader");
     const selectAll = document.getElementById("selectAll");
+    const userTypeSelect = document.getElementById("userTypeSelect");
 
-    if (searchBtn && searchInput) {
-      searchBtn.addEventListener("click", () => {
-        this.searchTerm = searchInput.value.trim();
-        this.currentPage = 1;
-        this.selectedAccounts.clear();
-        this.loadAccounts();
-      });
-    }
-
+    // Search (debounced on Enter + button removed; toolbar uses input only)
     if (searchInput) {
-      searchInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
+      let debounceTimer;
+      searchInput.addEventListener("input", (e) => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
           this.searchTerm = e.target.value.trim();
           this.currentPage = 1;
           this.selectedAccounts.clear();
           this.loadAccounts();
-        }
+        }, 400);
       });
     }
 
@@ -650,15 +265,21 @@ class AccountUnlockManager {
     }
 
     if (bulkUnlockBtn) {
-      bulkUnlockBtn.addEventListener("click", () => {
-        this.showBulkUnlockModal();
+      bulkUnlockBtn.addEventListener("click", () => this.showBulkUnlockModal());
+    }
+
+    if (clearSelectionBtn) {
+      clearSelectionBtn.addEventListener("click", () => {
+        this.selectedAccounts.clear();
+        document
+          .querySelectorAll(".account-checkbox")
+          .forEach((cb) => (cb.checked = false));
+        this.updateSelectedCount();
       });
     }
 
     if (exportBtn) {
-      exportBtn.addEventListener("click", () => {
-        this.exportToCSV();
-      });
+      exportBtn.addEventListener("click", () => this.exportToCSV());
     }
 
     if (selectAllHeader) {
@@ -670,6 +291,15 @@ class AccountUnlockManager {
     if (selectAll) {
       selectAll.addEventListener("change", (e) => {
         this.toggleAllCheckboxes(e.target.checked);
+      });
+    }
+
+    if (userTypeSelect) {
+      userTypeSelect.addEventListener("change", (e) => {
+        this.currentUserType = e.target.value;
+        this.currentPage = 1;
+        this.selectedAccounts.clear();
+        this.loadAccounts();
       });
     }
   }
@@ -692,12 +322,9 @@ class AccountUnlockManager {
   }
 
   setupRowEventListeners() {
-    // Checkbox events - using event delegation for better performance
     document.querySelectorAll(".account-checkbox").forEach((checkbox) => {
-      // Remove old listener if exists
-      if (checkbox._listener) {
+      if (checkbox._listener)
         checkbox.removeEventListener("change", checkbox._listener);
-      }
 
       checkbox._listener = (e) => {
         const accountId = e.target.dataset.id;
@@ -714,11 +341,9 @@ class AccountUnlockManager {
       checkbox.addEventListener("change", checkbox._listener);
     });
 
-    // Unlock button events
     document.querySelectorAll(".btn-unlock").forEach((button) => {
-      if (button._listener) {
+      if (button._listener)
         button.removeEventListener("click", button._listener);
-      }
 
       button._listener = (e) => {
         e.stopPropagation();
@@ -737,12 +362,11 @@ class AccountUnlockManager {
 
   setupPaginationEventListeners() {
     document.querySelectorAll(".page-btn").forEach((button) => {
-      if (button._listener) {
+      if (button._listener)
         button.removeEventListener("click", button._listener);
-      }
 
       button._listener = (e) => {
-        const page = parseInt(e.target.dataset.page);
+        const page = parseInt(e.currentTarget.dataset.page);
         if (page && page !== this.currentPage) {
           this.currentPage = page;
           this.loadAccounts();
@@ -772,15 +396,12 @@ class AccountUnlockManager {
       const cancelUnlock = unlockModal.querySelector(".cancel-unlock");
       const confirmUnlock = unlockModal.querySelector(".confirm-unlock");
 
-      if (closeUnlockModal) {
+      if (closeUnlockModal)
         closeUnlockModal.addEventListener("click", () =>
           hideModal(unlockModal),
         );
-      }
-
-      if (cancelUnlock) {
+      if (cancelUnlock)
         cancelUnlock.addEventListener("click", () => hideModal(unlockModal));
-      }
 
       if (confirmUnlock) {
         confirmUnlock.addEventListener("click", () => {
@@ -792,18 +413,14 @@ class AccountUnlockManager {
           if (accountId && userType) {
             this.unlockSingleAccount(accountId, userType, reason);
           } else {
-            console.error("Missing account ID or user type");
             this.showError("Unable to unlock account: Missing information");
           }
           hideModal(unlockModal);
         });
       }
 
-      // Close on outside click
       unlockModal.addEventListener("click", (e) => {
-        if (e.target === unlockModal) {
-          hideModal(unlockModal);
-        }
+        if (e.target === unlockModal) hideModal(unlockModal);
       });
     }
 
@@ -814,13 +431,10 @@ class AccountUnlockManager {
       const cancelBulkUnlock = bulkModal.querySelector(".cancel-bulk-unlock");
       const confirmBulkUnlock = bulkModal.querySelector(".confirm-bulk-unlock");
 
-      if (closeBulkModal) {
+      if (closeBulkModal)
         closeBulkModal.addEventListener("click", () => hideModal(bulkModal));
-      }
-
-      if (cancelBulkUnlock) {
+      if (cancelBulkUnlock)
         cancelBulkUnlock.addEventListener("click", () => hideModal(bulkModal));
-      }
 
       if (confirmBulkUnlock) {
         confirmBulkUnlock.addEventListener("click", () => {
@@ -835,37 +449,13 @@ class AccountUnlockManager {
         });
       }
 
-      // Close on outside click
       bulkModal.addEventListener("click", (e) => {
-        if (e.target === bulkModal) {
-          hideModal(bulkModal);
-        }
+        if (e.target === bulkModal) hideModal(bulkModal);
       });
     }
 
-    // ===== LOCK HISTORY MODAL =====
-    const lockHistoryModal = document.getElementById("lockHistoryModal");
-    if (lockHistoryModal) {
-      // Find all close buttons in this modal
-      const closeButtons = lockHistoryModal.querySelectorAll(".close-modal");
-      closeButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          hideModal(lockHistoryModal);
-        });
-      });
-
-      // Also close on outside click
-      lockHistoryModal.addEventListener("click", (e) => {
-        if (e.target === lockHistoryModal) {
-          hideModal(lockHistoryModal);
-        }
-      });
-    }
-
-    // Store references
     this.unlockModal = unlockModal;
     this.bulkModal = bulkModal;
-    this.lockHistoryModal = lockHistoryModal;
     this.showModal = showModal;
     this.hideModal = hideModal;
   }
@@ -913,33 +503,29 @@ class AccountUnlockManager {
           const accountId = checkbox.dataset.id;
           const userType = checkbox.dataset.userType;
           const name =
-            row.cells[2]?.querySelector("strong")?.textContent || "N/A";
-          const email = row.cells[3]?.textContent || "N/A";
+            row.querySelector('td[data-label="User"] strong')?.textContent ||
+            "N/A";
+          const email =
+            row.querySelector('td[data-label="Email"]')?.textContent || "N/A";
 
           const accountItem = document.createElement("div");
           accountItem.className = "selected-account-item";
           accountItem.innerHTML = `
-                    <div>
-                        <strong>${this.escapeHtml(name)}</strong>
-                        <div class="text-muted">${this.escapeHtml(email)} (${userType}: ${accountId})</div>
-                    </div>
+                    <strong>${this.escapeHtml(name)}</strong>
+                    <div class="text-muted">${this.escapeHtml(email)} (${userType}: ${accountId})</div>
                 `;
           selectedAccountsList.appendChild(accountItem);
         });
     }
 
-    if (this.bulkModal) {
-      this.showModal(this.bulkModal);
-    }
+    if (this.bulkModal) this.showModal(this.bulkModal);
   }
 
   async unlockSingleAccount(accountId, userType, reason) {
     try {
       const response = await fetch(this.apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "unlock_account",
           user_type: userType,
@@ -971,9 +557,7 @@ class AccountUnlockManager {
 
     this.selectedAccounts.forEach((accountKey) => {
       const [userType, accountId] = accountKey.split("|");
-      if (!accountsByType[userType]) {
-        accountsByType[userType] = [];
-      }
+      if (!accountsByType[userType]) accountsByType[userType] = [];
       accountsByType[userType].push(accountId);
     });
 
@@ -989,9 +573,7 @@ class AccountUnlockManager {
       for (const [userType, accountIds] of Object.entries(accountsByType)) {
         const response = await fetch(this.apiUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "bulk_unlock",
             user_type: userType,
@@ -1036,38 +618,36 @@ class AccountUnlockManager {
     }
 
     let csv =
-      "User ID,Name,Email,Role,Lock Type,Lock Reason,Failed Attempts,Locked Until,Status\n";
+      "User ID,Name,Email,Role,Lock Type,Locked Until,Status\n";
 
     rows.forEach((row) => {
-      const cells = row.querySelectorAll("td");
-      if (cells.length >= 10) {
-        const data = [
-          cells[1]?.textContent.trim() || "",
-          cells[2]?.querySelector("strong")?.textContent ||
-            cells[2]?.textContent.trim() ||
-            "",
-          cells[3]?.textContent.trim() || "",
-          cells[4]?.textContent.trim() || "",
-          cells[5]?.querySelector(".lock-type-badge")?.textContent ||
-            cells[5]?.textContent.trim() ||
-            "",
-          cells[6]?.textContent.trim() || "",
-          cells[7]?.textContent.trim() || "",
-          cells[8]?.textContent.trim() || "",
-          cells[9]?.querySelector(".status-badge")?.textContent ||
-            cells[9]?.textContent.trim() ||
-            "",
-        ];
+      const userCell = row.querySelector('td[data-label="User"]');
+      const emailCell = row.querySelector('td[data-label="Email"]');
+      const roleCell = row.querySelector('td[data-label="Role"]');
+      const lockTypeCell = row.querySelector('td[data-label="Lock Type"]');
+      const lockedUntilCell = row.querySelector('td[data-label="Locked Until"]');
+      const checkbox = row.querySelector(".account-checkbox");
 
-        const escapedData = data.map((cell) => {
-          if (cell.includes(",") || cell.includes('"') || cell.includes("\n")) {
-            return `"${cell.replace(/"/g, '""')}"`;
-          }
-          return cell;
-        });
+      if (!checkbox) return;
 
-        csv += escapedData.join(",") + "\n";
-      }
+      const data = [
+        checkbox.dataset.id || "",
+        userCell?.querySelector("strong")?.textContent.trim() || "",
+        emailCell?.textContent.trim() || "",
+        roleCell?.textContent.trim() || "",
+        lockTypeCell?.textContent.trim() || "",
+        lockedUntilCell?.textContent.trim() || "",
+        "LOCKED",
+      ];
+
+      const escapedData = data.map((cell) => {
+        if (cell.includes(",") || cell.includes('"') || cell.includes("\n")) {
+          return `"${cell.replace(/"/g, '""')}"`;
+        }
+        return cell;
+      });
+
+      csv += escapedData.join(",") + "\n";
     });
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -1083,7 +663,7 @@ class AccountUnlockManager {
     this.showSuccess("Export completed successfully");
   }
 
-  // ==================== UTILITY METHODS ====================
+  // ==================== UTILITIES ====================
 
   setupToasts() {
     if (typeof toastr !== "undefined") {
@@ -1107,32 +687,22 @@ class AccountUnlockManager {
   }
 
   showSuccess(message) {
-    if (typeof toastr !== "undefined") {
-      toastr.success(message, "Success");
-    } else {
-      console.log("Success:", message);
-    }
+    if (typeof toastr !== "undefined") toastr.success(message, "Success");
+    else console.log("Success:", message);
   }
 
   showError(message) {
-    if (typeof toastr !== "undefined") {
-      toastr.error(message, "Error");
-    } else {
-      console.error("Error:", message);
-    }
+    if (typeof toastr !== "undefined") toastr.error(message, "Error");
+    else console.error("Error:", message);
   }
 
   showWarning(message) {
-    if (typeof toastr !== "undefined") {
-      toastr.warning(message, "Warning");
-    } else {
-      console.warn("Warning:", message);
-    }
+    if (typeof toastr !== "undefined") toastr.warning(message, "Warning");
+    else console.warn("Warning:", message);
   }
 
   formatDateTime(dateTimeString) {
     if (!dateTimeString) return "N/A";
-
     try {
       const date = new Date(dateTimeString);
       return (
@@ -1153,7 +723,6 @@ class AccountUnlockManager {
   }
 }
 
-// Initialize the manager when DOM is loaded
 document.addEventListener("DOMContentLoaded", () => {
   window.accountUnlockManager = new AccountUnlockManager();
 });
