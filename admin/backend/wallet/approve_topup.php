@@ -7,7 +7,7 @@ require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
-require_once __DIR__ . '/../../../client/backend/utilities/notification_helper.php';
+require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
 
 if (session_status() === PHP_SESSION_NONE) session_start();
@@ -36,7 +36,7 @@ $conn->begin_transaction();
 logActivity("[APPROVE_TOPUP] Transaction started");
 
 try {
-    // ---- 1) Load request ----
+    // ---- 1) Load request (locked) ----
     $stmt = $conn->prepare("
         SELECT id, user_type, user_code, amount, status, reference_number
         FROM wallet_requests
@@ -76,7 +76,7 @@ try {
     ");
     if (!$lockStmt) throw new Exception("Prepare failed (lock client): " . $conn->error);
     $lockStmt->bind_param("s", $clientCode);
-    $lockStmt->execute();
+    if (!$lockStmt->execute()) throw new Exception("Lock client failed: " . $lockStmt->error);
     $client = $lockStmt->get_result()->fetch_assoc();
     $lockStmt->close();
     if (!$client) {
@@ -94,17 +94,9 @@ try {
     if (!$credit->execute()) throw new Exception("Failed to credit wallet: " . $credit->error);
     $credit->close();
 
-    // Re-read balance after credit (FOR UPDATE)
-    $balStmt = $conn->prepare("
-        SELECT wallet_balance FROM clients WHERE client_code = ? LIMIT 1 FOR UPDATE
-    ");
-    if (!$balStmt) throw new Exception("Prepare failed (read balance): " . $conn->error);
-    $balStmt->bind_param("s", $clientCode);
-    $balStmt->execute();
-    $balRow = $balStmt->get_result()->fetch_assoc();
-    $balStmt->close();
-    if (!$balRow) throw new Exception("Failed to read post-credit balance", 500);
-    $newBalance = round((float) $balRow['wallet_balance'], 2);
+    // Compute new balance from the locked old balance (no second read needed —
+    // the row is locked for the entire transaction, no one else can modify it).
+    $newBalance = round($oldBalance + $amount, 2);
 
     logActivity("[APPROVE_TOPUP] Wallet credited: {$clientCode} "
         . "₦" . number_format($oldBalance, 2) . " → ₦" . number_format($newBalance, 2)
@@ -124,7 +116,13 @@ try {
     ");
     if (!$ledger) throw new Exception("Prepare failed (ledger): " . $conn->error);
     $ledger->bind_param("sddssi", $clientCode, $amount, $newBalance, $requestCode, $note, $adminId);
-    if (!$ledger->execute()) throw new Exception("Ledger write failed: " . $ledger->error);
+    if (!$ledger->execute()) {
+        if ($ledger->errno === 1062) {
+            logActivity("[APPROVE_TOPUP] DB rejected: duplicate topup ledger for {$requestCode}", 'WARN');
+            throw new Exception("Top-up already credited for this request", 409);
+        }
+        throw new Exception("Ledger write failed: " . $ledger->error);
+    }
     $ledgerId = $ledger->insert_id;
     $ledger->close();
 
@@ -148,58 +146,8 @@ try {
     $update->close();
     logActivity("[APPROVE_TOPUP] Request marked approved: {$requestCode}");
 
-    // ---- 5) Notify client ----
-    try {
-        $title   = 'Wallet Topped Up';
-        $message = "Your wallet has been credited with ₦" . number_format($amount, 2)
-                 . ". New balance: ₦" . number_format($newBalance, 2) . ".";
-        $details = [
-            'request_code' => $requestCode,
-            'amount'       => $amount,
-            'new_balance'  => $newBalance,
-        ];
-
-        if (function_exists('createClientNotification')) {
-            createClientNotification(
-                $conn, $clientCode, 'wallet', $title, $message, $details,
-                'normal', '../wallet.php', 'View Wallet'
-            );
-            logActivity("[APPROVE_TOPUP] Client notification sent via createClientNotification");
-        } else {
-            $detailsJson = json_encode($details);
-            $notif = $conn->prepare("
-                INSERT INTO client_notifications
-                    (client_code, notification_type, title, message, details,
-                     priority, action_url, action_text, is_read, created_at)
-                VALUES (?, 'wallet', ?, ?, ?, 'normal', '../wallet.php', 'View Wallet', 0, NOW())
-            ");
-            if (!$notif) throw new Exception("Prepare failed (notification): " . $conn->error);
-            $notif->bind_param("ssss", $clientCode, $title, $message, $detailsJson);
-            if (!$notif->execute()) throw new Exception("Notification insert failed: " . $notif->error);
-            $notif->close();
-            logActivity("[APPROVE_TOPUP] Client notification sent via raw insert (helper missing)");
-        }
-    } catch (Throwable $notifErr) {
-        logActivity("[APPROVE_TOPUP] Client notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
-    }
-
     $conn->commit();
     logActivity("[APPROVE_TOPUP] Transaction committed");
-
-    logActivity("[APPROVE_TOPUP] ========== SUCCESS ==========");
-    logActivity("[APPROVE_TOPUP] request_code={$requestCode}, client={$clientCode}, "
-        . "amount=₦" . number_format($amount, 2)
-        . ", old_balance=₦" . number_format($oldBalance, 2)
-        . ", new_balance=₦" . number_format($newBalance, 2)
-        . ", admin={$adminId}");
-
-    json_success('Top-up approved and wallet credited', [
-        'request_code'          => $requestCode,
-        'amount'                => $amount,
-        'amount_formatted'      => '₦' . number_format($amount, 2),
-        'new_balance'           => $newBalance,
-        'new_balance_formatted' => '₦' . number_format($newBalance, 2),
-    ]);
 
 } catch (Throwable $e) {
     $conn->rollback();
@@ -207,4 +155,65 @@ try {
     logActivity("[APPROVE_TOPUP] Stack: " . $e->getTraceAsString(), 'ERROR');
     logActivity("[APPROVE_TOPUP] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
+    exit;
+} 
+// finally {
+//     if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+//         $conn->close();
+//     }
+// }
+
+// ---- Notify client (best-effort, post-commit) ----
+try {
+    $title   = 'Wallet Topped Up';
+    $message = "Your wallet has been credited with ₦" . number_format($amount, 2)
+             . ". New balance: ₦" . number_format($newBalance, 2) . ".";
+    $details = [
+        'request_code' => $requestCode,
+        'amount'       => $amount,
+        'new_balance'  => $newBalance,
+    ];
+
+    if (function_exists('createClientNotification')) {
+        createClientNotification(
+            $conn, $clientCode, 'wallet', $title, $message, $details,
+            'normal', '../wallet.php', 'View Wallet'
+        );
+        logActivity("[APPROVE_TOPUP] Client notification sent via createClientNotification");
+    } else {
+        $detailsJson = json_encode($details);
+        $notif = $conn->prepare("
+            INSERT INTO client_notifications
+                (client_code, notification_type, title, message, details,
+                 priority, action_url, action_text, is_read, created_at)
+            VALUES (?, 'wallet', ?, ?, ?, 'normal', '../wallet.php', 'View Wallet', 0, NOW())
+        ");
+        if ($notif) {
+            $notif->bind_param("ssss", $clientCode, $title, $message, $detailsJson);
+            $notif->execute();
+            $notif->close();
+            logActivity("[APPROVE_TOPUP] Client notification sent via raw insert (helper missing)");
+        }
+    }
+} catch (Throwable $notifErr) {
+    logActivity("[APPROVE_TOPUP] Client notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
 }
+// ---- Close connection LAST ----
+if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+    $conn->close();
+}
+
+logActivity("[APPROVE_TOPUP] ========== SUCCESS ==========");
+logActivity("[APPROVE_TOPUP] request_code={$requestCode}, client={$clientCode}, "
+    . "amount=₦" . number_format($amount, 2)
+    . ", old_balance=₦" . number_format($oldBalance, 2)
+    . ", new_balance=₦" . number_format($newBalance, 2)
+    . ", admin={$adminId}");
+
+json_success('Top-up approved and wallet credited', [
+    'request_code'          => $requestCode,
+    'amount'                => $amount,
+    'amount_formatted'      => '₦' . number_format($amount, 2),
+    'new_balance'           => $newBalance,
+    'new_balance_formatted' => '₦' . number_format($newBalance, 2),
+]);

@@ -471,34 +471,22 @@ function createClientNotification(
     ?string $actionText = null
 ): ?int {
     try {
-        // Validate priority — must be one of the enum values
         $allowedPriorities = ['low', 'medium', 'high', 'urgent'];
-        if (!in_array($priority, $allowedPriorities, true)) {
-            logActivity("[CLIENT_NOTIF_ERROR] Invalid priority '{$priority}', falling back to 'medium'");
+        if (!in_array($priority, $allowedPriorities, true))
             $priority = 'medium';
-        }
 
-        // Serialize details as JSON
         $detailsJson = empty($details) ? null : json_encode($details);
-
-        // Truncate action_text to 100 chars (schema limit)
-        if ($actionText !== null && strlen($actionText) > 100) {
+        if ($actionText !== null && strlen($actionText) > 100)
             $actionText = substr($actionText, 0, 100);
-        }
-
-        // Truncate action_url to 255 chars (schema limit)
-        if ($actionUrl !== null && strlen($actionUrl) > 255) {
+        if ($actionUrl !== null && strlen($actionUrl) > 255)
             $actionUrl = substr($actionUrl, 0, 255);
-        }
 
         $insert = $conn->prepare("
             INSERT INTO client_notifications
                 (client_code, notification_type, title, message, details,
                  priority, action_url, action_text, is_read, is_archived, created_at)
-            VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
         ");
-
         if (!$insert) {
             logActivity("[CLIENT_NOTIF_ERROR] Prepare failed: " . $conn->error);
             return null;
@@ -524,10 +512,72 @@ function createClientNotification(
 
         $id = (int) $insert->insert_id;
         $insert->close();
+        logActivity("[CLIENT_NOTIF] Created ID={$id}, client={$clientCode}, type={$type}, title='{$title}'");
         return $id;
 
     } catch (Throwable $e) {
         logActivity("[CLIENT_NOTIF_ERROR] " . $e->getMessage());
+        return null;
+    }
+}
+function createAdminNotification(
+    mysqli $conn,
+    int $assignedTo,
+    string $category,
+    string $title,
+    string $message,
+    string $type = 'info',
+    int $userId = 0
+): ?int {
+    try {
+        $allowedTypes = ['info', 'success', 'warning', 'danger', 'system'];
+        if (!in_array($type, $allowedTypes, true))
+            $type = 'info';
+
+        $allowedCategories = [
+            'account_reactivation',
+            'account_lock',
+            'payment_confirmation',
+            'order_update',
+            'report',
+            'system_alert',
+            'promotion',
+            'other',
+            'account_unlock',
+        ];
+        if (!in_array($category, $allowedCategories, true))
+            $category = 'other';
+
+        $insert = $conn->prepare("
+            INSERT INTO notifications
+                (user_id, assigned_to, title, message, type, category,
+                 is_read, is_archived, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, '0', NOW())
+        ");
+        if (!$insert) {
+            logActivity("[ADMIN_NOTIF_ERROR] Prepare failed: " . $conn->error);
+            return null;
+        }
+        $insert->bind_param(
+            "iissss",
+            $userId,
+            $assignedTo,
+            $title,
+            $message,
+            $type,
+            $category
+        );
+        if (!$insert->execute()) {
+            logActivity("[ADMIN_NOTIF_ERROR] Execute failed: " . $insert->error);
+            $insert->close();
+            return null;
+        }
+        $id = (int) $insert->insert_id;
+        $insert->close();
+        logActivity("[ADMIN_NOTIF] Created ID={$id}, assigned_to={$assignedTo}, category={$category}, title='{$title}'");
+        return $id;
+    } catch (Throwable $e) {
+        logActivity("[ADMIN_NOTIF_ERROR] " . $e->getMessage());
         return null;
     }
 }

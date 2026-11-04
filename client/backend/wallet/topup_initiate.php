@@ -47,9 +47,9 @@ logActivity("[TOPUP_INITIATE] Input: amount_raw={$amountRaw}, "
     . "proof={$proofFileName} ({$proofFileSize} bytes), "
     . "notes_len=" . strlen($notes));
 
-// ---- Derive authoritative reference ----
+// ---- Derive authoritative bank reference ----
 $reference = clientTopupReference($clientCode);
-logActivity("[TOPUP_INITIATE] Server-derived reference: {$reference}");
+logActivity("[TOPUP_INITIATE] Server-derived bank reference: {$reference}");
 
 if ($clientReference !== '' && !clientTopupReferenceMatches($clientCode, $clientReference)) {
     if (STRICT_REFERENCE_CHECK) {
@@ -61,11 +61,11 @@ if ($clientReference !== '' && !clientTopupReferenceMatches($clientCode, $client
         . "with server value '{$reference}'.", 'WARN');
 }
 
-// ---- Amount ----
+// ---- Amount (strict: digits + up to 2 decimals only) ----
 $amountClean = str_replace(',', '', $amountRaw);
-if (!is_numeric($amountClean)) {
-    logActivity("[TOPUP_INITIATE] Invalid amount (non-numeric): '{$amountRaw}'", 'WARN');
-    json_error("Please enter a valid amount", 400);
+if (!preg_match('/^\d{1,8}(\.\d{1,2})?$/', $amountClean)) {
+    logActivity("[TOPUP_INITIATE] Invalid amount format: '{$amountRaw}'", 'WARN');
+    json_error("Please enter a valid amount (numbers only, up to 2 decimal places)", 400);
 }
 $amount = round((float) $amountClean, 2);
 if ($amount < 1000) {
@@ -89,14 +89,37 @@ if ($proof['error'] !== UPLOAD_ERR_OK) {
     json_error("Upload failed. Please try again.", 400);
 }
 
-$proofExt  = strtolower(pathinfo(basename($proof['name']), PATHINFO_EXTENSION));
-$proofMime = mime_content_type($proof['tmp_name']);
-$allowedExt  = ['jpg', 'jpeg', 'png', 'pdf'];
-$allowedMime = ['image/jpeg', 'image/png', 'application/pdf'];
-if (!in_array($proofExt, $allowedExt, true) || !in_array($proofMime, $allowedMime, true)) {
-    logActivity("[TOPUP_INITIATE] Rejected proof: EXT={$proofExt}, MIME={$proofMime}", 'WARN');
+$proofExt = strtolower(pathinfo(basename($proof['name']), PATHINFO_EXTENSION));
+
+$extMimeMap = [
+    'jpg'  => 'image/jpeg',
+    'jpeg' => 'image/jpeg',
+    'png'  => 'image/png',
+    'pdf'  => 'application/pdf',
+];
+if (!isset($extMimeMap[$proofExt])) {
+    logActivity("[TOPUP_INITIATE] Rejected proof: unsupported extension '{$proofExt}'", 'WARN');
     json_error("Proof must be JPG, PNG, or PDF", 400);
 }
+
+if (!function_exists('finfo_open')) {
+    logActivity("[TOPUP_INITIATE] ERROR: fileinfo extension unavailable", 'ERROR');
+    json_error("Server misconfiguration — please contact support", 500);
+}
+$finfo = finfo_open(FILEINFO_MIME_TYPE);
+if ($finfo === false) {
+    logActivity("[TOPUP_INITIATE] ERROR: finfo_open failed", 'ERROR');
+    json_error("Server misconfiguration — please contact support", 500);
+}
+$proofMime = finfo_file($finfo, $proof['tmp_name']);
+// finfo_close() is deprecated in PHP 8.5 — the finfo object is freed automatically.
+
+if ($proofMime !== $extMimeMap[$proofExt]) {
+    logActivity("[TOPUP_INITIATE] Rejected proof: extension/content mismatch — "
+        . "ext={$proofExt}, actual_mime={$proofMime}", 'WARN');
+    json_error("Proof file content does not match its extension", 400);
+}
+
 if ($proof['size'] > 3 * 1024 * 1024) {
     logActivity("[TOPUP_INITIATE] Proof too large: {$proof['size']} bytes", 'WARN');
     json_error("Proof file too large (max 3 MB)", 400);
@@ -119,12 +142,13 @@ $conn->begin_transaction();
 logActivity("[TOPUP_INITIATE] Transaction started");
 
 try {
-    // ---- Duplicate check ----
+    // ---- Duplicate check (fast reject; DB UNIQUE is the real guard) ----
     $dupCheck = $conn->prepare("
         SELECT id FROM wallet_requests
         WHERE user_type = 'client' AND user_code = ?
           AND reference_number = ?
-          AND status IN ('pending', 'approved')
+          AND request_type = 'topup'
+          AND status = 'pending'
         LIMIT 1
     ");
     if (!$dupCheck) throw new Exception("Prepare failed (dup check): " . $conn->error);
@@ -133,10 +157,9 @@ try {
     if ($dupCheck->get_result()->num_rows > 0) {
         $dupCheck->close();
         @unlink($proofPath);
-        logActivity("[TOPUP_INITIATE] Duplicate pending/approved top-up for reference {$reference}", 'WARN');
+        logActivity("[TOPUP_INITIATE] Duplicate pending top-up for reference {$reference}", 'WARN');
         throw new Exception(
-            "You already have a pending top-up with this reference. "
-            . "Wait for it to be processed before submitting another.",
+            "You already have a pending top-up. Wait for it to be processed before submitting another.",
             409
         );
     }
@@ -161,56 +184,113 @@ try {
         $notes,
         $reference
     );
-    if (!$ins->execute()) throw new Exception("Failed to save request: " . $ins->error);
+    if (!$ins->execute()) {
+        // Handle DB-level UNIQUE violations:
+        //  - pending_marker (one pending top-up per client) OR
+        //  - request_code collision (astronomically rare).
+        if ($ins->errno === 1062) {
+            $errText = $ins->error;
+            @unlink($proofPath);
+            if (stripos($errText, 'pending_marker') !== false
+                || stripos($errText, 'uniq_pending_per_user_type') !== false) {
+                logActivity("[TOPUP_INITIATE] DB rejected: pending top-up already exists (concurrent insert) for {$clientCode}", 'WARN');
+                throw new Exception(
+                    "You already have a pending top-up. Wait for it to be processed before submitting another.",
+                    409
+                );
+            }
+            logActivity("[TOPUP_INITIATE] DB rejected: request_code collision {$requestCode}", 'WARN');
+            throw new Exception("Please try again (transient issue)", 409);
+        }
+        throw new Exception("Failed to save request: " . $ins->error);
+    }
     $ins->close();
     logActivity("[TOPUP_INITIATE] wallet_requests row inserted: "
         . "request_code={$requestCode}, amount=₦" . number_format($amount, 2)
         . ", reference={$reference}, status=pending");
 
-    // ---- Notify admins ----
-    $notifiedAdmins = 0;
-    try {
-        $admins = $conn->query("SELECT unique_id FROM admin_tbl WHERE status = 1 LIMIT 10");
-        while ($adm = $admins->fetch_assoc()) {
-            createNotification(
-                $conn,
-                $adm['unique_id'],
-                'wallet',
-                'New Client Top-Up Request',
-                "Client {$clientCode} requested a top-up of ₦" . number_format($amount, 2)
-                . ". Reference: {$reference}.",
-                ['request_code' => $requestCode, 'amount' => $amount],
-                'normal',
-                '../wallet_requests.php',
-                'Review Request'
-            );
-            $notifiedAdmins++;
-        }
-        logActivity("[TOPUP_INITIATE] Admins notified: {$notifiedAdmins}");
-    } catch (Throwable $notifErr) {
-        logActivity("[TOPUP_INITIATE] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
-    }
-
     $conn->commit();
     logActivity("[TOPUP_INITIATE] Transaction committed");
-
-    logActivity("[TOPUP_INITIATE] ========== SUCCESS ==========");
-    logActivity("[TOPUP_INITIATE] request_code={$requestCode}, client={$clientCode}, "
-        . "amount=₦" . number_format($amount, 2) . ", reference={$reference}");
-
-    json_success('Top-up request submitted. Admin will review and credit your wallet.', [
-        'request_code'     => $requestCode,
-        'reference_number' => $reference,
-        'amount'           => $amount,
-        'amount_formatted' => '₦' . number_format($amount, 2),
-        'status'           => 'pending',
-    ]);
 
 } catch (Throwable $e) {
     $conn->rollback();
     @unlink($proofPath);
     logActivity("[TOPUP_INITIATE] ROLLBACK: " . $e->getMessage(), 'ERROR');
-    logActivity("[TOPUP_INITIATE] Stack: " . $e->getTraceAsString(), 'ERROR');
     logActivity("[TOPUP_INITIATE] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
+    exit;
+} 
+// finally {
+//     if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+//         $conn->close();
+//     }
+// }
+// ---- Notify admins (best-effort, post-commit) ----
+try {
+    $notifiedAdmins = 0;
+    $admins = $conn->query("SELECT unique_id FROM admin_tbl
+    WHERE status = '1' AND role IN ('Super Admin', 'Admin')
+    LIMIT 20");
+    if ($admins) {
+        while ($adm = $admins->fetch_assoc()) {
+            if (function_exists('createAdminNotification')) {
+                createAdminNotification(
+                    $conn,
+                    (int) $adm['unique_id'],
+                    'payment_confirmation',
+                    'New Client Top-Up Request',
+                    "Client {$clientCode} requested a top-up of ₦" . number_format($amount, 2)
+                        . ". Reference: {$reference}.",
+                    'info',
+                    0
+                );
+            }
+            $notifiedAdmins++;
+        }
+    }
+    logActivity("[TOPUP_INITIATE] Admins notified: {$notifiedAdmins}");
+} catch (Throwable $notifErr) {
+    logActivity("[TOPUP_INITIATE] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
 }
+
+// ---- Acknowledge to the client (best-effort) ----
+try {
+    if (function_exists('createClientNotification')) {
+        createClientNotification(
+            $conn,
+            $clientCode,
+            'wallet',
+            'Top-Up Request Received',
+            "We received your top-up request of ₦" . number_format($amount, 2)
+                . ". An admin will review your bank proof and credit your wallet shortly. "
+                . "Reference: {$reference}.",
+            [
+                'request_code'     => $requestCode,
+                'amount'           => $amount,
+                'reference_number' => $reference,
+                'status'           => 'pending',
+            ],
+            'normal',
+            '../wallet.php',
+            'View Wallet'
+        );
+        logActivity("[TOPUP_INITIATE] Client acknowledgment sent: {$clientCode}");
+    }
+} catch (Throwable $notifErr) {
+    logActivity("[TOPUP_INITIATE] Client acknowledgment failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
+}
+// ---- Close connection LAST ----
+if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+    $conn->close();
+}
+logActivity("[TOPUP_INITIATE] ========== SUCCESS ==========");
+logActivity("[TOPUP_INITIATE] request_code={$requestCode}, client={$clientCode}, "
+    . "amount=₦" . number_format($amount, 2) . ", reference={$reference}");
+
+json_success('Top-up request submitted. Admin will review and credit your wallet.', [
+    'request_code'     => $requestCode,
+    'reference_number' => $reference,
+    'amount'           => $amount,
+    'amount_formatted' => '₦' . number_format($amount, 2),
+    'status'           => 'pending',
+]);

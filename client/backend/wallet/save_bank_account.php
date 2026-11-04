@@ -91,13 +91,23 @@ try {
 
     $verify = verifySecretAnswer($conn, 'client', $clientCode, $client['secret_answer'], $secretAns);
     if (!$verify['ok']) {
+        $isLocked = !empty($saCheck['locked']);
         logActivity("[CLIENT_SAVE_BANK] Secret answer failed for {$clientCode}: "
             . ($verify['message'] ?? ''), 'WARN');
-        throw new Exception(
-            $verify['message'] ?? 'Incorrect secret answer',
-            $verify['locked'] ? 429 : 401
+        // throw new Exception(
+        //     $verify['message'] ?? 'Incorrect secret answer',
+        //     $verify['locked'] ? 429 : 401
+        // );
+        json_error(
+            $$verify['message'] ?? 'Incorrect secret answer',
+            $isLocked ? 423 : 401,
+            null,
+            $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_SECRET_ANSWER',
+            $isLocked ? ['client_code' => $clientCode] : null
         );
+
     }
+    logActivity("[CLIENT_SAVE_BANK] Secret answer Verified for {$clientCode}: ");
 
     // ---- 5) Bank uniqueness (must be BEFORE writing) ----
     $bankAvail = checkBankAccountAvailability($conn, $bankCode, $accountNo, $clientCode);

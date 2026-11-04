@@ -21,7 +21,7 @@ rateLimiter();
 $auth = requireAuth([
     'method'     => 'POST',
     'rate_key'   => 'tenant_cancel_withdrawal',
-    'rate_limit' => [5, 60],   // 5 per minute — generous, but blocks spamming
+    'rate_limit' => [5, 60],
     'csrf'       => ['enabled' => true, 'form_name' => 'tenant_withdrawal_form'],
     'roles'      => ['Tenant'],
 ]);
@@ -53,13 +53,11 @@ try {
     ");
     if (!$stmt) throw new Exception("Prepare failed (load request): " . $conn->error);
     $stmt->bind_param("ss", $requestCode, $tenantCode);
-    $stmt->execute();
+    if (!$stmt->execute()) throw new Exception("Load request failed: " . $stmt->error);
     $req = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
     if (!$req) {
-        // Do NOT distinguish between "not found" and "belongs to someone else"
-        // — that would leak the existence of other users' requests.
         logActivity("[TENANT_CANCEL_WD] Request not found or not owned: {$requestCode}", 'WARN');
         throw new Exception("Request not found", 404);
     }
@@ -82,7 +80,7 @@ try {
     ");
     if (!$lockStmt) throw new Exception("Prepare failed (lock tenant): " . $conn->error);
     $lockStmt->bind_param("s", $tenantCode);
-    $lockStmt->execute();
+    if (!$lockStmt->execute()) throw new Exception("Lock tenant failed: " . $lockStmt->error);
     $tenantRow = $lockStmt->get_result()->fetch_assoc();
     $lockStmt->close();
     if (!$tenantRow) throw new Exception("Tenant not found", 404);
@@ -111,17 +109,19 @@ try {
     ");
     if (!$ledger) throw new Exception("Prepare failed (ledger): " . $conn->error);
     $ledger->bind_param("sddss", $tenantCode, $amount, $newBalance, $requestCode, $note);
-    if (!$ledger->execute()) throw new Exception("Reversal ledger insert failed: " . $ledger->error);
+    if (!$ledger->execute()) {
+        if ($ledger->errno === 1062) {
+            logActivity("[TENANT_CANCEL_WD] DB rejected: duplicate refund ledger for {$requestCode}", 'WARN');
+            throw new Exception("Refund already recorded for this request", 409);
+        }
+        throw new Exception("Reversal ledger insert failed: " . $ledger->error);
+    }
     $ledgerId = $ledger->insert_id;
     $ledger->close();
     logActivity("[TENANT_CANCEL_WD] Reversal ledger inserted: id={$ledgerId}, "
         . "amount=+₦" . number_format($amount, 2));
 
     // ---- 4) Flip the original withdrawal row ----
-    // Note: transaction_type='admin_adjustment' is used here for the reversal
-    // row even though a tenant triggered it. This keeps the type consistent
-    // with the admin rejection flow — both are reversals of a rejected/cancelled
-    // withdrawal, and both should read the same in the ledger.
     $updOriginal = $conn->prepare("
         UPDATE tenant_wallet_transactions
         SET status = 'Rejected', created_by = NULL
@@ -156,41 +156,85 @@ try {
     $update->close();
     logActivity("[TENANT_CANCEL_WD] Request marked cancelled: {$requestCode}");
 
-    // ---- 6) Notify admins (best-effort) ----
-    try {
-        $admins = $conn->query("SELECT unique_id FROM admin_tbl WHERE status = 1 LIMIT 10");
-        while ($adm = $admins->fetch_assoc()) {
-            createNotification(
-                $conn, $adm['unique_id'], 'wallet',
-                'Tenant Cancelled Withdrawal',
-                "Tenant {$tenantCode} cancelled withdrawal {$requestCode} of ₦"
-                . number_format($amount, 2) . ". Funds have been refunded to the tenant's wallet.",
-                ['request_code' => $requestCode, 'amount' => $amount],
-                'normal', '../wallet_requests.php', 'View Requests'
-            );
-        }
-    } catch (Throwable $notifErr) {
-        logActivity("[TENANT_CANCEL_WD] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
-    }
-
     $conn->commit();
     logActivity("[TENANT_CANCEL_WD] Transaction committed");
-    logActivity("[TENANT_CANCEL_WD] ========== SUCCESS ==========");
-    logActivity("[TENANT_CANCEL_WD] request_code={$requestCode}, tenant={$tenantCode}, "
-        . "amount=₦" . number_format($amount, 2) . ", new_balance=₦" . number_format($newBalance, 2));
-
-    json_success([
-        'request_code'       => $requestCode,
-        'amount'             => $amount,
-        'amount_formatted'   => '₦' . number_format($amount, 2),
-        'new_wallet_balance' => $newBalance,
-        'new_wallet_balance_formatted' => '₦' . number_format($newBalance, 2),
-        'status'             => 'cancelled',
-    ], 'Withdrawal cancelled. Funds have been returned to your wallet.');
 
 } catch (Throwable $e) {
     $conn->rollback();
     logActivity("[TENANT_CANCEL_WD] ROLLBACK: " . $e->getMessage(), 'ERROR');
     logActivity("[TENANT_CANCEL_WD] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
+    exit;
+} 
+// finally {
+//     if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+//         $conn->close();
+//     }
+// }
+
+// ---- Notify admins (best-effort, post-commit) ----
+try {
+    $admins = $conn->query("SELECT unique_id FROM admin_tbl
+    WHERE status = '1' AND role IN ('Super Admin', 'Admin')
+    LIMIT 20");
+    if ($admins) {
+        while ($adm = $admins->fetch_assoc()) {
+            if (function_exists('createAdminNotification')) {
+                createAdminNotification(
+                    $conn,
+                    (int) $adm['unique_id'],
+                    'system_alert',
+                    'Tenant Cancelled Withdrawal',
+                    "Tenant {$tenantCode} cancelled withdrawal {$requestCode} of ₦"
+                        . number_format($amount, 2) . ". Funds have been refunded to the tenant's wallet.",
+                    'info',
+                    0
+                );
+            }
+        }
+    }
+} catch (Throwable $notifErr) {
+    logActivity("[TENANT_CANCEL_WD] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
 }
+
+// ---- Acknowledge to the tenant (best-effort) ----
+try {
+    createNotification(
+        $conn,
+        $tenantCode,
+        'wallet',
+        'Withdrawal Cancelled',
+        "Your withdrawal request of ₦" . number_format($amount, 2)
+            . " has been cancelled and the funds have been returned to your wallet. "
+            . "New balance: ₦" . number_format($newBalance, 2) . ".",
+        [
+            'request_code'       => $requestCode,
+            'amount'             => $amount,
+            'new_wallet_balance' => $newBalance,
+            'status'             => 'cancelled',
+        ],
+        'medium',
+        '../wallet.php',
+        'View Wallet'
+    );
+    logActivity("[TENANT_CANCEL_WD] Tenant acknowledgment sent: {$tenantCode}");
+} catch (Throwable $notifErr) {
+    logActivity("[TENANT_CANCEL_WD] Tenant acknowledgment failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
+}
+// ---- Close connection LAST ----
+if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+    $conn->close();
+}
+
+logActivity("[TENANT_CANCEL_WD] ========== SUCCESS ==========");
+logActivity("[TENANT_CANCEL_WD] request_code={$requestCode}, tenant={$tenantCode}, "
+    . "amount=₦" . number_format($amount, 2) . ", new_balance=₦" . number_format($newBalance, 2));
+
+json_success([
+    'request_code'                 => $requestCode,
+    'amount'                       => $amount,
+    'amount_formatted'             => '₦' . number_format($amount, 2),
+    'new_wallet_balance'           => $newBalance,
+    'new_wallet_balance_formatted' => '₦' . number_format($newBalance, 2),
+    'status'                       => 'cancelled',
+], 'Withdrawal cancelled. Funds have been returned to your wallet.');

@@ -9,7 +9,8 @@
  * @param string $type Either 'tenant' or 'client'
  * @return array Table configuration
  */
-function getNotificationConfig($type) {
+function getNotificationConfig($type)
+{
     if ($type === 'client') {
         return [
             'table' => 'client_notifications',
@@ -31,7 +32,8 @@ function getNotificationConfig($type) {
  * @param string $code The code (tenant_code or client_code)
  * @return string Either 'tenant' or 'client'
  */
-function detectNotificationType($code) {
+function detectNotificationType($code)
+{
     // If code starts with 'TENANT_' or based on session role
     if (isset($_SESSION['role']) && $_SESSION['role'] === 'Tenant') {
         return 'tenant';
@@ -39,12 +41,12 @@ function detectNotificationType($code) {
     if (isset($_SESSION['client_logged_in']) || (isset($_SESSION['role']) && $_SESSION['role'] === 'Client')) {
         return 'client';
     }
-    
+
     // Fallback: check code pattern
     if (strpos($code, 'TENANT_') === 0) {
         return 'tenant';
     }
-    
+
     return 'client'; // Default to client
 }
 
@@ -62,14 +64,15 @@ function detectNotificationType($code) {
  * @param string $action_text Button text for action
  * @return int|false Notification ID or false on failure
  */
-function createNotification($conn, $code, $type, $title, $message, $details = [], $priority = 'medium', $action_url = null, $action_text = null) {
+function createNotification($conn, $code, $type, $title, $message, $details = [], $priority = 'medium', $action_url = null, $action_text = null)
+{
     try {
         // Detect system type
         $system_type = detectNotificationType($code);
         $config = getNotificationConfig($system_type);
-        
+
         $details_json = !empty($details) ? json_encode($details) : null;
-        
+
         $query = "
             INSERT INTO {$config['table']} (
                 {$config['code_column']}, 
@@ -83,21 +86,21 @@ function createNotification($conn, $code, $type, $title, $message, $details = []
                 created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ";
-        
+
         $stmt = $conn->prepare($query);
         $stmt->bind_param("ssssssss", $code, $type, $title, $message, $details_json, $priority, $action_url, $action_text);
-        
+
         if ($stmt->execute()) {
             $notification_id = $stmt->insert_id;
             $stmt->close();
-            
+
             logActivity("{$config['log_prefix']} Notification created - ID: {$notification_id}, Code: {$code}, Type: {$type}");
             return $notification_id;
         }
-        
+
         $stmt->close();
         return false;
-        
+
     } catch (Exception $e) {
         logActivity("Error creating notification: " . $e->getMessage());
         return false;
@@ -107,13 +110,14 @@ function createNotification($conn, $code, $type, $title, $message, $details = []
 /**
  * Create a payment notification
  */
-function createPaymentNotification($conn, $code, $amount, $status, $period_number = null, $receipt_number = null) {
+function createPaymentNotification($conn, $code, $amount, $status, $period_number = null, $receipt_number = null)
+{
     $title = '';
     $message = '';
     $priority = 'medium';
     $action_url = '../payments.php';
     $action_text = 'View Payments';
-    
+
     switch ($status) {
         case 'initiated':
             $title = 'Payment Initiated';
@@ -145,27 +149,28 @@ function createPaymentNotification($conn, $code, $amount, $status, $period_numbe
             $priority = 'urgent';
             break;
     }
-    
+
     $details = [
         'amount' => $amount,
         'status' => $status,
         'period_number' => $period_number,
         'receipt_number' => $receipt_number
     ];
-    
+
     return createNotification($conn, $code, 'payment', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a maintenance request notification
  */
-function createMaintenanceNotification($conn, $code, $request_id, $issue_type, $status, $admin_note = null) {
+function createMaintenanceNotification($conn, $code, $request_id, $issue_type, $status, $admin_note = null)
+{
     $title = '';
     $message = '';
     $priority = 'medium';
     $action_url = '../maintenance.php';
     $action_text = 'View Request';
-    
+
     switch ($status) {
         case 'submitted':
             $title = 'Maintenance Request Submitted';
@@ -198,27 +203,28 @@ function createMaintenanceNotification($conn, $code, $request_id, $issue_type, $
             $priority = 'medium';
             break;
     }
-    
+
     $details = [
         'request_id' => $request_id,
         'issue_type' => $issue_type,
         'status' => $status,
         'admin_note' => $admin_note
     ];
-    
+
     return createNotification($conn, $code, 'maintenance', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a document notification
  */
-function createDocumentNotification($conn, $code, $document_name, $action) {
+function createDocumentNotification($conn, $code, $document_name, $action)
+{
     $title = '';
     $message = '';
     $priority = 'low';
     $action_url = '../documents.php';
     $action_text = 'View Documents';
-    
+
     switch ($action) {
         case 'uploaded':
             $title = 'Document Uploaded';
@@ -241,22 +247,23 @@ function createDocumentNotification($conn, $code, $document_name, $action) {
             $priority = 'urgent';
             break;
     }
-    
+
     $details = ['document_name' => $document_name, 'action' => $action];
-    
+
     return createNotification($conn, $code, 'document', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a lease notification
  */
-function createLeaseNotification($conn, $code, $action, $value = null) {
+function createLeaseNotification($conn, $code, $action, $value = null)
+{
     $title = '';
     $message = '';
     $priority = 'high';
     $action_url = '../dashboard.php';
     $action_text = 'View Lease';
-    
+
     switch ($action) {
         case 'renewed':
             $title = 'Lease Renewed';
@@ -284,22 +291,23 @@ function createLeaseNotification($conn, $code, $action, $value = null) {
             $priority = 'medium';
             break;
     }
-    
+
     $details = ['action' => $action, 'value' => $value];
-    
+
     return createNotification($conn, $code, 'lease', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a profile/security notification
  */
-function createSecurityNotification($conn, $code, $action) {
+function createSecurityNotification($conn, $code, $action)
+{
     $title = '';
     $message = '';
     $priority = 'high';
     $action_url = '../profile.php';
     $action_text = 'View Profile';
-    
+
     switch ($action) {
         case 'password_changed':
             $title = 'Password Changed';
@@ -338,22 +346,23 @@ function createSecurityNotification($conn, $code, $action) {
             $priority = 'medium';
             break;
     }
-    
+
     $details = ['action' => $action];
-    
+
     return createNotification($conn, $code, 'security', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create an apartment/assignment notification
  */
-function createApartmentNotification($conn, $code, $apartment_code, $action) {
+function createApartmentNotification($conn, $code, $apartment_code, $action)
+{
     $title = '';
     $message = '';
     $priority = 'medium';
     $action_url = '../apartment.php';
     $action_text = 'View Apartment';
-    
+
     switch ($action) {
         case 'assigned':
             $title = 'Apartment Assigned';
@@ -371,22 +380,23 @@ function createApartmentNotification($conn, $code, $apartment_code, $action) {
             $priority = 'high';
             break;
     }
-    
+
     $details = ['apartment_code' => $apartment_code, 'action' => $action];
-    
+
     return createNotification($conn, $code, 'apartment', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a fee notification
  */
-function createFeeNotification($conn, $code, $fee_name, $amount, $due_date, $status) {
+function createFeeNotification($conn, $code, $fee_name, $amount, $due_date, $status)
+{
     $title = '';
     $message = '';
     $priority = 'medium';
     $action_url = '../fees.php';
     $action_text = 'View Fee';
-    
+
     switch ($status) {
         case 'added':
             $title = 'New Fee Added';
@@ -411,33 +421,35 @@ function createFeeNotification($conn, $code, $fee_name, $amount, $due_date, $sta
             $priority = 'low';
             break;
     }
-    
+
     $details = [
         'fee_name' => $fee_name,
         'amount' => $amount,
         'due_date' => $due_date,
         'status' => $status
     ];
-    
+
     return createNotification($conn, $code, 'fee', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a system notification
  */
-function createSystemNotification($conn, $code, $title, $message, $priority = 'medium', $action_url = null, $action_text = null) {
+function createSystemNotification($conn, $code, $title, $message, $priority = 'medium', $action_url = null, $action_text = null)
+{
     $details = [];
-    
+
     return createNotification($conn, $code, 'system', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a bulk notification for multiple tenants or clients
  */
-function createBulkNotification($conn, $codes, $type, $title, $message, $details = [], $priority = 'medium', $action_url = null, $action_text = null) {
+function createBulkNotification($conn, $codes, $type, $title, $message, $details = [], $priority = 'medium', $action_url = null, $action_text = null)
+{
     $success_count = 0;
     $failed_count = 0;
-    
+
     foreach ($codes as $code) {
         if (createNotification($conn, $code, $type, $title, $message, $details, $priority, $action_url, $action_text)) {
             $success_count++;
@@ -445,10 +457,10 @@ function createBulkNotification($conn, $codes, $type, $title, $message, $details
             $failed_count++;
         }
     }
-    
+
     $system_type = detectNotificationType($codes[0] ?? '');
     $config = getNotificationConfig($system_type);
-    
+
     logActivity("{$config['log_prefix']} Bulk notification - Sent to {$success_count} users, Failed: {$failed_count}");
     return ['success' => $success_count, 'failed' => $failed_count];
 }
@@ -456,11 +468,12 @@ function createBulkNotification($conn, $codes, $type, $title, $message, $details
 /**
  * Create a reminder notification for upcoming due dates
  */
-function createDueDateReminder($conn, $code, $type, $item_name, $amount, $due_date, $days_left) {
+function createDueDateReminder($conn, $code, $type, $item_name, $amount, $due_date, $days_left)
+{
     $title = '';
     $message = '';
     $priority = 'high';
-    
+
     switch ($type) {
         case 'payment':
             $title = 'Rent Payment Reminder';
@@ -481,7 +494,7 @@ function createDueDateReminder($conn, $code, $type, $item_name, $amount, $due_da
             $action_text = 'View Documents';
             break;
     }
-    
+
     $details = [
         'type' => $type,
         'item_name' => $item_name,
@@ -489,7 +502,7 @@ function createDueDateReminder($conn, $code, $type, $item_name, $amount, $due_da
         'due_date' => $due_date,
         'days_left' => $days_left
     ];
-    
+
     return createNotification($conn, $code, 'reminder', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
@@ -503,38 +516,39 @@ function createDueDateReminder($conn, $code, $type, $item_name, $amount, $due_da
  * @param string $status Notification status (read, unread, all)
  * @return array Array of notifications
  */
-function getNotifications($conn, $code, $limit = 20, $offset = 0, $status = 'all') {
+function getNotifications($conn, $code, $limit = 20, $offset = 0, $status = 'all')
+{
     try {
         $system_type = detectNotificationType($code);
         $config = getNotificationConfig($system_type);
-        
+
         $status_filter = "";
         if ($status === 'read') {
             $status_filter = "AND is_read = 1";
         } elseif ($status === 'unread') {
             $status_filter = "AND is_read = 0";
         }
-        
+
         $query = "
             SELECT * FROM {$config['table']}
             WHERE {$config['code_column']} = ? {$status_filter}
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?
         ";
-        
+
         $stmt = $conn->prepare($query);
         $stmt->bind_param("sii", $code, $limit, $offset);
         $stmt->execute();
         $result = $stmt->get_result();
-        
+
         $notifications = [];
         while ($row = $result->fetch_assoc()) {
             $notifications[] = $row;
         }
-        
+
         $stmt->close();
         return $notifications;
-        
+
     } catch (Exception $e) {
         logActivity("Error getting notifications: " . $e->getMessage());
         return [];
@@ -549,20 +563,21 @@ function getNotifications($conn, $code, $limit = 20, $offset = 0, $status = 'all
  * @param string $code The tenant_code or client_code
  * @return bool Success status
  */
-function markNotificationAsRead($conn, $notification_id, $code) {
+function markNotificationAsRead($conn, $notification_id, $code)
+{
     try {
         $system_type = detectNotificationType($code);
         $config = getNotificationConfig($system_type);
-        
+
         $query = "UPDATE {$config['table']} SET is_read = 1, read_at = NOW() WHERE id = ? AND {$config['code_column']} = ?";
         $stmt = $conn->prepare($query);
         $stmt->bind_param("is", $notification_id, $code);
-        
+
         $success = $stmt->execute();
         $stmt->close();
-        
+
         return $success;
-        
+
     } catch (Exception $e) {
         logActivity("Error marking notification as read: " . $e->getMessage());
         return false;
@@ -576,26 +591,150 @@ function markNotificationAsRead($conn, $notification_id, $code) {
  * @param string $code The tenant_code or client_code
  * @return int Number of unread notifications
  */
-function getUnreadNotificationCount($conn, $code) {
+function getUnreadNotificationCount($conn, $code)
+{
     try {
         $system_type = detectNotificationType($code);
         $config = getNotificationConfig($system_type);
-        
+
         $query = "SELECT COUNT(*) as count FROM {$config['table']} WHERE {$config['code_column']} = ? AND is_read = 0";
         $stmt = $conn->prepare($query);
         $stmt->bind_param("s", $code);
         $stmt->execute();
         $result = $stmt->get_result();
         $row = $result->fetch_assoc();
-        
+
         $count = $row['count'] ?? 0;
         $stmt->close();
-        
+
         return $count;
-        
+
     } catch (Exception $e) {
         logActivity("Error getting unread notification count: " . $e->getMessage());
         return 0;
+    }
+}
+
+function createClientNotification(
+    mysqli $conn,
+    string $clientCode,
+    string $type,
+    string $title,
+    string $message,
+    array $details = [],
+    string $priority = 'medium',
+    ?string $actionUrl = null,
+    ?string $actionText = null
+): ?int {
+    try {
+        $allowedPriorities = ['low', 'medium', 'high', 'urgent'];
+        if (!in_array($priority, $allowedPriorities, true))
+            $priority = 'medium';
+
+        $detailsJson = empty($details) ? null : json_encode($details);
+        if ($actionText !== null && strlen($actionText) > 100)
+            $actionText = substr($actionText, 0, 100);
+        if ($actionUrl !== null && strlen($actionUrl) > 255)
+            $actionUrl = substr($actionUrl, 0, 255);
+
+        $insert = $conn->prepare("
+            INSERT INTO client_notifications
+                (client_code, notification_type, title, message, details,
+                 priority, action_url, action_text, is_read, is_archived, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+        ");
+        if (!$insert) {
+            logActivity("[CLIENT_NOTIF_ERROR] Prepare failed: " . $conn->error);
+            return null;
+        }
+
+        $insert->bind_param(
+            "ssssssss",
+            $clientCode,
+            $type,
+            $title,
+            $message,
+            $detailsJson,
+            $priority,
+            $actionUrl,
+            $actionText
+        );
+
+        if (!$insert->execute()) {
+            logActivity("[CLIENT_NOTIF_ERROR] Execute failed: " . $insert->error);
+            $insert->close();
+            return null;
+        }
+
+        $id = (int) $insert->insert_id;
+        $insert->close();
+        logActivity("[CLIENT_NOTIF] Created ID={$id}, client={$clientCode}, type={$type}, title='{$title}'");
+        return $id;
+
+    } catch (Throwable $e) {
+        logActivity("[CLIENT_NOTIF_ERROR] " . $e->getMessage());
+        return null;
+    }
+}
+function createAdminNotification(
+    mysqli $conn,
+    int $assignedTo,
+    string $category,
+    string $title,
+    string $message,
+    string $type = 'info',
+    int $userId = 0
+): ?int {
+    try {
+        $allowedTypes = ['info', 'success', 'warning', 'danger', 'system'];
+        if (!in_array($type, $allowedTypes, true))
+            $type = 'info';
+
+        $allowedCategories = [
+            'account_reactivation',
+            'account_lock',
+            'payment_confirmation',
+            'order_update',
+            'report',
+            'system_alert',
+            'promotion',
+            'other',
+            'account_unlock',
+        ];
+        if (!in_array($category, $allowedCategories, true))
+            $category = 'other';
+
+        $insert = $conn->prepare("
+            INSERT INTO notifications
+                (user_id, assigned_to, title, message, type, category,
+                 is_read, is_archived, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, '0', NOW())
+        ");
+        if (!$insert) {
+            logActivity("[ADMIN_NOTIF_ERROR] Prepare failed: " . $conn->error);
+            return null;
+        }
+        $insert->bind_param(
+            "iissss",
+            $userId,
+            $assignedTo,
+            $title,
+            $message,
+            $type,
+            $category
+        );
+        if (!$insert->execute()) {
+            logActivity("[ADMIN_NOTIF_ERROR] Execute failed: " . $insert->error);
+            $insert->close();
+            return null;
+        }
+        $id = (int) $insert->insert_id;
+        $insert->close();
+        logActivity("[ADMIN_NOTIF] Created ID={$id}, assigned_to={$assignedTo}, category={$category}, title='{$title}'");
+        return $id;
+    } catch (Throwable $e) {
+        logActivity("[ADMIN_NOTIF_ERROR] " . $e->getMessage());
+        return null;
     }
 }
 ?>

@@ -32,6 +32,7 @@ $rejectionReason = trim($input['rejection_reason'] ?? '');
 
 if ($requestCode === '')          json_error("Request code is required", 400);
 if (strlen($rejectionReason) < 5) json_error("Please provide a rejection reason (min 5 chars)", 400);
+if (strlen($rejectionReason) > 500) json_error("Rejection reason too long (max 500 chars)", 400);
 
 // ---- Log entry ----
 logActivity("[REJECT_REQUEST] ========== START ==========");
@@ -112,7 +113,7 @@ try {
         ");
         if (!$lockStmt) throw new Exception("Prepare failed (lock user): " . $conn->error);
         $lockStmt->bind_param("s", $userCode);
-        $lockStmt->execute();
+        if (!$lockStmt->execute()) throw new Exception("Lock user failed: " . $lockStmt->error);
         $userRow = $lockStmt->get_result()->fetch_assoc();
         $lockStmt->close();
         if (!$userRow) {
@@ -135,7 +136,7 @@ try {
         logActivity("[REJECT_REQUEST] Wallet refunded: {$userCode} "
             . "₦" . number_format($oldBalance, 2) . " → ₦" . number_format($newBalance, 2));
 
-        // Reversal ledger row — status explicit
+        // Reversal ledger row
         $note = "Withdrawal request rejected — funds refunded. Reason: {$rejectionReason}";
         $ledger = $conn->prepare("
             INSERT INTO {$walletTable}
@@ -145,7 +146,13 @@ try {
         ");
         if (!$ledger) throw new Exception("Prepare failed (ledger): " . $conn->error);
         $ledger->bind_param("sddssi", $userCode, $amount, $newBalance, $requestCode, $note, $adminId);
-        if (!$ledger->execute()) throw new Exception("Failed to write refund ledger: " . $ledger->error);
+        if (!$ledger->execute()) {
+            if ($ledger->errno === 1062) {
+                logActivity("[REJECT_REQUEST] DB rejected: duplicate refund ledger for {$requestCode}", 'WARN');
+                throw new Exception("Refund already recorded for this request", 409);
+            }
+            throw new Exception("Failed to write refund ledger: " . $ledger->error);
+        }
         $ledgerId = $ledger->insert_id;
         $ledger->close();
 
@@ -198,65 +205,8 @@ try {
     $update->close();
     logActivity("[REJECT_REQUEST] Request marked rejected in wallet_requests: {$requestCode}");
 
-    // ---- 5) Notify the correct party (best-effort) ----
-    try {
-        $title = $reqType === 'topup' ? 'Top-Up Request Rejected' : 'Withdrawal Request Rejected';
-        $msg = "Your {$reqType} request of ₦" . number_format($amount, 2)
-             . " was rejected. Reason: {$rejectionReason}.";
-        if ($reqType === 'withdrawal') {
-            $msg .= " The funds have been returned to your wallet.";
-        }
-        $details = ['request_code' => $requestCode, 'reason' => $rejectionReason];
-
-        if ($userType === 'tenant') {
-            createNotification(
-                $conn, $userCode, 'wallet', $title, $msg, $details,
-                'normal', '../wallet.php', 'View Wallet'
-            );
-            logActivity("[REJECT_REQUEST] Tenant notification sent: {$userCode}");
-        } else { // client
-            if (function_exists('createClientNotification')) {
-                createClientNotification(
-                    $conn, $userCode, 'wallet', $title, $msg, $details,
-                    'normal', '../wallet.php', 'View Wallet'
-                );
-                logActivity("[REJECT_REQUEST] Client notification sent via createClientNotification: {$userCode}");
-            } else {
-                $detailsJson = json_encode($details);
-                $notif = $conn->prepare("
-                    INSERT INTO client_notifications
-                        (client_code, notification_type, title, message, details,
-                         priority, action_url, action_text, created_at)
-                    VALUES (?, 'wallet', ?, ?, ?, 'normal', '../wallet.php', 'View Wallet', NOW())
-                ");
-                if (!$notif) throw new Exception("Prepare failed (client notification): " . $conn->error);
-                $notif->bind_param("ssss", $userCode, $title, $msg, $detailsJson);
-                if (!$notif->execute()) throw new Exception("Client notification insert failed: " . $notif->error);
-                $notif->close();
-                logActivity("[REJECT_REQUEST] Client notification sent via raw insert (helper missing): {$userCode}");
-            }
-        }
-    } catch (Throwable $notifErr) {
-        logActivity("[REJECT_REQUEST] Notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
-    }
-
     $conn->commit();
     logActivity("[REJECT_REQUEST] Transaction committed");
-
-    logActivity("[REJECT_REQUEST] ========== SUCCESS ==========");
-    logActivity("[REJECT_REQUEST] request_code={$requestCode}, type={$reqType}, "
-        . "user_type={$userType}, user_code={$userCode}, "
-        . "amount=₦" . number_format($amount, 2)
-        . ", refunded=" . ($reqType === 'withdrawal' ? 'yes' : 'no')
-        . ", admin={$adminId}");
-
-    json_success('Request rejected', [
-        'request_code' => $requestCode,
-        'status'       => 'rejected',
-        'refunded'     => $reqType === 'withdrawal',
-        'user_type'    => $userType,
-        'user_code'    => $userCode,
-    ]);
 
 } catch (Throwable $e) {
     $conn->rollback();
@@ -264,4 +214,74 @@ try {
     logActivity("[REJECT_REQUEST] Stack: " . $e->getTraceAsString(), 'ERROR');
     logActivity("[REJECT_REQUEST] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
+    exit;
+} 
+// finally {
+//     if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+//         $conn->close();
+//     }
+// }
+
+// ---- Notify the correct party (best-effort, post-commit) ----
+try {
+    $title = $reqType === 'topup' ? 'Top-Up Request Rejected' : 'Withdrawal Request Rejected';
+    $msg = "Your {$reqType} request of ₦" . number_format($amount, 2)
+         . " was rejected. Reason: {$rejectionReason}.";
+    if ($reqType === 'withdrawal') {
+        $msg .= " The funds have been returned to your wallet.";
+    }
+    $details = ['request_code' => $requestCode, 'reason' => $rejectionReason];
+
+    if ($userType === 'tenant') {
+        // createNotification() targets tenant_notifications — correct table.
+        createNotification(
+            $conn, $userCode, 'wallet', $title, $msg, $details,
+            'normal', '../wallet.php', 'View Wallet'
+        );
+        logActivity("[REJECT_REQUEST] Tenant notification sent: {$userCode}");
+    } else { // client
+        if (function_exists('createClientNotification')) {
+            createClientNotification(
+                $conn, $userCode, 'wallet', $title, $msg, $details,
+                'normal', '../wallet.php', 'View Wallet'
+            );
+            logActivity("[REJECT_REQUEST] Client notification sent via createClientNotification: {$userCode}");
+        } else {
+            $detailsJson = json_encode($details);
+            $notif = $conn->prepare("
+                INSERT INTO client_notifications
+                    (client_code, notification_type, title, message, details,
+                     priority, action_url, action_text, created_at)
+                VALUES (?, 'wallet', ?, ?, ?, 'normal', '../wallet.php', 'View Wallet', NOW())
+            ");
+            if ($notif) {
+                $notif->bind_param("ssss", $userCode, $title, $msg, $detailsJson);
+                $notif->execute();
+                $notif->close();
+                logActivity("[REJECT_REQUEST] Client notification sent via raw insert (helper missing): {$userCode}");
+            }
+        }
+    }
+} catch (Throwable $notifErr) {
+    logActivity("[REJECT_REQUEST] Notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
 }
+
+// ---- Close connection LAST ----
+if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+    $conn->close();
+}
+
+logActivity("[REJECT_REQUEST] ========== SUCCESS ==========");
+logActivity("[REJECT_REQUEST] request_code={$requestCode}, type={$reqType}, "
+    . "user_type={$userType}, user_code={$userCode}, "
+    . "amount=₦" . number_format($amount, 2)
+    . ", refunded=" . ($reqType === 'withdrawal' ? 'yes' : 'no')
+    . ", admin={$adminId}");
+
+json_success('Request rejected', [
+    'request_code' => $requestCode,
+    'status'       => 'rejected',
+    'refunded'     => $reqType === 'withdrawal',
+    'user_type'    => $userType,
+    'user_code'    => $userCode,
+]);

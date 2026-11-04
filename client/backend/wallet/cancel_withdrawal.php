@@ -47,7 +47,7 @@ try {
     ");
     if (!$stmt) throw new Exception("Prepare failed (load request): " . $conn->error);
     $stmt->bind_param("ss", $requestCode, $clientCode);
-    $stmt->execute();
+    if (!$stmt->execute()) throw new Exception("Load request failed: " . $stmt->error);
     $req = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
@@ -73,7 +73,7 @@ try {
     ");
     if (!$lockStmt) throw new Exception("Prepare failed (lock client): " . $conn->error);
     $lockStmt->bind_param("s", $clientCode);
-    $lockStmt->execute();
+    if (!$lockStmt->execute()) throw new Exception("Lock client failed: " . $lockStmt->error);
     $clientRow = $lockStmt->get_result()->fetch_assoc();
     $lockStmt->close();
     if (!$clientRow) throw new Exception("Client not found", 404);
@@ -101,7 +101,13 @@ try {
     ");
     if (!$ledger) throw new Exception("Prepare failed (ledger): " . $conn->error);
     $ledger->bind_param("sddss", $clientCode, $amount, $newBalance, $requestCode, $note);
-    if (!$ledger->execute()) throw new Exception("Reversal ledger insert failed: " . $ledger->error);
+    if (!$ledger->execute()) {
+        if ($ledger->errno === 1062) {
+            logActivity("[CLIENT_CANCEL_WD] DB rejected: duplicate refund ledger for {$requestCode}", 'WARN');
+            throw new Exception("Refund already recorded for this request", 409);
+        }
+        throw new Exception("Reversal ledger insert failed: " . $ledger->error);
+    }
     $ledgerId = $ledger->insert_id;
     $ledger->close();
     logActivity("[CLIENT_CANCEL_WD] Reversal ledger inserted: id={$ledgerId}, "
@@ -140,40 +146,88 @@ try {
     $update->close();
     logActivity("[CLIENT_CANCEL_WD] Request marked cancelled: {$requestCode}");
 
-    try {
-        $admins = $conn->query("SELECT unique_id FROM admin_tbl WHERE status = 1 LIMIT 10");
-        while ($adm = $admins->fetch_assoc()) {
-            createNotification(
-                $conn, $adm['unique_id'], 'wallet',
-                'Client Cancelled Withdrawal',
-                "Client {$clientCode} cancelled withdrawal {$requestCode} of ₦"
-                . number_format($amount, 2) . ". Funds have been refunded to the client's wallet.",
-                ['request_code' => $requestCode, 'amount' => $amount],
-                'normal', '../wallet_requests.php', 'View Requests'
-            );
-        }
-    } catch (Throwable $notifErr) {
-        logActivity("[CLIENT_CANCEL_WD] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
-    }
-
     $conn->commit();
     logActivity("[CLIENT_CANCEL_WD] Transaction committed");
-    logActivity("[CLIENT_CANCEL_WD] ========== SUCCESS ==========");
-    logActivity("[CLIENT_CANCEL_WD] request_code={$requestCode}, client={$clientCode}, "
-        . "amount=₦" . number_format($amount, 2) . ", new_balance=₦" . number_format($newBalance, 2));
-
-    json_success([
-        'request_code'       => $requestCode,
-        'amount'             => $amount,
-        'amount_formatted'   => '₦' . number_format($amount, 2),
-        'new_wallet_balance' => $newBalance,
-        'new_wallet_balance_formatted' => '₦' . number_format($newBalance, 2),
-        'status'             => 'cancelled',
-    ], 'Withdrawal cancelled. Funds have been returned to your wallet.');
 
 } catch (Throwable $e) {
     $conn->rollback();
     logActivity("[CLIENT_CANCEL_WD] ROLLBACK: " . $e->getMessage(), 'ERROR');
     logActivity("[CLIENT_CANCEL_WD] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
+    exit;
+} 
+// finally {
+//     if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+//         $conn->close();
+//     }
+// }
+
+// ---- Notify admins (best-effort, post-commit) ----
+try {
+    $admins = $conn->query("SELECT unique_id FROM admin_tbl
+    WHERE status = '1' AND role IN ('Super Admin', 'Admin')
+    LIMIT 20");
+    if ($admins) {
+        while ($adm = $admins->fetch_assoc()) {
+            if (function_exists('createAdminNotification')) {
+                createAdminNotification(
+                    $conn,
+                    (int) $adm['unique_id'],
+                    'system_alert',
+                    'Client Cancelled Withdrawal',
+                    "Client {$clientCode} cancelled withdrawal {$requestCode} of ₦"
+                        . number_format($amount, 2) . ". Funds have been refunded to the client's wallet.",
+                    'info',
+                    0
+                );
+            }
+        }
+    }
+} catch (Throwable $notifErr) {
+    logActivity("[CLIENT_CANCEL_WD] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
 }
+
+// ---- Acknowledge to the client (best-effort) ----
+try {
+    if (function_exists('createClientNotification')) {
+        createClientNotification(
+            $conn,
+            $clientCode,
+            'wallet',
+            'Withdrawal Cancelled',
+            "Your withdrawal request of ₦" . number_format($amount, 2)
+                . " has been cancelled and the funds have been returned to your wallet. "
+                . "New balance: ₦" . number_format($newBalance, 2) . ".",
+            [
+                'request_code'       => $requestCode,
+                'amount'             => $amount,
+                'new_wallet_balance' => $newBalance,
+                'status'             => 'cancelled',
+            ],
+            'normal',
+            '../wallet.php',
+            'View Wallet'
+        );
+        logActivity("[CLIENT_CANCEL_WD] Client acknowledgment sent: {$clientCode}");
+    }
+} catch (Throwable $notifErr) {
+    logActivity("[CLIENT_CANCEL_WD] Client acknowledgment failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
+}
+
+// ---- Close connection LAST ----
+if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+    $conn->close();
+}
+
+logActivity("[CLIENT_CANCEL_WD] ========== SUCCESS ==========");
+logActivity("[CLIENT_CANCEL_WD] request_code={$requestCode}, client={$clientCode}, "
+    . "amount=₦" . number_format($amount, 2) . ", new_balance=₦" . number_format($newBalance, 2));
+
+json_success([
+    'request_code'                 => $requestCode,
+    'amount'                       => $amount,
+    'amount_formatted'             => '₦' . number_format($amount, 2),
+    'new_wallet_balance'           => $newBalance,
+    'new_wallet_balance_formatted' => '₦' . number_format($newBalance, 2),
+    'status'                       => 'cancelled',
+], 'Withdrawal cancelled. Funds have been returned to your wallet.');

@@ -10,6 +10,7 @@ require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
+
 if (session_status() === PHP_SESSION_NONE) session_start();
 rateLimiter();
 
@@ -40,7 +41,7 @@ $conn->begin_transaction();
 logActivity("[APPROVE_WITHDRAWAL] Transaction started");
 
 try {
-    // ---- 1) Load request ----
+    // ---- 1) Load request (locked) ----
     $stmt = $conn->prepare("
         SELECT id, user_code, user_type, amount, status, request_code
         FROM wallet_requests
@@ -71,7 +72,7 @@ try {
     logActivity("[APPROVE_WITHDRAWAL] Loaded: user_type={$userType}, user_code={$userCode}, "
         . "amount=₦" . number_format($amount, 2) . ", status=pending");
 
-    // ---- 2) Mark request approved ----
+    // ---- 2) Mark request approved (with concurrency guard) ----
     $updateNotes = $notes;
     if ($bankReference !== '') {
         $updateNotes .= ($updateNotes ? ' | ' : '') . "Bank ref: {$bankReference}";
@@ -80,118 +81,51 @@ try {
     $update = $conn->prepare("
         UPDATE wallet_requests
         SET status = 'approved', approved_by = ?, approved_at = NOW(), notes = ?
-        WHERE id = ?
+        WHERE id = ? AND status = 'pending'
     ");
     if (!$update) throw new Exception("Prepare failed (approve request): " . $conn->error);
     $update->bind_param("isi", $adminId, $updateNotes, $requestPk);
     if (!$update->execute()) throw new Exception("Failed to update request: " . $update->error);
+    if ($update->affected_rows === 0) {
+        logActivity("[APPROVE_WITHDRAWAL] Concurrent modification detected for {$requestCode}", 'WARN');
+        throw new Exception("Request was modified concurrently", 409);
+    }
     $update->close();
     logActivity("[APPROVE_WITHDRAWAL] Request marked approved in wallet_requests: {$requestCode}");
 
     // ---- 3) Update the matching ledger row ----
     if ($userType === 'tenant') {
         $ledgerTable = 'tenant_wallet_transactions';
-        $upd = $conn->prepare("
-            UPDATE {$ledgerTable}
-            SET status = 'Approved', created_by = ?
-            WHERE request_id = ? AND status = 'Pending'
-        ");
-        if (!$upd) throw new Exception("Prepare failed (tenant ledger): " . $conn->error);
-        $upd->bind_param("is", $adminId, $requestCode);
-        if (!$upd->execute()) throw new Exception("Failed to update tenant ledger: " . $upd->error);
-        if ($upd->affected_rows === 0) {
-            logActivity("[APPROVE_WITHDRAWAL] No pending ledger row found in {$ledgerTable} "
-                . "for request {$requestCode}", 'WARN');
-            throw new Exception(
-                "No pending withdrawal ledger row found for request {$requestCode}. "
-                . "The wallet debit may be missing or already marked. Aborting approval.",
-                409
-            );
-        }
-        logActivity("[APPROVE_WITHDRAWAL] Ledger flipped: {$ledgerTable} "
-            . "request_id={$requestCode} → status='Approved'");
-        $upd->close();
-
     } else if ($userType === 'client') {
         $ledgerTable = 'client_wallet_transactions';
-        $upd = $conn->prepare("
-            UPDATE {$ledgerTable}
-            SET status = 'Approved', created_by = ?
-            WHERE request_id = ? AND status = 'Pending'
-        ");
-        if (!$upd) throw new Exception("Prepare failed (client ledger): " . $conn->error);
-        $upd->bind_param("is", $adminId, $requestCode);
-        if (!$upd->execute()) throw new Exception("Failed to update client ledger: " . $upd->error);
-        if ($upd->affected_rows === 0) {
-            logActivity("[APPROVE_WITHDRAWAL] No pending ledger row found in {$ledgerTable} "
-                . "for request {$requestCode}", 'WARN');
-            throw new Exception(
-                "No pending withdrawal ledger row found for request {$requestCode}. "
-                . "The wallet debit may be missing or already marked. Aborting approval.",
-                409
-            );
-        }
-        logActivity("[APPROVE_WITHDRAWAL] Ledger flipped: {$ledgerTable} "
-            . "request_id={$requestCode} → status='Approved'");
-        $upd->close();
-
     } else {
         logActivity("[APPROVE_WITHDRAWAL] Unknown user_type='{$userType}' on request {$requestCode}", 'ERROR');
         throw new Exception("Invalid user_type '{$userType}' on withdrawal request", 500);
     }
 
-    // ---- 4) Notify the correct party ----
-    try {
-        $title = 'Withdrawal Processed';
-        $message = "Your withdrawal of ₦" . number_format($amount, 2)
-            . " has been processed. Please allow 1-2 business days for the funds to reflect.";
-        $details = ['request_code' => $requestCode, 'amount' => $amount];
-
-        if ($userType === 'tenant') {
-            createNotification(
-                $conn, $userCode, 'wallet', $title, $message, $details,
-                'normal', '../wallet.php', 'View Wallet'
-            );
-            logActivity("[APPROVE_WITHDRAWAL] Tenant notification sent: {$userCode}");
-        } else if ($userType === 'client') {
-            if (function_exists('createClientNotification')) {
-                createClientNotification(
-                    $conn, $userCode, 'wallet', $title, $message, $details,
-                    'normal', '../wallet.php', 'View Wallet'
-                );
-                logActivity("[APPROVE_WITHDRAWAL] Client notification sent via createClientNotification: {$userCode}");
-            } else {
-                $detailsJson = json_encode($details);
-                $notif = $conn->prepare("
-                    INSERT INTO client_notifications
-                        (client_code, notification_type, title, message, details,
-                         priority, action_url, action_text, created_at)
-                    VALUES (?, 'wallet', ?, ?, ?, 'normal', '../wallet.php', 'View Wallet', NOW())
-                ");
-                if (!$notif) throw new Exception("Prepare failed (client notification): " . $conn->error);
-                $notif->bind_param("ssss", $userCode, $title, $message, $detailsJson);
-                if (!$notif->execute()) throw new Exception("Client notification insert failed: " . $notif->error);
-                $notif->close();
-                logActivity("[APPROVE_WITHDRAWAL] Client notification sent via raw insert (helper missing): {$userCode}");
-            }
-        }
-    } catch (Throwable $notifErr) {
-        logActivity("[APPROVE_WITHDRAWAL] Notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
+    $upd = $conn->prepare("
+        UPDATE {$ledgerTable}
+        SET status = 'Approved', created_by = ?
+        WHERE request_id = ? AND status = 'Pending'
+    ");
+    if (!$upd) throw new Exception("Prepare failed (ledger): " . $conn->error);
+    $upd->bind_param("is", $adminId, $requestCode);
+    if (!$upd->execute()) throw new Exception("Failed to update ledger: " . $upd->error);
+    if ($upd->affected_rows === 0) {
+        logActivity("[APPROVE_WITHDRAWAL] No pending ledger row found in {$ledgerTable} "
+            . "for request {$requestCode}", 'WARN');
+        throw new Exception(
+            "No pending withdrawal ledger row found for request {$requestCode}. "
+            . "The wallet debit may be missing or already marked. Aborting approval.",
+            409
+        );
     }
+    $upd->close();
+    logActivity("[APPROVE_WITHDRAWAL] Ledger flipped: {$ledgerTable} "
+        . "request_id={$requestCode} → status='Approved'");
 
     $conn->commit();
     logActivity("[APPROVE_WITHDRAWAL] Transaction committed");
-
-    logActivity("[APPROVE_WITHDRAWAL] ========== SUCCESS ==========");
-    logActivity("[APPROVE_WITHDRAWAL] request_code={$requestCode}, user_type={$userType}, "
-        . "user_code={$userCode}, amount=₦" . number_format($amount, 2) . ", admin={$adminId}");
-
-    json_success('Withdrawal marked as processed', [
-        'request_code' => $requestCode,
-        'amount'       => $amount,
-        'user_type'    => $userType,
-        'user_code'    => $userCode,
-    ]);
 
 } catch (Throwable $e) {
     $conn->rollback();
@@ -199,4 +133,67 @@ try {
     logActivity("[APPROVE_WITHDRAWAL] Stack: " . $e->getTraceAsString(), 'ERROR');
     logActivity("[APPROVE_WITHDRAWAL] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
+    exit;
+} 
+// finally {
+//     if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+//         $conn->close();
+//     }
+// }
+
+// ---- Notify the correct party (best-effort, post-commit) ----
+try {
+    $title = 'Withdrawal Processed';
+    $message = "Your withdrawal of ₦" . number_format($amount, 2)
+        . " has been processed. Please allow 1-2 business days for the funds to reflect.";
+    $details = ['request_code' => $requestCode, 'amount' => $amount];
+
+    if ($userType === 'tenant') {
+        // createNotification() targets tenant_notifications — correct for tenants.
+        createNotification(
+            $conn, $userCode, 'wallet', $title, $message, $details,
+            'normal', '../wallet.php', 'View Wallet'
+        );
+        logActivity("[APPROVE_WITHDRAWAL] Tenant notification sent: {$userCode}");
+    } else if ($userType === 'client') {
+        if (function_exists('createClientNotification')) {
+            createClientNotification(
+                $conn, $userCode, 'wallet', $title, $message, $details,
+                'normal', '../wallet.php', 'View Wallet'
+            );
+            logActivity("[APPROVE_WITHDRAWAL] Client notification sent via createClientNotification: {$userCode}");
+        } else {
+            $detailsJson = json_encode($details);
+            $notif = $conn->prepare("
+                INSERT INTO client_notifications
+                    (client_code, notification_type, title, message, details,
+                     priority, action_url, action_text, created_at)
+                VALUES (?, 'wallet', ?, ?, ?, 'normal', '../wallet.php', 'View Wallet', NOW())
+            ");
+            if ($notif) {
+                $notif->bind_param("ssss", $userCode, $title, $message, $detailsJson);
+                $notif->execute();
+                $notif->close();
+                logActivity("[APPROVE_WITHDRAWAL] Client notification sent via raw insert (helper missing): {$userCode}");
+            }
+        }
+    }
+} catch (Throwable $notifErr) {
+    logActivity("[APPROVE_WITHDRAWAL] Notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
 }
+
+// ---- Close connection LAST ----
+if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+    $conn->close();
+}
+
+logActivity("[APPROVE_WITHDRAWAL] ========== SUCCESS ==========");
+logActivity("[APPROVE_WITHDRAWAL] request_code={$requestCode}, user_type={$userType}, "
+    . "user_code={$userCode}, amount=₦" . number_format($amount, 2) . ", admin={$adminId}");
+
+json_success('Withdrawal marked as processed', [
+    'request_code' => $requestCode,
+    'amount'       => $amount,
+    'user_type'    => $userType,
+    'user_code'    => $userCode,
+]);

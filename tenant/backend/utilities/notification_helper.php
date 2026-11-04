@@ -17,10 +17,11 @@
  * @param string $action_text Button text for action
  * @return int|false Notification ID or false on failure
  */
-function createNotification($conn, $tenant_code, $type, $title, $message, $details = [], $priority = 'medium', $action_url = null, $action_text = null) {
+function createNotification($conn, $tenant_code, $type, $title, $message, $details = [], $priority = 'medium', $action_url = null, $action_text = null)
+{
     try {
         $details_json = !empty($details) ? json_encode($details) : null;
-        
+
         $query = "
             INSERT INTO tenant_notifications (
                 tenant_code, 
@@ -34,21 +35,21 @@ function createNotification($conn, $tenant_code, $type, $title, $message, $detai
                 created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ";
-        
+
         $stmt = $conn->prepare($query);
         $stmt->bind_param("ssssssss", $tenant_code, $type, $title, $message, $details_json, $priority, $action_url, $action_text);
-        
+
         if ($stmt->execute()) {
             $notification_id = $stmt->insert_id;
             $stmt->close();
-            
+
             logActivity("Notification created - ID: {$notification_id}, Tenant: {$tenant_code}, Type: {$type}");
             return $notification_id;
         }
-        
+
         $stmt->close();
         return false;
-        
+
     } catch (Exception $e) {
         logActivity("Error creating notification: " . $e->getMessage());
         return false;
@@ -58,13 +59,14 @@ function createNotification($conn, $tenant_code, $type, $title, $message, $detai
 /**
  * Create a payment notification
  */
-function createPaymentNotification($conn, $tenant_code, $amount, $status, $period_number = null, $receipt_number = null) {
+function createPaymentNotification($conn, $tenant_code, $amount, $status, $period_number = null, $receipt_number = null)
+{
     $title = '';
     $message = '';
     $priority = 'medium';
     $action_url = '../payments.php';
     $action_text = 'View Payments';
-    
+
     switch ($status) {
         case 'initiated':
             $title = 'Payment Initiated';
@@ -96,27 +98,28 @@ function createPaymentNotification($conn, $tenant_code, $amount, $status, $perio
             $priority = 'urgent';
             break;
     }
-    
+
     $details = [
         'amount' => $amount,
         'status' => $status,
         'period_number' => $period_number,
         'receipt_number' => $receipt_number
     ];
-    
+
     return createNotification($conn, $tenant_code, 'payment', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a maintenance request notification
  */
-function createMaintenanceNotification($conn, $tenant_code, $request_id, $issue_type, $status, $admin_note = null) {
+function createMaintenanceNotification($conn, $tenant_code, $request_id, $issue_type, $status, $admin_note = null)
+{
     $title = '';
     $message = '';
     $priority = 'medium';
     $action_url = '../maintenance.php';
     $action_text = 'View Request';
-    
+
     switch ($status) {
         case 'submitted':
             $title = 'Maintenance Request Submitted';
@@ -149,27 +152,28 @@ function createMaintenanceNotification($conn, $tenant_code, $request_id, $issue_
             $priority = 'medium';
             break;
     }
-    
+
     $details = [
         'request_id' => $request_id,
         'issue_type' => $issue_type,
         'status' => $status,
         'admin_note' => $admin_note
     ];
-    
+
     return createNotification($conn, $tenant_code, 'maintenance', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a document notification
  */
-function createDocumentNotification($conn, $tenant_code, $document_name, $action) {
+function createDocumentNotification($conn, $tenant_code, $document_name, $action)
+{
     $title = '';
     $message = '';
     $priority = 'low';
     $action_url = '../documents.php';
     $action_text = 'View Documents';
-    
+
     switch ($action) {
         case 'uploaded':
             $title = 'Document Uploaded';
@@ -192,22 +196,23 @@ function createDocumentNotification($conn, $tenant_code, $document_name, $action
             $priority = 'urgent';
             break;
     }
-    
+
     $details = ['document_name' => $document_name, 'action' => $action];
-    
+
     return createNotification($conn, $tenant_code, 'document', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a lease notification
  */
-function createLeaseNotification($conn, $tenant_code, $action, $value = null) {
+function createLeaseNotification($conn, $tenant_code, $action, $value = null)
+{
     $title = '';
     $message = '';
     $priority = 'high';
     $action_url = '../dashboard.php';
     $action_text = 'View Lease';
-    
+
     switch ($action) {
         case 'renewed':
             $title = 'Lease Renewed';
@@ -235,22 +240,23 @@ function createLeaseNotification($conn, $tenant_code, $action, $value = null) {
             $priority = 'medium';
             break;
     }
-    
+
     $details = ['action' => $action, 'value' => $value];
-    
+
     return createNotification($conn, $tenant_code, 'lease', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a profile/security notification
  */
-function createSecurityNotification($conn, $tenant_code, $action) {
+function createSecurityNotification($conn, $tenant_code, $action)
+{
     $title = '';
     $message = '';
     $priority = 'high';
     $action_url = '../profile.php';
     $action_text = 'View Profile';
-    
+
     switch ($action) {
         case 'password_changed':
             $title = 'Password Changed';
@@ -282,22 +288,23 @@ function createSecurityNotification($conn, $tenant_code, $action) {
             $priority = 'medium';
             break;
     }
-    
+
     $details = ['action' => $action];
-    
+
     return createNotification($conn, $tenant_code, 'security', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create an apartment/assignment notification
  */
-function createApartmentNotification($conn, $tenant_code, $apartment_code, $action) {
+function createApartmentNotification($conn, $tenant_code, $apartment_code, $action)
+{
     $title = '';
     $message = '';
     $priority = 'medium';
     $action_url = '../apartment.php';
     $action_text = 'View Apartment';
-    
+
     switch ($action) {
         case 'assigned':
             $title = 'Apartment Assigned';
@@ -315,22 +322,23 @@ function createApartmentNotification($conn, $tenant_code, $apartment_code, $acti
             $priority = 'high';
             break;
     }
-    
+
     $details = ['apartment_code' => $apartment_code, 'action' => $action];
-    
+
     return createNotification($conn, $tenant_code, 'apartment', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a fee notification
  */
-function createFeeNotification($conn, $tenant_code, $fee_name, $amount, $due_date, $status) {
+function createFeeNotification($conn, $tenant_code, $fee_name, $amount, $due_date, $status)
+{
     $title = '';
     $message = '';
     $priority = 'medium';
     $action_url = '../fees.php';
     $action_text = 'View Fee';
-    
+
     switch ($status) {
         case 'added':
             $title = 'New Fee Added';
@@ -355,33 +363,35 @@ function createFeeNotification($conn, $tenant_code, $fee_name, $amount, $due_dat
             $priority = 'low';
             break;
     }
-    
+
     $details = [
         'fee_name' => $fee_name,
         'amount' => $amount,
         'due_date' => $due_date,
         'status' => $status
     ];
-    
+
     return createNotification($conn, $tenant_code, 'fee', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a system notification
  */
-function createSystemNotification($conn, $tenant_code, $title, $message, $priority = 'medium', $action_url = null, $action_text = null) {
+function createSystemNotification($conn, $tenant_code, $title, $message, $priority = 'medium', $action_url = null, $action_text = null)
+{
     $details = [];
-    
+
     return createNotification($conn, $tenant_code, 'system', $title, $message, $details, $priority, $action_url, $action_text);
 }
 
 /**
  * Create a bulk notification for multiple tenants
  */
-function createBulkNotification($conn, $tenant_codes, $type, $title, $message, $details = [], $priority = 'medium', $action_url = null, $action_text = null) {
+function createBulkNotification($conn, $tenant_codes, $type, $title, $message, $details = [], $priority = 'medium', $action_url = null, $action_text = null)
+{
     $success_count = 0;
     $failed_count = 0;
-    
+
     foreach ($tenant_codes as $tenant_code) {
         if (createNotification($conn, $tenant_code, $type, $title, $message, $details, $priority, $action_url, $action_text)) {
             $success_count++;
@@ -389,7 +399,7 @@ function createBulkNotification($conn, $tenant_codes, $type, $title, $message, $
             $failed_count++;
         }
     }
-    
+
     logActivity("Bulk notification - Sent to {$success_count} tenants, Failed: {$failed_count}");
     return ['success' => $success_count, 'failed' => $failed_count];
 }
@@ -397,11 +407,12 @@ function createBulkNotification($conn, $tenant_codes, $type, $title, $message, $
 /**
  * Create a reminder notification for upcoming due dates
  */
-function createDueDateReminder($conn, $tenant_code, $type, $item_name, $amount, $due_date, $days_left) {
+function createDueDateReminder($conn, $tenant_code, $type, $item_name, $amount, $due_date, $days_left)
+{
     $title = '';
     $message = '';
     $priority = 'high';
-    
+
     switch ($type) {
         case 'payment':
             $title = 'Rent Payment Reminder';
@@ -422,7 +433,7 @@ function createDueDateReminder($conn, $tenant_code, $type, $item_name, $amount, 
             $action_text = 'View Documents';
             break;
     }
-    
+
     $details = [
         'type' => $type,
         'item_name' => $item_name,
@@ -430,7 +441,130 @@ function createDueDateReminder($conn, $tenant_code, $type, $item_name, $amount, 
         'due_date' => $due_date,
         'days_left' => $days_left
     ];
-    
+
     return createNotification($conn, $tenant_code, 'reminder', $title, $message, $details, $priority, $action_url, $action_text);
+}
+
+function createClientNotification(
+    mysqli $conn,
+    string $clientCode,
+    string $type,
+    string $title,
+    string $message,
+    array $details = [],
+    string $priority = 'medium',
+    ?string $actionUrl = null,
+    ?string $actionText = null
+): ?int {
+    try {
+        $allowedPriorities = ['low', 'medium', 'high', 'urgent'];
+        if (!in_array($priority, $allowedPriorities, true))
+            $priority = 'medium';
+
+        $detailsJson = empty($details) ? null : json_encode($details);
+        if ($actionText !== null && strlen($actionText) > 100)
+            $actionText = substr($actionText, 0, 100);
+        if ($actionUrl !== null && strlen($actionUrl) > 255)
+            $actionUrl = substr($actionUrl, 0, 255);
+
+        $insert = $conn->prepare("
+            INSERT INTO client_notifications
+                (client_code, notification_type, title, message, details,
+                 priority, action_url, action_text, is_read, is_archived, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+        ");
+        if (!$insert) {
+            logActivity("[CLIENT_NOTIF_ERROR] Prepare failed: " . $conn->error);
+            return null;
+        }
+
+        $insert->bind_param(
+            "ssssssss",
+            $clientCode,
+            $type,
+            $title,
+            $message,
+            $detailsJson,
+            $priority,
+            $actionUrl,
+            $actionText
+        );
+
+        if (!$insert->execute()) {
+            logActivity("[CLIENT_NOTIF_ERROR] Execute failed: " . $insert->error);
+            $insert->close();
+            return null;
+        }
+
+        $id = (int) $insert->insert_id;
+        $insert->close();
+        logActivity("[CLIENT_NOTIF] Created ID={$id}, client={$clientCode}, type={$type}, title='{$title}'");
+        return $id;
+
+    } catch (Throwable $e) {
+        logActivity("[CLIENT_NOTIF_ERROR] " . $e->getMessage());
+        return null;
+    }
+}
+function createAdminNotification(
+    mysqli $conn,
+    int $assignedTo,
+    string $category,
+    string $title,
+    string $message,
+    string $type = 'info',
+    int $userId = 0
+): ?int {
+    try {
+        $allowedTypes = ['info', 'success', 'warning', 'danger', 'system'];
+        if (!in_array($type, $allowedTypes, true))
+            $type = 'info';
+
+        $allowedCategories = [
+            'account_reactivation',
+            'account_lock',
+            'payment_confirmation',
+            'order_update',
+            'report',
+            'system_alert',
+            'promotion',
+            'other',
+            'account_unlock',
+        ];
+        if (!in_array($category, $allowedCategories, true))
+            $category = 'other';
+
+        $insert = $conn->prepare("
+            INSERT INTO notifications
+                (user_id, assigned_to, title, message, type, category,
+                 is_read, is_archived, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, '0', NOW())
+        ");
+        if (!$insert) {
+            logActivity("[ADMIN_NOTIF_ERROR] Prepare failed: " . $conn->error);
+            return null;
+        }
+        $insert->bind_param(
+            "iissss",
+            $userId,
+            $assignedTo,
+            $title,
+            $message,
+            $type,
+            $category
+        );
+        if (!$insert->execute()) {
+            logActivity("[ADMIN_NOTIF_ERROR] Execute failed: " . $insert->error);
+            $insert->close();
+            return null;
+        }
+        $id = (int) $insert->insert_id;
+        $insert->close();
+        logActivity("[ADMIN_NOTIF] Created ID={$id}, assigned_to={$assignedTo}, category={$category}, title='{$title}'");
+        return $id;
+    } catch (Throwable $e) {
+        logActivity("[ADMIN_NOTIF_ERROR] " . $e->getMessage());
+        return null;
+    }
 }
 ?>

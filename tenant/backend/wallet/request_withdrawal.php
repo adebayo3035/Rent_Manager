@@ -32,7 +32,7 @@ $tenantCode = $_SESSION['tenant_code'] ?? null;
 if (!$tenantCode) json_error("Session expired", 401);
 
 $input = json_decode(file_get_contents('php://input'), true);
-if (!is_array($input) && !empty($_POST)) $input = $_POST;
+if (!is_array($input)) $input = $_POST;
 
 $amountRaw = trim($input['amount'] ?? '');
 $accountNo = trim($input['account_number'] ?? '');
@@ -45,13 +45,19 @@ logActivity("[TENANT_WITHDRAW] ========== START ==========");
 logActivity("[TENANT_WITHDRAW] Tenant: {$tenantCode}");
 
 // ---- Input validation ----
-$amount = round((float) str_replace(',', '', $amountRaw), 2);
-if ($amount <= 0)       json_error("Enter a valid amount", 400);
-if ($amount < 1000)     json_error("Minimum withdrawal is ₦1,000", 400);
-if ($accountNo === '')  json_error("Account number is required", 400);
+// Strict amount: digits + up to 2 decimals only. Rejects "1e5", "0x1A", etc.
+$amountClean = str_replace(',', '', $amountRaw);
+if (!preg_match('/^\d{1,8}(\.\d{1,2})?$/', $amountClean)) {
+    logActivity("[TENANT_WITHDRAW] Invalid amount format: '{$amountRaw}'", 'WARN');
+    json_error("Please enter a valid amount (numbers only, up to 2 decimal places)", 400);
+}
+$amount = round((float) $amountClean, 2);
+if ($amount < 1000)       json_error("Minimum withdrawal is ₦1,000", 400);
+if ($amount > 50_000_000) json_error("Maximum withdrawal is ₦50,000,000", 400);
+if ($accountNo === '')    json_error("Account number is required", 400);
 if (!preg_match('/^\d{10}$/', $accountNo)) json_error("Account number must be 10 digits", 400);
-if ($bankCode === '')   json_error("Bank is required", 400);
-if ($secretAns === '')  json_error("Please provide your secret answer", 400);
+if ($bankCode === '')     json_error("Bank is required", 400);
+if ($secretAns === '')    json_error("Please provide your secret answer", 400);
 
 $conn->begin_transaction();
 logActivity("[TENANT_WITHDRAW] Transaction started");
@@ -65,8 +71,9 @@ try {
         WHERE tenant_code = ?
         FOR UPDATE
     ");
+    if (!$stmt) throw new Exception("Prepare failed (load tenant): " . $conn->error);
     $stmt->bind_param("s", $tenantCode);
-    $stmt->execute();
+    if (!$stmt->execute()) throw new Exception("Load tenant failed: " . $stmt->error);
     $tenant = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
@@ -89,7 +96,7 @@ try {
     $accountName = $tenant['bank_account_name'];   // server-side truth
     $bankName    = $tenant['bank_name'];
 
-    // ---- 3) Lockout check FIRST (before verifying) ----
+    // ---- 3) Lockout check FIRST ----
     $lockState = checkSecretLockout($conn, 'tenant', $tenantCode);
     if ($lockState['locked']) {
         logActivity("[TENANT_WITHDRAW] Blocked: account locked for {$tenantCode}", 'WARN');
@@ -123,7 +130,12 @@ try {
     }
 
     // ---- 6) One pending withdrawal at a time ----
-    if (countPendingWithdrawals($conn, 'tenant', $tenantCode) > 0) {
+    $pendingCount = countPendingWithdrawals($conn, 'tenant', $tenantCode);
+    if ($pendingCount === PHP_INT_MAX) {
+        logActivity("[TENANT_WITHDRAW] Pending check failed (DB error) for {$tenantCode}", 'ERROR');
+        throw new Exception("Unable to verify pending withdrawals — please try again", 500);
+    }
+    if ($pendingCount > 0) {
         logActivity("[TENANT_WITHDRAW] Blocked: pending withdrawal for {$tenantCode}", 'WARN');
         throw new Exception("You already have a pending withdrawal request", 409);
     }
@@ -135,6 +147,7 @@ try {
     $maskedAcct      = '******' . substr($accountNo, -4);
 
     $debit = $conn->prepare("UPDATE tenants SET wallet_balance = wallet_balance - ? WHERE tenant_code = ?");
+    if (!$debit) throw new Exception("Prepare failed (debit): " . $conn->error);
     $debit->bind_param("ds", $amount, $tenantCode);
     if (!$debit->execute()) throw new Exception("Failed to reserve funds: " . $debit->error);
     $debit->close();
@@ -153,7 +166,13 @@ try {
     if (!$ledger) throw new Exception("Prepare failed (ledger): " . $conn->error);
     $debitAmt = -$amount;
     $ledger->bind_param("sddss", $tenantCode, $debitAmt, $newBalance, $requestCode, $note);
-    if (!$ledger->execute()) throw new Exception("Ledger insert failed: " . $ledger->error);
+    if (!$ledger->execute()) {
+        if ($ledger->errno === 1062) {
+            logActivity("[TENANT_WITHDRAW] DB rejected: duplicate withdrawal ledger for {$requestCode}", 'WARN');
+            throw new Exception("Duplicate withdrawal ledger entry — please retry", 409);
+        }
+        throw new Exception("Ledger insert failed: " . $ledger->error);
+    }
     $ledgerId = $ledger->insert_id;
     $ledger->close();
     logActivity("[TENANT_WITHDRAW] Ledger inserted: id={$ledgerId}, request_id={$requestCode}, "
@@ -173,50 +192,107 @@ try {
         $requestCode, $tenantCode, $amount, $referenceNumber,
         $bankName, $accountName, $accountNo
     );
-    if (!$reqStmt->execute()) throw new Exception("Failed to save request: " . $reqStmt->error);
+    if (!$reqStmt->execute()) {
+        if ($reqStmt->errno === 1062) {
+            $errText = $reqStmt->error;
+            if (stripos($errText, 'pending_marker') !== false
+                || stripos($errText, 'uniq_pending_per_user_type') !== false) {
+                logActivity("[TENANT_WITHDRAW] DB rejected: pending withdrawal already exists (concurrent insert) for {$tenantCode}", 'WARN');
+                throw new Exception("You already have a pending withdrawal request", 409);
+            }
+            logActivity("[TENANT_WITHDRAW] DB rejected: request_code collision {$requestCode}", 'WARN');
+            throw new Exception("Please try again (transient issue)", 409);
+        }
+        throw new Exception("Failed to save request: " . $reqStmt->error);
+    }
     $reqStmt->close();
     logActivity("[TENANT_WITHDRAW] wallet_requests row inserted: request_code={$requestCode}");
 
     // ---- 10) Reset lockout on success ----
     setSecretAttempts($conn, 'tenant', $tenantCode, 0, null);
 
-    // ---- 11) Notify admins (best-effort) ----
-    try {
-        $admins = $conn->query("SELECT unique_id FROM admin_tbl WHERE status = 1 LIMIT 10");
-        while ($adm = $admins->fetch_assoc()) {
-            createNotification(
-                $conn, $adm['unique_id'], 'wallet',
-                'New Tenant Withdrawal Request',
-                "Tenant {$tenantCode} requested a withdrawal of ₦" . number_format($amount, 2)
-                . " to {$bankName} ({$maskedAcct}).",
-                ['request_code' => $requestCode, 'amount' => $amount],
-                'high', '../wallet_requests.php', 'Review Request'
-            );
-        }
-    } catch (Throwable $notifErr) {
-        logActivity("[TENANT_WITHDRAW] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
-    }
-
     $conn->commit();
     logActivity("[TENANT_WITHDRAW] Transaction committed");
-    logActivity("[TENANT_WITHDRAW] ========== SUCCESS ==========");
-    logActivity("[TENANT_WITHDRAW] request_code={$requestCode}, tenant={$tenantCode}, "
-        . "amount=₦" . number_format($amount, 2));
-
-    json_success([
-        'request_code'       => $requestCode,
-        'amount'             => $amount,
-        'amount_formatted'   => '₦' . number_format($amount, 2),
-        'beneficiary_name'   => $accountName,
-        'bank_name'          => $bankName,
-        'masked_account'     => $maskedAcct,
-        'new_wallet_balance' => $newBalance,
-        'status'             => 'pending',
-    ], 'Withdrawal request submitted. Admin will review and process.');
 
 } catch (Throwable $e) {
     $conn->rollback();
     logActivity("[TENANT_WITHDRAW] ROLLBACK: " . $e->getMessage(), 'ERROR');
     logActivity("[TENANT_WITHDRAW] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
+    exit;
+} 
+// finally {
+//     if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+//         $conn->close();
+//     }
+// }
+
+// ---- Notify admins (best-effort, post-commit) ----
+try {
+    $admins = $conn->query("SELECT unique_id FROM admin_tbl
+    WHERE status = '1' AND role IN ('Super Admin', 'Admin')
+    LIMIT 20");
+    if ($admins) {
+        while ($adm = $admins->fetch_assoc()) {
+            if (function_exists('createAdminNotification')) {
+                createAdminNotification(
+                    $conn,
+                    (int) $adm['unique_id'],
+                    'payment_confirmation',
+                    'New Tenant Withdrawal Request',
+                    "Tenant {$tenantCode} requested a withdrawal of ₦" . number_format($amount, 2)
+                        . " to {$bankName} ({$maskedAcct}).",
+                    'info',
+                    0
+                );
+            }
+        }
+    }
+} catch (Throwable $notifErr) {
+    logActivity("[TENANT_WITHDRAW] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
 }
+
+// ---- Acknowledge to the tenant (best-effort) ----
+try {
+    createNotification(
+        $conn,
+        $tenantCode,
+        'wallet',
+        'Withdrawal Request Received',
+        "We received your withdrawal request of ₦" . number_format($amount, 2)
+            . " to {$bankName} ({$maskedAcct}). Funds have been reserved. "
+            . "An admin will process the payment within 1-2 business days.",
+        [
+            'request_code'       => $requestCode,
+            'amount'             => $amount,
+            'new_wallet_balance' => $newBalance,
+            'status'             => 'pending',
+        ],
+        'medium',
+        '../wallet.php',
+        'View Wallet'
+    );
+    logActivity("[TENANT_WITHDRAW] Tenant acknowledgment sent: {$tenantCode}");
+} catch (Throwable $notifErr) {
+    logActivity("[TENANT_WITHDRAW] Tenant acknowledgment failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
+}
+
+// ---- Close connection LAST ----
+if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
+    $conn->close();
+}
+
+logActivity("[TENANT_WITHDRAW] ========== SUCCESS ==========");
+logActivity("[TENANT_WITHDRAW] request_code={$requestCode}, tenant={$tenantCode}, "
+    . "amount=₦" . number_format($amount, 2));
+
+json_success([
+    'request_code'       => $requestCode,
+    'amount'             => $amount,
+    'amount_formatted'   => '₦' . number_format($amount, 2),
+    'beneficiary_name'   => $accountName,
+    'bank_name'          => $bankName,
+    'masked_account'     => $maskedAcct,
+    'new_wallet_balance' => $newBalance,
+    'status'             => 'pending',
+], 'Withdrawal request submitted. Admin will review and process.');
