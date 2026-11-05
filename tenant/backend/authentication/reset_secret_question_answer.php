@@ -9,7 +9,8 @@
 //     counter persists even on failure
 //   - 24-hour cooldown between successful resets
 //   - Argon2id hash for the new secret answer
-//   - 423 responses include data.tenant_code for client-side forced logout
+//   - 423 responses include data.tenant_code, locked_until, source='password'
+//     so the frontend can render an accurate countdown + forced logout
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
@@ -124,12 +125,22 @@ try {
             'WARN'
         );
 
+        // Password lockouts are always 60 minutes; send the exact expiry so
+        // the frontend modal renders an accurate countdown.
+        $lockoutData = $isLocked
+            ? [
+                'tenant_code'  => $tenant_code,
+                'locked_until' => date('Y-m-d H:i:s', time() + 3600),
+                'source'       => 'password',
+            ]
+            : null;
+
         json_error(
             $pwCheck['message'] ?? 'Incorrect password',
             $isLocked ? 423 : 401,
             null,
             $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_PASSWORD',
-            $isLocked ? ['tenant_code' => $tenant_code] : null
+            $lockoutData
         );
     }
     logActivity("[TENANT_RESET_SECRET] Password verified");

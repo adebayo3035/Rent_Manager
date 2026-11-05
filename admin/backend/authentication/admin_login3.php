@@ -232,6 +232,87 @@ class LoginSecurity
         }
     }
 
+     public function checkSecretLockout($userId)
+    {
+        $this->log("Checking secret-answer lockout status for user: {$userId}");
+
+        $stmt = $this->conn->prepare("
+        SELECT attempts, locked_until
+        FROM admin_secret_attempts
+        WHERE unique_id = ?
+        LIMIT 1
+    ");
+        if (!$stmt) {
+            logActivity("Secret lockout check prepare failed: " . $this->conn->error);
+            return [true, "No secret lockout", 200, null];  // fail-open on DB error (login should still work)
+        }
+
+        $stmt->bind_param("s", $userId);
+        if (!$stmt->execute()) {
+            logActivity("Secret lockout check execute failed: " . $stmt->error);
+            $stmt->close();
+            return [true, "No secret lockout", 200, null];
+        }
+
+        $result = $stmt->get_result();
+        if ($result->num_rows === 0) {
+            $stmt->close();
+            return [true, "No secret lockout", 200, null];
+        }
+
+        $data = $result->fetch_assoc();
+        $stmt->close();
+
+        $attempts = (int) $data['attempts'];
+        $lockedUntil = $data['locked_until'];
+
+        if ($attempts >= 3 && $lockedUntil) {
+            $lockTime = new DateTime($lockedUntil);
+            $currentTime = new DateTime();
+
+            if ($currentTime < $lockTime) {
+                $remaining = $currentTime->diff($lockTime);
+                $mins = $remaining->i + ($remaining->h * 60);
+                $secs = $remaining->s;
+                $timeRemaining = "{$mins}m {$secs}s";
+
+                $this->log("Secret-answer lockout active - ID: {$userId}, Time remaining: {$timeRemaining}");
+
+                return [
+                    false,
+                    "Your account is temporarily locked due to failed security-answer attempts. Try again in {$timeRemaining}.",
+                    423,
+                    [
+                        'is_locked' => true,
+                        'lock_source' => 'secret_answer',
+                        'locked_until' => $lockedUntil,
+                        'time_remaining' => $timeRemaining,
+                        'attempts' => $attempts,
+                    ],
+                ];
+            }
+
+            // Lock expired — clean up so the next attempt starts fresh
+            $this->resetSecretAttempts($userId);
+            return [true, "Secret lockout expired, attempts reset", 200, null];
+        }
+
+        return [true, "Not locked", 200, null];
+    }
+
+    private function resetSecretAttempts($userId)
+    {
+        $this->log("Resetting secret-answer attempts for user: {$userId}");
+
+        $stmt = $this->conn->prepare("DELETE FROM admin_secret_attempts WHERE unique_id = ?");
+        if ($stmt) {
+            $stmt->bind_param("s", $userId);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+
     public function handleFailedLogin($userId, $lockoutInfo = null)
     {
         $this->log("Processing failed login for user: {$userId}");
@@ -529,6 +610,13 @@ class LoginSecurity
         if (!verifyAndRehashPassword($this->conn, $userId, $password, $user['password'])) {
             $this->log("Password verification failed for user: {$userId}");
             return $this->handleFailedLogin($userId, $lockoutInfo);
+        }
+
+        // Step 5b: Check secret-answer lockout (post-password-auth)
+        list($secretUnlocked, $secretMessage, $secretCode, $secretInfo) = $this->checkSecretLockout($userId);
+        if (!$secretUnlocked) {
+            $this->log("Login blocked by secret-answer lockout for user: {$userId}");
+            return [$secretUnlocked, $secretMessage, $secretCode, $secretInfo];
         }
 
         // Step 6: Destroy existing session (if any)

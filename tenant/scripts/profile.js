@@ -10,6 +10,15 @@ let passwordValidation = {
     match:  false,
 };
 
+// Lockout state (shared with wallet module via localStorage is optional;
+// kept local here since profile page is a separate route)
+let lockoutState = {
+    active: false,
+    lockedUntil: null, // Date
+    countdownTimer: null,
+    source: null, // 'password' | 'secret_answer' | null
+};
+
 // ==================== INITIALIZATION ====================
 document.addEventListener("DOMContentLoaded", () => {
     initializeProfile();
@@ -149,16 +158,271 @@ async function forceLogoutAndRedirect(reason = "account_locked", delayMs = 2000)
     }, delayMs);
 }
 
+function restoreButton(button, originalText) {
+    if (!button) return;
+    button.innerHTML = originalText;
+    button.disabled = false;
+}
+
+function setButtonLoading(button, text = "Saving...") {
+    if (!button) return "";
+    const original = button.innerHTML;
+    button.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${text}`;
+    button.disabled = true;
+    return original;
+}
+
+// ============================================================
+// LOCKOUT MODAL (shared by password + secret answer)
+// ============================================================
+
+/**
+ * Parse a lockout end-time from an API response.
+ * Returns Date or null.
+ */
+function parseLockoutUntil(data) {
+    const raw =
+        data?.data?.locked_until ||
+        data?.data?.next_allowed ||
+        data?.locked_until ||
+        null;
+
+    if (!raw) return null;
+
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return d;
+
+    const msg = data?.message || "";
+    const minMatch = msg.match(/(\d+)\s*min/i);
+    const secMatch = msg.match(/(\d+)\s*sec/i);
+    if (minMatch || secMatch) {
+        const mins = parseInt(minMatch?.[1] || "0", 10);
+        const secs = parseInt(secMatch?.[1] || "0", 10);
+        return new Date(Date.now() + (mins * 60 + secs) * 1000);
+    }
+
+    // Fallback default (15 min for secret-answer, 60 min for password)
+    const defaultMins = lockoutState.source === 'password' ? 60 : 15;
+    return new Date(Date.now() + defaultMins * 60 * 1000);
+}
+
+function formatRemaining(ms) {
+    if (ms <= 0) return "now";
+    const totalSec = Math.ceil(ms / 1000);
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    if (mins > 0) return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+    return `${secs}s`;
+}
+
+/**
+ * Show the lockout modal, with a live countdown.
+ * Idempotent — repeated calls just refresh the countdown.
+ *
+ * @param {string} message
+ * @param {Date|null} lockedUntilDate
+ * @param {'password'|'secret_answer'|null} source
+ */
+function showLockoutModal(message, lockedUntilDate, source = null) {
+    if (!lockedUntilDate) {
+        const defaultMins = source === 'password' ? 60 : 15;
+        lockedUntilDate = new Date(Date.now() + defaultMins * 60 * 1000);
+    }
+
+    lockoutState.active = true;
+    lockoutState.lockedUntil = lockedUntilDate;
+    lockoutState.source = source;
+
+    const sourceLabel = source === 'password'
+        ? "password"
+        : source === 'secret_answer'
+            ? "secret-answer"
+            : "security";
+
+    let overlay = document.getElementById("lockoutModal");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "lockoutModal";
+        overlay.className = "wallet-modal lockout-modal";
+        overlay.style.cssText = `
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55);
+            z-index: 9999; display: none; align-items: center;
+            justify-content: center; padding: 20px;
+        `;
+        overlay.innerHTML = `
+          <div class="wallet-modal-content" style="
+              background:#fff; border-radius:12px; width:100%; max-width:480px;
+              box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+          ">
+            <div class="wallet-modal-header" style="
+                padding:20px 24px 0;
+            ">
+              <h3 style="color:#dc2626; margin:0; font-size:18px;">
+                <i class="fas fa-lock"></i> Account Temporarily Locked
+              </h3>
+            </div>
+            <div class="wallet-modal-body" style="padding:16px 24px;">
+              <div style="
+                  background:#fef2f2; border-left:4px solid #dc2626;
+                  padding:14px 16px; border-radius:8px; margin-bottom:16px;
+              ">
+                <p id="lockoutMessage" style="
+                    margin:0 0 8px; color:#7f1d1d; font-size:14px; line-height:1.5;
+                "></p>
+                <p style="margin:0; color:#991b1b; font-size:13px;">
+                  <i class="fas fa-clock"></i>
+                  Try again in <strong id="lockoutCountdown">--:--</strong>
+                </p>
+              </div>
+              <p style="
+                  font-size:13px; color:#64748b; margin:0 0 16px; line-height:1.6;
+              ">
+                For your security, your account has been locked after too many failed
+                <span id="lockoutSourceLabel">security</span> attempts.
+                You cannot perform this action until the lockout expires.
+                Please log out and try again later.
+              </p>
+              <p style="font-size:12px; color:#94a3b8; margin:0;">
+                If you believe this is a mistake, contact support.
+                Do not share your secret answer or password with anyone.
+              </p>
+            </div>
+            <div class="wallet-modal-footer" style="
+                padding:0 24px 20px; display:flex; justify-content:flex-end; gap:10px;
+            ">
+              <button type="button" id="lockoutLogoutBtn" style="
+                  background:#dc2626; border:1px solid #dc2626; color:#fff;
+                  padding:10px 18px; border-radius:8px; font-weight:600;
+                  cursor:pointer; display:inline-flex; align-items:center; gap:8px;
+              ">
+                <i class="fas fa-sign-out-alt"></i> Log Out Now
+              </button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+
+        document
+            .getElementById("lockoutLogoutBtn")
+            .addEventListener("click", () => performLogoutNow("account_locked"));
+    }
+
+    // Update source label
+    const srcEl = document.getElementById("lockoutSourceLabel");
+    if (srcEl) srcEl.textContent = sourceLabel;
+
+    // Update message
+    const msgEl = document.getElementById("lockoutMessage");
+    if (msgEl) {
+        msgEl.textContent =
+            message ||
+            "Your account has been temporarily locked due to too many failed attempts.";
+    }
+
+    overlay.style.display = "flex";
+
+    // Restart the countdown
+    if (lockoutState.countdownTimer) clearInterval(lockoutState.countdownTimer);
+    updateLockoutCountdown();
+    lockoutState.countdownTimer = setInterval(updateLockoutCountdown, 1000);
+}
+
+function updateLockoutCountdown() {
+    const el = document.getElementById("lockoutCountdown");
+    if (!el || !lockoutState.lockedUntil) return;
+
+    const remaining = lockoutState.lockedUntil.getTime() - Date.now();
+    if (remaining <= 0) {
+        el.textContent = "now";
+        if (lockoutState.countdownTimer) {
+            clearInterval(lockoutState.countdownTimer);
+            lockoutState.countdownTimer = null;
+        }
+
+        lockoutState.active = false;
+
+        const msgEl = document.getElementById("lockoutMessage");
+        if (msgEl) {
+            msgEl.textContent =
+                "Your lockout period has expired. You may continue.";
+        }
+
+        const overlay = document.getElementById("lockoutModal");
+        const btn = document.getElementById("lockoutLogoutBtn");
+        if (overlay && btn) {
+            btn.innerHTML = '<i class="fas fa-check"></i> Continue';
+            btn.style.background = "#10b981";
+            btn.style.borderColor = "#10b981";
+            btn.onclick = () => {
+                overlay.style.display = "none";
+                lockoutState.active = false;
+                lockoutState.lockedUntil = null;
+                // Soft refresh so the form is re-enabled with fresh state
+                if (typeof renderProfile === "function") renderProfile();
+            };
+        }
+        return;
+    }
+
+    el.textContent = formatRemaining(remaining);
+}
+
+/**
+ * Log out immediately (user clicked the button, or fallback).
+ */
+async function performLogoutNow(reason = "account_locked") {
+    const tenantCode = window.currentUser?.tenant_code || currentUser?.tenant_code;
+
+    if (tenantCode) {
+        try {
+            await fetch("../backend/authentication/logout.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ logout_id: tenantCode }),
+                credentials: "same-origin",
+            });
+        } catch (err) {
+            console.error("Logout request failed:", err);
+        }
+    }
+
+    try {
+        localStorage.removeItem("userData");
+        localStorage.removeItem("userPreferences");
+        sessionStorage.clear();
+    } catch (_) {}
+
+    window.location.href = `../pages/index.php?reason=${encodeURIComponent(reason)}`;
+}
+
+// ============================================================
+// AUTH ERROR HANDLER — routes 423 to the lockout modal
+// ============================================================
+
+/**
+ * @param {number} status
+ * @param {object} data
+ * @param {object} opts { button, originalText, clearFieldId, source: 'password'|'secret_answer' }
+ * @returns {Promise<boolean>} true if handled
+ */
 async function handleAuthError(status, data, opts = {}) {
-    const { button, originalText } = opts;
+    const { button, originalText, source = null } = opts;
 
     if (status === 423) {
-        displayMessage(data.message || "Account temporarily locked.", "error");
+        const lockedUntil = parseLockoutUntil(data);
+        const message =
+            data.message ||
+            "Account temporarily locked due to too many failed attempts.";
+
+        // Show modal instead of logging out immediately
+        lockoutState.source = source;
+        showLockoutModal(message, lockedUntil, source);
+
+        // Freeze the button visually — user will log out via modal
         if (button) {
-            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging out...';
+            button.innerHTML = '<i class="fas fa-lock"></i> Account Locked';
             button.disabled = true;
         }
-        await forceLogoutAndRedirect("account_locked", 2000);
         return true;
     }
 
@@ -193,20 +457,6 @@ async function handleAuthError(status, data, opts = {}) {
     displayMessage(data.message || "Something went wrong.", "error");
     restoreButton(button, originalText);
     return true;
-}
-
-function restoreButton(button, originalText) {
-    if (!button) return;
-    button.innerHTML = originalText;
-    button.disabled = false;
-}
-
-function setButtonLoading(button, text = "Saving...") {
-    if (!button) return "";
-    const original = button.innerHTML;
-    button.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${text}`;
-    button.disabled = true;
-    return original;
 }
 
 // ============================================================
@@ -479,7 +729,6 @@ function renderSecretAlreadySetTab() {
 }
 
 function renderRatingsTab() {
-    // (unchanged — same as before, included for completeness)
     const ratings = currentUser.ratings || { summary: { total_ratings: 0, average_rating: 0 }, recent: [] };
     const summary = ratings.summary || {};
     const recent = ratings.recent || [];
@@ -698,10 +947,12 @@ async function updateProfile() {
         return;
     }
 
+    // Password lockout → 423, so source = 'password'
     await handleAuthError(status, data, {
         button,
         originalText,
         clearFieldId: status === 401 ? "profileCurrentPassword" : null,
+        source: "password",
     });
 }
 
@@ -771,7 +1022,7 @@ async function changePassword() {
         {
             current_password: currentPassword,
             new_password:     newPassword,
-            confirm_password:   confirmPassword,
+            confirm_password: confirmPassword,
             secret_answer:    secretAnswer,
         },
         { csrfForm: "tenant_change_password" }
@@ -794,10 +1045,12 @@ async function changePassword() {
         return;
     }
 
+    // Password lockout → 423, source = 'password'
     await handleAuthError(status, data, {
         button,
         originalText,
         clearFieldId: status === 401 ? "currentPassword" : null,
+        source: "password",
     });
 }
 
@@ -876,7 +1129,11 @@ async function setSecretAnswer() {
         return;
     }
 
-    await handleAuthError(status, data, { button, originalText });
+    await handleAuthError(status, data, {
+        button,
+        originalText,
+        source: "secret_answer",
+    });
 }
 
 // ============================================================
@@ -923,10 +1180,18 @@ async function resetSecretAnswer() {
         return;
     }
 
+    // This endpoint can lock on either password or secret answer.
+    // Infer from the error_code if provided; else default to secret_answer.
+    const inferredSource =
+        data?.error_code === "ACCOUNT_LOCKED"
+            ? (data?.data?.source === "password" ? "password" : "secret_answer")
+            : "secret_answer";
+
     await handleAuthError(status, data, {
         button,
         originalText,
         clearFieldId: status === 401 ? "resetSecretPassword" : null,
+        source: inferredSource,
     });
 }
 

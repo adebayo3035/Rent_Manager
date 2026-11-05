@@ -114,12 +114,22 @@ try {
             'WARN'
         );
 
+        // Password lockouts are always 60 minutes; compute the exact expiry so the
+        // frontend can render an accurate countdown.
+        $lockoutData = $isLocked
+            ? [
+                'client_code' => $client_code,
+                'locked_until' => date('Y-m-d H:i:s', time() + 3600),
+                'source' => 'password',
+            ]
+            : null;
+
         json_error(
             $pwCheck['message'] ?? 'Incorrect password',
             $isLocked ? 423 : 401,
             null,
             $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_PASSWORD',
-            $isLocked ? ['client_code' => $client_code] : null
+            $lockoutData
         );
     }
     logActivity("[CLIENT_RESET_SECRET] Password verified");

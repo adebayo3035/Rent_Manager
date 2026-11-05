@@ -7,18 +7,21 @@ require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
+require_once __DIR__ . '/../utilities/wallet_security.php';
 
-if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE)
+    session_start();
 rateLimiter();
 
 $auth = requireAuth([
-    'method'   => 'GET',
+    'method' => 'GET',
     'rate_key' => 'tenant_wallet_balance',
-    'roles'    => ['Tenant'],
+    'roles' => ['Tenant'],
 ]);
 
 $tenantCode = $_SESSION['tenant_code'] ?? null;
-if (!$tenantCode) json_error("Session expired", 401);
+if (!$tenantCode)
+    json_error("Session expired", 401);
 
 try {
     // ---- Wallet snapshot ----
@@ -31,7 +34,8 @@ try {
     $stmt->execute();
     $tenant = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$tenant) json_error("Tenant not found", 404);
+    if (!$tenant)
+        json_error("Tenant not found", 404);
 
     $hasBankAccount = !empty($tenant['bank_account_number']) && !empty($tenant['bank_code']);
     $accountNumberMasked = $hasBankAccount
@@ -39,26 +43,33 @@ try {
         : null;
 
     // ---- Parse transaction filters ----
-    $status   = in_array($_GET['status'] ?? '', ['all', 'Pending', 'Approved', 'Rejected', 'Failed'])
+    $status = in_array($_GET['status'] ?? '', ['all', 'Pending', 'Approved', 'Rejected', 'Failed'])
         ? $_GET['status'] : 'all';
-    $type     = in_array($_GET['type'] ?? '', [
-        'all', 'withdrawal', 'refund_credit', 'rent_credit', 'admin_adjustment',
-        'deposit_release', 'debt_recovery', 'settlement_debit', 'topup'
+    $type = in_array($_GET['type'] ?? '', [
+        'all',
+        'withdrawal',
+        'refund_credit',
+        'rent_credit',
+        'admin_adjustment',
+        'deposit_release',
+        'debt_recovery',
+        'settlement_debit',
+        'topup'
     ]) ? $_GET['type'] : 'all';
-    $search   = trim($_GET['search'] ?? '');
+    $search = trim($_GET['search'] ?? '');
     $dateFrom = trim($_GET['date_from'] ?? '');
-    $dateTo   = trim($_GET['date_to'] ?? '');
-    $page     = max(1, (int) ($_GET['page'] ?? 1));
-    $limit    = min(50, max(10, (int) ($_GET['limit'] ?? 20)));
-    $offset   = ($page - 1) * $limit;
+    $dateTo = trim($_GET['date_to'] ?? '');
+    $page = max(1, (int) ($_GET['page'] ?? 1));
+    $limit = min(50, max(10, (int) ($_GET['limit'] ?? 20)));
+    $offset = ($page - 1) * $limit;
 
     $dateFromValid = $dateFrom !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom);
-    $dateToValid   = $dateTo !== ''   && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo);
+    $dateToValid = $dateTo !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo);
 
     // ---- Build filter clauses (all prefixed with t.) ----
-    $where  = ['t.tenant_code = ?'];
+    $where = ['t.tenant_code = ?'];
     $params = [$tenantCode];
-    $types  = 's';
+    $types = 's';
 
     if ($status !== 'all') {
         $where[] = 't.status = ?';
@@ -95,7 +106,8 @@ try {
         FROM tenant_wallet_transactions t
         {$whereSql}
     ");
-    if (!$countStmt) throw new Exception("Count prepare failed: " . $conn->error);
+    if (!$countStmt)
+        throw new Exception("Count prepare failed: " . $conn->error);
     $countStmt->bind_param($types, ...$params);
     $countStmt->execute();
     $total = (int) $countStmt->get_result()->fetch_assoc()['total'];
@@ -122,7 +134,8 @@ try {
         ORDER BY t.id DESC
         LIMIT ? OFFSET ?
     ");
-    if (!$txStmt) throw new Exception("List prepare failed: " . $conn->error);
+    if (!$txStmt)
+        throw new Exception("List prepare failed: " . $conn->error);
     $rowParams = [...$params, $limit, $offset];
     $txStmt->bind_param($types . 'ii', ...$rowParams);
     $txStmt->execute();
@@ -132,16 +145,16 @@ try {
     while ($row = $txRes->fetch_assoc()) {
         $amt = (float) $row['amount'];
         $transactions[] = [
-            'id'               => (int) $row['id'],
-            'type'             => $row['transaction_type'],
-            'amount'           => $amt,
+            'id' => (int) $row['id'],
+            'type' => $row['transaction_type'],
+            'amount' => $amt,
             'amount_formatted' => formatNaira($amt),
-            'running_balance'  => (float) $row['running_balance'],
-            'request_id'       => $row['request_id'],
-            'request_status'   => $row['request_status'],   // ← NEW
-            'notes'            => $row['notes'],
-            'created_at'       => $row['created_at'],
-            'status'           => $row['status'],
+            'running_balance' => (float) $row['running_balance'],
+            'request_id' => $row['request_id'],
+            'request_status' => $row['request_status'],   // ← NEW
+            'notes' => $row['notes'],
+            'created_at' => $row['created_at'],
+            'status' => $row['status'],
         ];
     }
     $txStmt->close();
@@ -174,42 +187,54 @@ try {
     $pendingRequests = [];
     while ($row = $reqRes->fetch_assoc()) {
         $pendingRequests[] = [
-            'request_code'     => $row['request_code'],
-            'type'             => $row['request_type'],
-            'amount'           => (float) $row['amount'],
+            'request_code' => $row['request_code'],
+            'type' => $row['request_type'],
+            'amount' => (float) $row['amount'],
             'amount_formatted' => formatNaira((float) $row['amount']),
-            'status'           => $row['status'],
-            'created_at'       => $row['created_at'],
+            'status' => $row['status'],
+            'created_at' => $row['created_at'],
             'reference_number' => $row['reference_number'],
-            'bank_name'        => $row['bank_name'],
-            'bank_account_last4'=> $row['bank_account_number']
+            'bank_name' => $row['bank_name'],
+            'bank_account_last4' => $row['bank_account_number']
                 ? substr($row['bank_account_number'], -4) : null,
         ];
     }
     $reqStmt->close();
 
-    json_success([
-        'wallet_balance'             => (float) $tenant['wallet_balance'],
-        'wallet_balance_formatted'   => formatNaira((float) $tenant['wallet_balance']),
+    // Include lockout state so the wallet page can prompt the user
+    $lockoutState = checkSecretLockout($conn, 'tenant', $tenantCode);
+    $lockoutInfo = null;
+    if ($lockoutState['locked']) {
+        $lockoutInfo = [
+            'active' => true,
+            'message' => $lockoutState['message'],
+            'locked_until' => $lockoutState['locked_until'],
+        ];
+    }
 
-        'has_bank_account'           => $hasBankAccount,
-        'bank_name'                  => $tenant['bank_name'],
-        'bank_code'                  => $tenant['bank_code'],
-        'bank_account_name'          => $tenant['bank_account_name'],
-        'bank_account_number'        => $tenant['bank_account_number'],
+    json_success([
+        'wallet_balance' => (float) $tenant['wallet_balance'],
+        'wallet_balance_formatted' => formatNaira((float) $tenant['wallet_balance']),
+
+        'has_bank_account' => $hasBankAccount,
+        'bank_name' => $tenant['bank_name'],
+        'bank_code' => $tenant['bank_code'],
+        'bank_account_name' => $tenant['bank_account_name'],
+        'bank_account_number' => $tenant['bank_account_number'],
         'bank_account_number_masked' => $accountNumberMasked,
 
-        'total_in'                   => (float) $sumRow['total_in'],
-        'total_in_formatted'         => formatNaira((float) $sumRow['total_in']),
-        'total_out'                  => (float) $sumRow['total_out'],
-        'total_out_formatted'        => formatNaira((float) $sumRow['total_out']),
+        'total_in' => (float) $sumRow['total_in'],
+        'total_in_formatted' => formatNaira((float) $sumRow['total_in']),
+        'total_out' => (float) $sumRow['total_out'],
+        'total_out_formatted' => formatNaira((float) $sumRow['total_out']),
 
-        'transactions'               => $transactions,
-        'pending_requests'           => $pendingRequests,
-        'pagination'                 => [
-            'total'       => $total,
-            'page'        => $page,
-            'limit'       => $limit,
+        'transactions' => $transactions,
+        'pending_requests' => $pendingRequests,
+        'lockout' => $lockoutInfo,
+        'pagination' => [
+            'total' => $total,
+            'page' => $page,
+            'limit' => $limit,
             'total_pages' => (int) ceil($total / max(1, $limit)),
         ],
     ], 'Wallet data retrieved');
@@ -219,7 +244,8 @@ try {
     json_error("Failed to load wallet", 500);
 }
 
-function formatNaira(float $amount): string {
+function formatNaira(float $amount): string
+{
     $sign = $amount < 0 ? '-' : '';
     return $sign . '₦' . number_format(abs($amount), 2);
 }

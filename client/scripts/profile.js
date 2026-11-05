@@ -10,6 +10,13 @@ let passwordValidation = {
     match:  false,
 };
 
+let lockoutState = {
+    active: false,
+    lockedUntil: null,
+    countdownTimer: null,
+    source: null,
+};
+
 // ==================== INITIALIZATION ====================
 document.addEventListener("DOMContentLoaded", () => {
     initializeProfile();
@@ -59,9 +66,6 @@ async function fetchUserData() {
 // SHARED HELPERS
 // ============================================================
 
-/**
- * Fetch a CSRF token for the given form.
- */
 async function getCsrfToken(formName) {
     try {
         const res = await fetch(
@@ -76,20 +80,9 @@ async function getCsrfToken(formName) {
     }
 }
 
-/**
- * POST JSON to an authenticated API endpoint with CSRF token handling.
- *
- * Returns { ok, status, data }:
- *   - ok:     true when HTTP 2xx AND body.success === true
- *   - status: HTTP status code (for branching)
- *   - data:   parsed JSON body (or { message } on non-JSON response)
- *
- * Does NOT redirect, log out, or show toasts. Caller decides.
- */
 async function apiRequest(endpoint, body = {}, options = {}) {
     const { csrfForm = null, method = "POST" } = options;
 
-    // Attach CSRF if requested
     if (csrfForm) {
         const csrf = await getCsrfToken(csrfForm);
         if (csrf) {
@@ -107,7 +100,6 @@ async function apiRequest(endpoint, body = {}, options = {}) {
             body: JSON.stringify(body),
         });
     } catch (err) {
-        // Network-level failure (offline, DNS, CORS, etc.)
         return {
             ok: false,
             status: 0,
@@ -115,7 +107,6 @@ async function apiRequest(endpoint, body = {}, options = {}) {
         };
     }
 
-    // Non-JSON response = PHP fatal, unexpected redirect, etc.
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
         const text = await response.text().catch(() => "");
@@ -146,10 +137,6 @@ async function apiRequest(endpoint, body = {}, options = {}) {
     };
 }
 
-/**
- * Force-logout the current client and redirect to login with a reason.
- * Idempotent — safe to call even if the session is already dead.
- */
 async function forceLogoutAndRedirect(reason = "account_locked", delayMs = 2000) {
     const clientCode = window.currentUser?.client_code || currentUser?.client_code;
 
@@ -165,35 +152,238 @@ async function forceLogoutAndRedirect(reason = "account_locked", delayMs = 2000)
     }
 
     setTimeout(() => {
-        window.location.href = `../login.php?reason=${encodeURIComponent(reason)}`;
+        window.location.href = `../pages/index.php?reason=${encodeURIComponent(reason)}`;
     }, delayMs);
 }
 
-/**
- * Handle universal error cases shared across all credential endpoints.
- *
- * Returns true if the error was handled here (caller should return).
- * Returns false if the caller needs to handle it (e.g. field-specific).
- *
- * @param {number} status HTTP status code
- * @param {object} data   Response body
- * @param {object} opts   { button, originalText, errorCodeFallback? }
- */
-async function handleAuthError(status, data, opts = {}) {
-    const { button, originalText } = opts;
+function restoreButton(button, originalText) {
+    if (!button) return;
+    button.innerHTML = originalText;
+    button.disabled = false;
+}
 
-    // ---- 423 Locked: force logout + redirect ----
+function setButtonLoading(button, text = "Saving...") {
+    if (!button) return "";
+    const original = button.innerHTML;
+    button.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${text}`;
+    button.disabled = true;
+    return original;
+}
+
+// ============================================================
+// LOCKOUT MODAL
+// ============================================================
+
+function parseLockoutUntil(data) {
+    const raw =
+        data?.data?.locked_until ||
+        data?.data?.next_allowed ||
+        data?.locked_until ||
+        null;
+
+    if (!raw) return null;
+
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return d;
+
+    const msg = data?.message || "";
+    const minMatch = msg.match(/(\d+)\s*min/i);
+    const secMatch = msg.match(/(\d+)\s*sec/i);
+    if (minMatch || secMatch) {
+        const mins = parseInt(minMatch?.[1] || "0", 10);
+        const secs = parseInt(secMatch?.[1] || "0", 10);
+        return new Date(Date.now() + (mins * 60 + secs) * 1000);
+    }
+
+    const defaultMins = lockoutState.source === 'password' ? 60 : 15;
+    return new Date(Date.now() + defaultMins * 60 * 1000);
+}
+
+function formatRemaining(ms) {
+    if (ms <= 0) return "now";
+    const totalSec = Math.ceil(ms / 1000);
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    if (mins > 0) return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+    return `${secs}s`;
+}
+
+function showLockoutModal(message, lockedUntilDate, source = null) {
+    if (!lockedUntilDate) {
+        const defaultMins = source === 'password' ? 60 : 15;
+        lockedUntilDate = new Date(Date.now() + defaultMins * 60 * 1000);
+    }
+
+    lockoutState.active = true;
+    lockoutState.lockedUntil = lockedUntilDate;
+    lockoutState.source = source;
+
+    const sourceLabel = source === 'password' ? 'password'
+        : source === 'secret_answer' ? 'secret-answer'
+        : 'security';
+
+    let overlay = document.getElementById("lockoutModal");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "lockoutModal";
+        overlay.style.cssText = `
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55);
+            z-index: 9999; display: none; align-items: center;
+            justify-content: center; padding: 20px;
+        `;
+        overlay.innerHTML = `
+          <div style="
+              background:#fff; border-radius:12px; width:100%; max-width:480px;
+              box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+          ">
+            <div style="padding:20px 24px 0;">
+              <h3 style="color:#dc2626; margin:0; font-size:18px;">
+                <i class="fas fa-lock"></i> Account Temporarily Locked
+              </h3>
+            </div>
+            <div style="padding:16px 24px;">
+              <div style="
+                  background:#fef2f2; border-left:4px solid #dc2626;
+                  padding:14px 16px; border-radius:8px; margin-bottom:16px;
+              ">
+                <p id="lockoutMessage" style="
+                    margin:0 0 8px; color:#7f1d1d; font-size:14px; line-height:1.5;
+                "></p>
+                <p style="margin:0; color:#991b1b; font-size:13px;">
+                  <i class="fas fa-clock"></i>
+                  Try again in <strong id="lockoutCountdown">--:--</strong>
+                </p>
+              </div>
+              <p style="font-size:13px; color:#64748b; margin:0 0 16px; line-height:1.6;">
+                For your security, your account has been locked after too many failed
+                <span id="lockoutSourceLabel">security</span> attempts.
+                You cannot perform this action until the lockout expires.
+                Please log out and try again later.
+              </p>
+              <p style="font-size:12px; color:#94a3b8; margin:0;">
+                If you believe this is a mistake, contact support.
+                Do not share your secret answer or password with anyone.
+              </p>
+            </div>
+            <div style="padding:0 24px 20px; display:flex; justify-content:flex-end; gap:10px;">
+              <button type="button" id="lockoutLogoutBtn" style="
+                  background:#dc2626; border:1px solid #dc2626; color:#fff;
+                  padding:10px 18px; border-radius:8px; font-weight:600;
+                  cursor:pointer; display:inline-flex; align-items:center; gap:8px;
+              ">
+                <i class="fas fa-sign-out-alt"></i> Log Out Now
+              </button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+
+        document
+            .getElementById("lockoutLogoutBtn")
+            .addEventListener("click", () => performLogoutNow("account_locked"));
+    }
+
+    const srcEl = document.getElementById("lockoutSourceLabel");
+    if (srcEl) srcEl.textContent = sourceLabel;
+
+    const msgEl = document.getElementById("lockoutMessage");
+    if (msgEl) {
+        msgEl.textContent = message ||
+            "Your account has been temporarily locked due to too many failed attempts.";
+    }
+
+    overlay.style.display = "flex";
+
+    if (lockoutState.countdownTimer) clearInterval(lockoutState.countdownTimer);
+    updateLockoutCountdown();
+    lockoutState.countdownTimer = setInterval(updateLockoutCountdown, 1000);
+}
+
+function updateLockoutCountdown() {
+    const el = document.getElementById("lockoutCountdown");
+    if (!el || !lockoutState.lockedUntil) return;
+
+    const remaining = lockoutState.lockedUntil.getTime() - Date.now();
+    if (remaining <= 0) {
+        el.textContent = "now";
+        if (lockoutState.countdownTimer) {
+            clearInterval(lockoutState.countdownTimer);
+            lockoutState.countdownTimer = null;
+        }
+        lockoutState.active = false;
+
+        const msgEl = document.getElementById("lockoutMessage");
+        if (msgEl) {
+            msgEl.textContent = "Your lockout period has expired. You may continue.";
+        }
+
+        const overlay = document.getElementById("lockoutModal");
+        const btn = document.getElementById("lockoutLogoutBtn");
+        if (overlay && btn) {
+            btn.innerHTML = '<i class="fas fa-check"></i> Continue';
+            btn.style.background = "#10b981";
+            btn.style.borderColor = "#10b981";
+            btn.onclick = () => {
+                overlay.style.display = "none";
+                lockoutState.active = false;
+                lockoutState.lockedUntil = null;
+                renderProfile();
+            };
+        }
+        return;
+    }
+
+    el.textContent = formatRemaining(remaining);
+}
+
+async function performLogoutNow(reason = "account_locked") {
+    const clientCode = window.currentUser?.client_code || currentUser?.client_code;
+
+    if (clientCode) {
+        try {
+            await fetch("../backend/authentication/logout.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ logout_id: clientCode }),
+                credentials: "same-origin",
+            });
+        } catch (err) {
+            console.error("Logout request failed:", err);
+        }
+    }
+
+    try {
+        localStorage.removeItem("userData");
+        localStorage.removeItem("userPreferences");
+        localStorage.removeItem("client_session");
+        sessionStorage.clear();
+    } catch (_) {}
+
+    window.location.href = `../pages/index.php?reason=${encodeURIComponent(reason)}`;
+}
+
+// ============================================================
+// AUTH ERROR HANDLER
+// ============================================================
+
+async function handleAuthError(status, data, opts = {}) {
+    const { button, originalText, source = null } = opts;
+
     if (status === 423) {
-        displayMessage(data.message || "Account temporarily locked.", "error");
+        const lockedUntil = parseLockoutUntil(data);
+        const message = data.message ||
+            "Account temporarily locked due to too many failed attempts.";
+
+        lockoutState.source = source;
+        showLockoutModal(message, lockedUntil, source);
+
         if (button) {
-            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging out...';
+            button.innerHTML = '<i class="fas fa-lock"></i> Account Locked';
             button.disabled = true;
         }
-        await forceLogoutAndRedirect("account_locked", 2000);
         return true;
     }
 
-    // ---- 429 Cooldown (reset_secret only, but harmless elsewhere) ----
     if (status === 429) {
         const nextAllowed = data.data?.next_allowed;
         displayMessage(
@@ -206,7 +396,6 @@ async function handleAuthError(status, data, opts = {}) {
         return true;
     }
 
-    // ---- 401: wrong credentials ----
     if (status === 401) {
         displayMessage(data.message || "Incorrect credentials.", "error");
         if (opts.clearFieldId) {
@@ -217,38 +406,15 @@ async function handleAuthError(status, data, opts = {}) {
         return true;
     }
 
-    // ---- 409: conflict (email/phone in use) ----
     if (status === 409) {
         displayMessage(data.message || "A conflict occurred. Please refresh and try again.", "error");
         restoreButton(button, originalText);
         return true;
     }
 
-    // ---- Everything else ----
     displayMessage(data.message || "Something went wrong.", "error");
     restoreButton(button, originalText);
     return true;
-}
-
-/**
- * Restore a submit button to its original state.
- */
-function restoreButton(button, originalText) {
-    if (!button) return;
-    button.innerHTML = originalText;
-    button.disabled = false;
-}
-
-/**
- * Toggle a submit button into "in progress" state.
- * Returns the original innerHTML so callers can restore it later.
- */
-function setButtonLoading(button, text = "Saving...") {
-    if (!button) return "";
-    const original = button.innerHTML;
-    button.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${text}`;
-    button.disabled = true;
-    return original;
 }
 
 // ============================================================
@@ -528,6 +694,7 @@ async function updateProfile() {
         button,
         originalText,
         clearFieldId: status === 401 ? "profileCurrentPassword" : null,
+        source: "password",
     });
 }
 
@@ -624,6 +791,7 @@ async function changePassword() {
         button,
         originalText,
         clearFieldId: status === 401 ? "currentPassword" : null,
+        source: "password",
     });
 }
 
@@ -671,10 +839,16 @@ async function resetSecretAnswer() {
         return;
     }
 
+    const inferredSource =
+        data?.error_code === "ACCOUNT_LOCKED"
+            ? (data?.data?.source === "password" ? "password" : "secret_answer")
+            : "secret_answer";
+
     await handleAuthError(status, data, {
         button,
         originalText,
         clearFieldId: status === 401 ? "resetSecretPassword" : null,
+        source: inferredSource,
     });
 }
 

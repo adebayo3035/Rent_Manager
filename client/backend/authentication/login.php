@@ -5,7 +5,7 @@ require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/notifications.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
- 
+
 // ==================== CONSTANTS & CONFIGURATION ====================
 const MAX_LOGIN_ATTEMPTS = 3;
 const LOCKOUT_DURATION_MINUTES = 60; // 1 hour
@@ -14,7 +14,7 @@ const SESSION_DURATION = 1800; // 30 minutes
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
- rateLimiter();
+rateLimiter();
 function logWithCaller($message)
 {
     $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
@@ -133,7 +133,7 @@ class LoginSecurity
     public function checkSecretChangeRequired($user)
     {
         // Check if has_secret_set flag exists and is 0
-        if ((isset($user['has_secret_set']) && ($user['has_secret_set'] == 0 || $user['has_secret_set'] == NULL ))) {
+        if ((isset($user['has_secret_set']) && ($user['has_secret_set'] == 0 || $user['has_secret_set'] == NULL))) {
             $this->log("Secret Question and Answer change required for user: {$user['client_code']}");
             return true;
         }
@@ -243,6 +243,86 @@ class LoginSecurity
         }
     }
 
+    public function checkSecretLockout($userId)
+    {
+        $this->log("Checking secret-answer lockout status for user: {$userId}");
+
+        $stmt = $this->conn->prepare("
+        SELECT attempts, locked_until
+        FROM client_secret_attempts
+        WHERE client_code = ?
+        LIMIT 1
+    ");
+        if (!$stmt) {
+            logActivity("Secret lockout check prepare failed: " . $this->conn->error);
+            return [true, "No secret lockout", 200, null];  // fail-open on DB error (login should still work)
+        }
+
+        $stmt->bind_param("s", $userId);
+        if (!$stmt->execute()) {
+            logActivity("Secret lockout check execute failed: " . $stmt->error);
+            $stmt->close();
+            return [true, "No secret lockout", 200, null];
+        }
+
+        $result = $stmt->get_result();
+        if ($result->num_rows === 0) {
+            $stmt->close();
+            return [true, "No secret lockout", 200, null];
+        }
+
+        $data = $result->fetch_assoc();
+        $stmt->close();
+
+        $attempts = (int) $data['attempts'];
+        $lockedUntil = $data['locked_until'];
+
+        if ($attempts >= 3 && $lockedUntil) {
+            $lockTime = new DateTime($lockedUntil);
+            $currentTime = new DateTime();
+
+            if ($currentTime < $lockTime) {
+                $remaining = $currentTime->diff($lockTime);
+                $mins = $remaining->i + ($remaining->h * 60);
+                $secs = $remaining->s;
+                $timeRemaining = "{$mins}m {$secs}s";
+
+                $this->log("Secret-answer lockout active - ID: {$userId}, Time remaining: {$timeRemaining}");
+
+                return [
+                    false,
+                    "Your account is temporarily locked due to failed security-answer attempts. Try again in {$timeRemaining}.",
+                    423,
+                    [
+                        'is_locked' => true,
+                        'lock_source' => 'secret_answer',
+                        'locked_until' => $lockedUntil,
+                        'time_remaining' => $timeRemaining,
+                        'attempts' => $attempts,
+                    ],
+                ];
+            }
+
+            // Lock expired — clean up so the next attempt starts fresh
+            $this->resetSecretAttempts($userId);
+            return [true, "Secret lockout expired, attempts reset", 200, null];
+        }
+
+        return [true, "Not locked", 200, null];
+    }
+
+    private function resetSecretAttempts($userId)
+    {
+        $this->log("Resetting secret-answer attempts for user: {$userId}");
+
+        $stmt = $this->conn->prepare("DELETE FROM client_secret_attempts WHERE client_code = ?");
+        if ($stmt) {
+            $stmt->bind_param("s", $userId);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
     public function handleFailedLogin($userId, $lockoutInfo = null)
     {
         $this->log("Processing failed login for user: {$userId}");
@@ -292,7 +372,7 @@ class LoginSecurity
 
                 $this->log("Account locked - ID: {$userId}, Until: {$lockPeriod}");
                 $message = "Too many failed login attempts. Your account is locked for " . LOCKOUT_DURATION_MINUTES . " minutes.";
-                
+
                 // Create and notify Super Admin on account lock
                 try {
                     createNotification($this->conn, [
@@ -357,6 +437,13 @@ class LoginSecurity
         if (!verifyAndRehashPassword($this->conn, $userId, $password, $user['password'])) {
             $this->log("Password verification failed for user: {$userId}");
             return $this->handleFailedLogin($userId, $lockoutInfo);
+        }
+
+        // Step 5b: Check secret-answer lockout (post-password-auth)
+        list($secretUnlocked, $secretMessage, $secretCode, $secretInfo) = $this->checkSecretLockout($userId);
+        if (!$secretUnlocked) {
+            $this->log("Login blocked by secret-answer lockout for user: {$userId}");
+            return [$secretUnlocked, $secretMessage, $secretCode, $secretInfo];
         }
 
         // Step 6: Check if password change is required (first login)

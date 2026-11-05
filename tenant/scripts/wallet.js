@@ -9,7 +9,22 @@ const TENANT_WALLET_API = {
   requestWithdrawal: "../backend/wallet/request_withdrawal.php",
   transactionDetail: "../backend/wallet/get_transaction_detail.php",
   bankHistory: "../backend/wallet/get_bank_history.php",
-  cancelWithdrawal:   '../backend/wallet/cancel_withdrawal.php',  
+  cancelWithdrawal: "../backend/wallet/cancel_withdrawal.php",
+};
+// =========================================================
+// AUTH / LOCKOUT HANDLING
+// =========================================================
+
+const TENANT_AUTH_API = {
+  logout: "../backend/authentication/logout.php",
+  loginPage: "../pages/index.php",
+};
+
+// Lockout state across the session
+let lockoutState = {
+  active: false,
+  lockedUntil: null, // Date
+  countdownTimer: null,
 };
 
 let walletData = null;
@@ -54,6 +69,359 @@ document.addEventListener("DOMContentLoaded", () => {
   renderWalletPage();
   loadWalletData();
 });
+
+/**
+ * Force logout (best-effort server call) + redirect to login.
+ * Mirrors tenant/scripts/profile.js::forceLogoutAndRedirect.
+ */
+async function forceLogoutAndRedirect(
+  reason = "account_locked",
+  delayMs = 2000,
+) {
+  const tenantCode = walletData?.tenant_code || window.currentUser?.tenant_code;
+
+  if (tenantCode) {
+    try {
+      await fetch(TENANT_AUTH_API.logout, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logout_id: tenantCode }),
+        credentials: "same-origin",
+      });
+    } catch (err) {
+      console.error("Forced logout request failed:", err);
+    }
+  }
+
+  // Clear any client-side session state
+  try {
+    localStorage.removeItem("userData");
+    localStorage.removeItem("userPreferences");
+    sessionStorage.clear();
+  } catch (_) {}
+
+  setTimeout(() => {
+    window.location.href = `${TENANT_AUTH_API.loginPage}?reason=${encodeURIComponent(reason)}`;
+  }, delayMs);
+}
+
+/**
+ * Central handler for wallet API error responses.
+ * Returns true if the error was handled (caller should stop), false otherwise.
+ *
+ * Behaviors:
+ *   - 423 ACCOUNT_LOCKED       → force logout + redirect (2s delay)
+ *   - 423 (any other reason)   → same (backend only sends 423 for lockout)
+ *   - 429 RATE_LIMIT           → show toast with retry time
+ *   - 401 INVALID_SECRET       → show toast, return false (caller may clear field)
+ *   - other                    → show toast, return false
+ */
+/**
+ * Parse a lockout end-time from an API response.
+ * Returns Date or null.
+ */
+function parseLockoutUntil(data) {
+  // Backend may include it in `data.data.locked_until` or `data.data.next_allowed`
+  const raw =
+    data?.data?.locked_until ||
+    data?.data?.next_allowed ||
+    data?.locked_until ||
+    null;
+
+  if (!raw) return null;
+
+  // Try parsing as date string
+  const d = new Date(raw);
+  if (!isNaN(d.getTime())) return d;
+
+  // Try parsing relative "Xm Ys" from message as fallback
+  const msg = data?.message || "";
+  const minMatch = msg.match(/(\d+)\s*min/i);
+  const secMatch = msg.match(/(\d+)\s*sec/i);
+  if (minMatch || secMatch) {
+    const mins = parseInt(minMatch?.[1] || "0", 10);
+    const secs = parseInt(secMatch?.[1] || "0", 10);
+    return new Date(Date.now() + (mins * 60 + secs) * 1000);
+  }
+
+  // Default to 15 min if we can't parse (matches backend default)
+  return new Date(Date.now() + 15 * 60 * 1000);
+}
+
+/**
+ * Format a duration as "Xm Ys" or "X seconds".
+ */
+function formatRemaining(ms) {
+  if (ms <= 0) return "now";
+  const totalSec = Math.ceil(ms / 1000);
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  if (mins > 0) return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+  return `${secs}s`;
+}
+
+/**
+ * Show the lockout modal, with a live countdown.
+ * Idempotent — repeated calls just refresh the countdown.
+ */
+function showLockoutModal(message, lockedUntilDate, source = null) {
+    if (!lockedUntilDate) {
+        lockedUntilDate = new Date(Date.now() + 15 * 60 * 1000);
+    }
+
+    lockoutState.active = true;
+    lockoutState.lockedUntil = lockedUntilDate;
+
+    const sourceLabel = source === 'password' ? 'password'
+        : source === 'secret_answer' ? 'secret-answer'
+        : 'security';
+
+    let overlay = document.getElementById("lockoutModal");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "lockoutModal";
+        overlay.style.cssText = `
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55);
+            z-index: 9999; display: none; align-items: center;
+            justify-content: center; padding: 20px;
+        `;
+        overlay.innerHTML = `
+          <div style="
+              background:#fff; border-radius:12px; width:100%; max-width:480px;
+              box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+          ">
+            <div style="padding:20px 24px 0;">
+              <h3 style="color:#dc2626; margin:0; font-size:18px;">
+                <i class="fas fa-lock"></i> Account Temporarily Locked
+              </h3>
+            </div>
+            <div style="padding:16px 24px;">
+              <div style="
+                  background:#fef2f2; border-left:4px solid #dc2626;
+                  padding:14px 16px; border-radius:8px; margin-bottom:16px;
+              ">
+                <p id="lockoutMessage" style="
+                    margin:0 0 8px; color:#7f1d1d; font-size:14px; line-height:1.5;
+                "></p>
+                <p style="margin:0; color:#991b1b; font-size:13px;">
+                  <i class="fas fa-clock"></i>
+                  Try again in <strong id="lockoutCountdown">--:--</strong>
+                </p>
+              </div>
+              <p style="font-size:13px; color:#64748b; margin:0 0 16px; line-height:1.6;">
+                For your security, your account has been locked after too many failed
+                <span id="lockoutSourceLabel">security</span> attempts.
+                You cannot access your wallet until the lockout expires.
+                Please log out and try again later.
+              </p>
+              <p style="font-size:12px; color:#94a3b8; margin:0;">
+                If you believe this is a mistake, contact support.
+                Do not share your secret answer with anyone.
+              </p>
+            </div>
+            <div style="padding:0 24px 20px; display:flex; justify-content:flex-end; gap:10px;">
+              <button type="button" id="lockoutLogoutBtn" style="
+                  background:#dc2626; border:1px solid #dc2626; color:#fff;
+                  padding:10px 18px; border-radius:8px; font-weight:600;
+                  cursor:pointer; display:inline-flex; align-items:center; gap:8px;
+              ">
+                <i class="fas fa-sign-out-alt"></i> Log Out Now
+              </button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+
+        document
+            .getElementById("lockoutLogoutBtn")
+            .addEventListener("click", () => performLogoutNow("account_locked"));
+    }
+
+    const srcEl = document.getElementById("lockoutSourceLabel");
+    if (srcEl) srcEl.textContent = sourceLabel;
+
+    const msgEl = document.getElementById("lockoutMessage");
+    if (msgEl) {
+        msgEl.textContent = message ||
+            "Your account has been temporarily locked due to too many failed attempts.";
+    }
+
+    overlay.style.display = "flex";
+
+    if (lockoutState.countdownTimer) clearInterval(lockoutState.countdownTimer);
+    updateLockoutCountdown();
+    lockoutState.countdownTimer = setInterval(updateLockoutCountdown, 1000);
+}
+
+function updateLockoutCountdown() {
+  const el = document.getElementById("lockoutCountdown");
+  if (!el || !lockoutState.lockedUntil) return;
+
+  const remaining = lockoutState.lockedUntil.getTime() - Date.now();
+  if (remaining <= 0) {
+    el.textContent = "now";
+    clearInterval(lockoutState.countdownTimer);
+    lockoutState.countdownTimer = null;
+
+    // Lockout has expired — update UI
+    lockoutState.active = false;
+    const msgEl = document.getElementById("lockoutMessage");
+    if (msgEl) {
+      msgEl.textContent =
+        "Your lockout period has expired. You may continue using your wallet.";
+    }
+    // Let the user dismiss and continue (wallet should work now)
+    const overlay = document.getElementById("lockoutModal");
+    if (overlay) {
+      // Change the button to "Continue"
+      const btn = document.getElementById("lockoutLogoutBtn");
+      if (btn) {
+        btn.innerHTML = '<i class="fas fa-check"></i> Continue';
+        btn.style.background = "";
+        btn.style.borderColor = "";
+        btn.onclick = () => {
+          overlay.classList.remove("active");
+          loadWalletData();
+        };
+      }
+    }
+    return;
+  }
+
+  el.textContent = formatRemaining(remaining);
+}
+
+/**
+ * Log out immediately (user clicked the button, or fallback).
+ */
+async function performLogoutNow(reason = "account_locked") {
+  const tenantCode = walletData?.tenant_code || window.currentUser?.tenant_code;
+
+  if (tenantCode) {
+    try {
+      await fetch(TENANT_AUTH_API.logout, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logout_id: tenantCode }),
+        credentials: "same-origin",
+      });
+    } catch (err) {
+      console.error("Logout request failed:", err);
+    }
+  }
+
+  try {
+    localStorage.removeItem("userData");
+    localStorage.removeItem("userPreferences");
+    sessionStorage.clear();
+  } catch (_) {}
+
+  window.location.href = `${TENANT_AUTH_API.loginPage}?reason=${encodeURIComponent(reason)}`;
+}
+
+/**
+ * Central wallet auth-error handler.
+ * Returns true if handled (caller should stop), false otherwise.
+ */
+async function handleWalletAuthError(status, data, opts = {}) {
+  const { onInvalidSecret = null, onRateLimit = null } = opts;
+  const message = data?.message || "Something went wrong.";
+
+  if (status === 423) {
+    // Lockout — show modal, do NOT force logout
+    const lockedUntil = parseLockoutUntil(data);
+    showLockoutModal(message, lockedUntil);
+    return true;
+  }
+
+  if (status === 429) {
+    const nextAllowed = data?.data?.next_allowed;
+    const msg = nextAllowed
+      ? `Too many requests. Try again after ${nextAllowed}.`
+      : message;
+    showToast(msg, "error");
+    if (typeof onRateLimit === "function") onRateLimit(data);
+    return true;
+  }
+
+  if (status === 401) {
+    showToast(message, "error");
+    if (typeof onInvalidSecret === "function") onInvalidSecret(data);
+    return true;
+  }
+
+  showToast(message, "error");
+  return false;
+}
+
+/**
+ * Wrapper for wallet POSTs. Adds CSRF, handles lockout modal automatically.
+ */
+async function walletApiRequest(endpoint, body, options = {}) {
+  const {
+    csrfForm = "tenant_withdrawal_form",
+    onInvalidSecret = null,
+    onRateLimit = null,
+  } = options;
+
+  const csrf = await getCsrfToken(csrfForm);
+  if (csrf) {
+    body.csrf_token = csrf;
+    body.token_id = csrfForm;
+  }
+
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "same-origin",
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      data: {
+        success: false,
+        message: "Network error. Check your connection.",
+      },
+      handled: false,
+    };
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    return {
+      ok: false,
+      status: response.status,
+      data: {
+        success: false,
+        message: "Server returned an unexpected response. Please try again.",
+      },
+      handled: false,
+    };
+  }
+
+  const data = await response.json().catch(() => ({
+    success: false,
+    message: "Malformed response from server.",
+  }));
+
+  if (response.ok && data.success) {
+    return { ok: true, status: response.status, data, handled: false };
+  }
+
+  const handled = await handleWalletAuthError(response.status, data, {
+    onInvalidSecret,
+    onRateLimit,
+  });
+
+  return { ok: false, status: response.status, data, handled };
+}
 
 // =========================================================
 // PAGE SHELL
@@ -239,6 +607,16 @@ async function loadWalletData() {
 
     walletData = data.data;
 
+    // Proactive lockout detection: if backend exposes lockout state, surface it
+    if (walletData?.lockout?.active) {
+      showLockoutModal(
+        walletData.lockout.message || "Your account is temporarily locked.",
+        walletData.lockout.locked_until
+          ? new Date(walletData.lockout.locked_until)
+          : null,
+      );
+    }
+
     document.getElementById("walletBalance").textContent =
       walletData.wallet_balance_formatted;
     document.getElementById("totalIn").textContent =
@@ -274,23 +652,24 @@ async function ensureBanksCache() {
 }
 
 function switchWalletTab(tab) {
-    activeTab = tab;
-    document.querySelectorAll('.wallet-tab').forEach(el =>
-        el.classList.toggle('active', el.dataset.tab === tab));
+  activeTab = tab;
+  document
+    .querySelectorAll(".wallet-tab")
+    .forEach((el) => el.classList.toggle("active", el.dataset.tab === tab));
 
-    // Filters only apply to the Transactions tab
-    document.getElementById('walletFilters').style.display =
-        (tab === 'transactions') ? 'flex' : 'none';
+  // Filters only apply to the Transactions tab
+  document.getElementById("walletFilters").style.display =
+    tab === "transactions" ? "flex" : "none";
 
-    renderActiveTab();
-    renderPagination(walletData?.pagination);
+  renderActiveTab();
+  renderPagination(walletData?.pagination);
 }
 
 function renderActiveTab() {
-    if (!walletData) return;
-    if (activeTab === 'transactions')  renderTransactions();
-    else if (activeTab === 'requests') renderRequests();
-    else if (activeTab === 'bank')     renderBankTab();
+  if (!walletData) return;
+  if (activeTab === "transactions") renderTransactions();
+  else if (activeTab === "requests") renderRequests();
+  else if (activeTab === "bank") renderBankTab();
 }
 
 // =========================================================
@@ -389,15 +768,15 @@ function renderTransactions() {
 }
 
 function renderRequests() {
-    const req = walletData.pending_requests || [];
-    const wrap = document.getElementById('walletTabContent');
+  const req = walletData.pending_requests || [];
+  const wrap = document.getElementById("walletTabContent");
 
-    if (!req.length) {
-        wrap.innerHTML = `<div class="empty-state"><i class="fas fa-file-invoice"></i><p>No pending withdrawal requests</p></div>`;
-        return;
-    }
+  if (!req.length) {
+    wrap.innerHTML = `<div class="empty-state"><i class="fas fa-file-invoice"></i><p>No pending withdrawal requests</p></div>`;
+    return;
+  }
 
-    wrap.innerHTML = `
+  wrap.innerHTML = `
         <div class="wallet-table-wrap">
             <table class="wallet-table responsive-table">
                 <thead>
@@ -411,7 +790,9 @@ function renderRequests() {
                     </tr>
                 </thead>
                 <tbody>
-                    ${req.map(r => `
+                    ${req
+                      .map(
+                        (r) => `
                         <tr>
                             <td data-label="Date">${formatDateTime(r.created_at)}</td>
                             <td data-label="Type">Withdrawal</td>
@@ -427,32 +808,37 @@ function renderRequests() {
                                 </button>
                             </td>
                         </tr>
-                    `).join('')}
+                    `,
+                      )
+                      .join("")}
                 </tbody>
             </table>
         </div>
     `;
 }
 async function renderBankTab() {
-    await ensureBanksCache();
-    const wrap = document.getElementById('walletTabContent');
-    wrap.innerHTML = `
+  await ensureBanksCache();
+  const wrap = document.getElementById("walletTabContent");
+  wrap.innerHTML = `
         <div class="empty-state">
             <i class="fas fa-spinner fa-spin"></i>
             <p>Loading bank history…</p>
         </div>`;
 
-    try {
-        const res = await fetch(TENANT_WALLET_API.bankHistory, { credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.message || 'Failed to load bank history');
+  try {
+    const res = await fetch(TENANT_WALLET_API.bankHistory, {
+      credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!data.success)
+      throw new Error(data.message || "Failed to load bank history");
 
-        const current = data.data.current_bank;
-        const history = data.data.history || [];
+    const current = data.data.current_bank;
+    const history = data.data.history || [];
 
-        // Current bank card
-        const currentCard = current
-            ? `
+    // Current bank card
+    const currentCard = current
+      ? `
                 <div class="bank-current-card">
                     <div class="bank-current-header">
                         <div>
@@ -482,7 +868,7 @@ async function renderBankTab() {
                     </div>
                 </div>
             `
-            : `
+      : `
                 <div class="bank-current-empty">
                     <i class="fas fa-university"></i>
                     <p>No bank account on file yet.</p>
@@ -492,21 +878,23 @@ async function renderBankTab() {
                 </div>
             `;
 
-        // History list (excluding the current entry)
-        const pastEntries = history.filter(h => !h.is_current);
+    // History list (excluding the current entry)
+    const pastEntries = history.filter((h) => !h.is_current);
 
-        let historySection = '';
-        if (pastEntries.length) {
-            historySection = `
+    let historySection = "";
+    if (pastEntries.length) {
+      historySection = `
                 <div class="bank-history-section">
                     <h3 class="bank-history-title">
                         <i class="fas fa-history"></i> Previous Banks
                         <span class="bank-history-count">${pastEntries.length}</span>
                     </h3>
                     <div class="bank-history-list">
-                        ${pastEntries.map((h, i) => `
+                        ${pastEntries
+                          .map(
+                            (h, i) => `
                             <div class="bank-history-item">
-                                <div class="bank-history-marker ${i === 0 ? 'first' : ''}"></div>
+                                <div class="bank-history-marker ${i === 0 ? "first" : ""}"></div>
                                 <div class="bank-history-content">
                                     <div class="bank-history-top">
                                         <div>
@@ -529,12 +917,14 @@ async function renderBankTab() {
                                     </div>
                                 </div>
                             </div>
-                        `).join('')}
+                        `,
+                          )
+                          .join("")}
                     </div>
                 </div>
             `;
-        } else if (history.length <= 1) {
-            historySection = `
+    } else if (history.length <= 1) {
+      historySection = `
                 <div class="bank-history-section">
                     <h3 class="bank-history-title">
                         <i class="fas fa-history"></i> Previous Banks
@@ -545,23 +935,22 @@ async function renderBankTab() {
                     </div>
                 </div>
             `;
-        }
+    }
 
-        wrap.innerHTML = currentCard + historySection;
-
-    } catch (err) {
-        wrap.innerHTML = `
+    wrap.innerHTML = currentCard + historySection;
+  } catch (err) {
+    wrap.innerHTML = `
             <div class="empty-state">
                 <i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i>
-                <p>${escapeHtml(err.message || 'Failed to load bank history')}</p>
+                <p>${escapeHtml(err.message || "Failed to load bank history")}</p>
             </div>`;
-    }
+  }
 }
 
 function bankNameByCode(code) {
-    if (!banksCache || !code) return null;
-    const match = banksCache.find(b => b.code === code);
-    return match ? match.name : null;
+  if (!banksCache || !code) return null;
+  const match = banksCache.find((b) => b.code === code);
+  return match ? match.name : null;
 }
 
 function renderPagination(p) {
@@ -873,37 +1262,49 @@ async function submitSetupBank() {
   showLoader();
 
   try {
-    const csrf = await getCsrfToken("tenant_withdrawal_form");
-    const body = {
-      bank_name: selectedBank.name,
-      bank_code: bankCode,
-      account_name: accountName,
-      account_number: accountNo,
-      secret_answer: secretAns,
-    };
-    if (csrf) {
-      body.csrf_token = csrf;
-      body.token_id = "tenant_withdrawal_form";
-    }
+    const result = await walletApiRequest(
+      TENANT_WALLET_API.saveBank,
+      {
+        bank_name: selectedBank.name,
+        bank_code: bankCode,
+        account_name: accountName,
+        account_number: accountNo,
+        secret_answer: secretAns,
+      },
+      {
+        csrfForm: "tenant_withdrawal_form",
+        onInvalidSecret: () => {
+          // Wrong secret — clear the field so user can retry
+          const inp = document.getElementById("setupSecretAnswer");
+          if (inp) {
+            inp.value = "";
+            inp.focus();
+          }
+        },
+      },
+    );
 
-    const res = await fetch(TENANT_WALLET_API.saveBank, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      credentials: "same-origin",
-    });
-    const data = await res.json();
-    if (!data.success)
-      throw new Error(data.message || "Failed to save bank account");
+    // If lockout (423) fired, the redirect is already in progress — abort UI work
+   if (result.status === 423) {
+  // Lockout modal is now showing; keep the button disabled so it's clear
+  // the form is unusable until logout
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-lock"></i> Account Locked';
+  return;
+}
+
+    if (!result.ok) {
+      throw new Error(result.data.message || "Failed to save bank account");
+    }
 
     await loadWalletData();
 
     withdrawalState.step = "inquiry";
-    withdrawalState.bankCode = data.data.bank_code;
-    withdrawalState.bankName = data.data.bank_name;
-    withdrawalState.accountNumber = data.data.bank_account_number;
-    withdrawalState.beneficiaryName = data.data.bank_account_name;
-    withdrawalState.maskedAccount = data.data.masked_account;
+    withdrawalState.bankCode = result.data.data.bank_code;
+    withdrawalState.bankName = result.data.data.bank_name;
+    withdrawalState.accountNumber = result.data.data.bank_account_number;
+    withdrawalState.beneficiaryName = result.data.data.bank_account_name;
+    withdrawalState.maskedAccount = result.data.data.masked_account;
 
     hideLoader();
     showToast("Bank account saved", "success");
@@ -1176,12 +1577,6 @@ async function submitWithdrawal() {
     secret_answer: secretAns,
   };
 
-  const csrf = await getCsrfToken("tenant_withdrawal_form");
-  if (csrf) {
-    body.csrf_token = csrf;
-    body.token_id = "tenant_withdrawal_form";
-  }
-
   const btn = document.getElementById("withdrawSubmitBtn");
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
@@ -1190,15 +1585,32 @@ async function submitWithdrawal() {
   const minDelay = new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
-    const requestPromise = fetch(TENANT_WALLET_API.requestWithdrawal, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      credentials: "same-origin",
-    });
-    const [res] = await Promise.all([requestPromise, minDelay]);
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message || "Request failed");
+    const [result] = await Promise.all([
+      walletApiRequest(TENANT_WALLET_API.requestWithdrawal, body, {
+        csrfForm: "tenant_withdrawal_form",
+        onInvalidSecret: () => {
+          const inp = document.getElementById("withdrawSecretAnswer");
+          if (inp) {
+            inp.value = "";
+            inp.focus();
+          }
+        },
+      }),
+      minDelay,
+    ]);
+
+    // Lockout — redirect already scheduled
+   if (result.status === 423) {
+  // Lockout modal is now showing; keep the button disabled so it's clear
+  // the form is unusable until logout
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-lock"></i> Account Locked';
+  return;
+}
+
+    if (!result.ok) {
+      throw new Error(result.data.message || "Request failed");
+    }
 
     hideLoader();
     closeWithdrawalModal();
@@ -1224,12 +1636,12 @@ async function submitWithdrawal() {
 
 // Confirm Cancel Withdrawal
 async function confirmCancelWithdrawal(requestCode, amount) {
-    const confirmed = await showConfirmModal({
-        title:       'Cancel Withdrawal?',
-        tone:        'danger',
-        confirmText: 'Yes, Cancel Withdrawal',
-        cancelText:  'Keep Request',
-        message: `
+  const confirmed = await showConfirmModal({
+    title: "Cancel Withdrawal?",
+    tone: "danger",
+    confirmText: "Yes, Cancel Withdrawal",
+    cancelText: "Keep Request",
+    message: `
             <p style="margin:0 0 14px;color:#475569;font-size:14px;line-height:1.5;">
                 You are about to cancel this withdrawal request. The funds will be returned
                 to your wallet immediately.
@@ -1251,35 +1663,39 @@ async function confirmCancelWithdrawal(requestCode, amount) {
                 Once cancelled, you'll need to submit a new withdrawal request if you change your mind.
             </p>
         `,
-    });
+  });
 
-    if (!confirmed) return;
+  if (!confirmed) return;
 
-    showLoader();
-    try {
-        const csrf = await getCsrfToken('tenant_withdrawal_form');
-        const body = { request_code: requestCode };
-        if (csrf) { body.csrf_token = csrf; body.token_id = 'tenant_withdrawal_form'; }
-
-        const res = await fetch(TENANT_WALLET_API.cancelWithdrawal, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            credentials: 'same-origin',
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.message || 'Failed to cancel withdrawal');
-
-        hideLoader();
-        showToast(
-            `Withdrawal cancelled. ₦${formatNumber(amount)} returned to your wallet.`,
-            'success'
-        );
-        loadWalletData();
-    } catch (err) {
-        hideLoader();
-        showToast(err.message || 'Failed to cancel withdrawal', 'error');
+  showLoader();
+  try {
+    const csrf = await getCsrfToken("tenant_withdrawal_form");
+    const body = { request_code: requestCode };
+    if (csrf) {
+      body.csrf_token = csrf;
+      body.token_id = "tenant_withdrawal_form";
     }
+
+    const res = await fetch(TENANT_WALLET_API.cancelWithdrawal, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!data.success)
+      throw new Error(data.message || "Failed to cancel withdrawal");
+
+    hideLoader();
+    showToast(
+      `Withdrawal cancelled. ₦${formatNumber(amount)} returned to your wallet.`,
+      "success",
+    );
+    loadWalletData();
+  } catch (err) {
+    hideLoader();
+    showToast(err.message || "Failed to cancel withdrawal", "error");
+  }
 }
 
 // =========================================================
@@ -1456,27 +1872,39 @@ async function submitChangeBank() {
   showLoader();
 
   try {
-    const csrf = await getCsrfToken("tenant_withdrawal_form");
-    const body = {
-      bank_name: changeBankState.bankName,
-      bank_code: changeBankState.bankCode,
-      account_name: changeBankState.accountName,
-      account_number: changeBankState.accountNumber,
-      secret_answer: changeBankState.currentSecretAnswer,
-    };
-    if (csrf) {
-      body.csrf_token = csrf;
-      body.token_id = "tenant_withdrawal_form";
-    }
+    const result = await walletApiRequest(
+      TENANT_WALLET_API.changeBank,
+      {
+        bank_name: changeBankState.bankName,
+        bank_code: changeBankState.bankCode,
+        account_name: changeBankState.accountName,
+        account_number: changeBankState.accountNumber,
+        secret_answer: changeBankState.currentSecretAnswer,
+      },
+      {
+        csrfForm: "tenant_withdrawal_form",
+        onInvalidSecret: () => {
+          // Send user back to the form so they can retype the secret
+          changeBankState.currentSecretAnswer = "";
+          renderChangeBankForm();
+          const inp = document.getElementById("changeCurrentSecret");
+          if (inp) inp.focus();
+        },
+      },
+    );
 
-    const res = await fetch(TENANT_WALLET_API.changeBank, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      credentials: "same-origin",
-    });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message || "Failed to change bank");
+    // Lockout — redirect is happening
+    if (result.status === 423) {
+  // Lockout modal is now showing; keep the button disabled so it's clear
+  // the form is unusable until logout
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-lock"></i> Account Locked';
+  return;
+}
+
+    if (!result.ok) {
+      throw new Error(result.data.message || "Failed to change bank");
+    }
 
     hideLoader();
     closeChangeBankModal();
@@ -1507,21 +1935,23 @@ function statusBadge(status) {
 function outcomeLabel(t, rejectedRequestIds) {
   switch (t.type) {
     case "withdrawal":
-    if (t.status === "Pending")  return "Awaiting approval";
-    if (t.status === "Approved") return "Completed";
-    if (t.status === "Rejected") {
+      if (t.status === "Pending") return "Awaiting approval";
+      if (t.status === "Approved") return "Completed";
+      if (t.status === "Rejected") {
         if (t.request_status === "cancelled") return "Cancelled → refunded";
         return "Rejected → refunded";
-    }
-    if (t.status === "Failed")   return "Failed";
-    return "—";
+      }
+      if (t.status === "Failed") return "Failed";
+      return "—";
     case "admin_adjustment":
-    if (t.request_id && rejectedRequestIds.has(t.request_id)) {
-        if (t.request_status === "cancelled") return "Reversal of cancelled withdrawal";
-        if (t.request_status === "rejected")  return "Reversal of rejected withdrawal";
+      if (t.request_id && rejectedRequestIds.has(t.request_id)) {
+        if (t.request_status === "cancelled")
+          return "Reversal of cancelled withdrawal";
+        if (t.request_status === "rejected")
+          return "Reversal of rejected withdrawal";
         return "Reversal of withdrawn request";
-    }
-    return "Admin adjustment";
+      }
+      return "Admin adjustment";
     case "refund_credit":
       return "Refund credited";
     case "rent_credit":
@@ -1679,81 +2109,92 @@ function attachAccountNameAutofill(
  *   - icon:         string — Font Awesome icon class (default derived from tone)
  */
 function showConfirmModal(options = {}) {
-    return new Promise((resolve) => {
-        const {
-            title       = 'Confirm',
-            message     = '',
-            confirmText = 'Confirm',
-            cancelText  = 'Cancel',
-            tone        = 'info',
-            icon        = null,
-        } = options;
+  return new Promise((resolve) => {
+    const {
+      title = "Confirm",
+      message = "",
+      confirmText = "Confirm",
+      cancelText = "Cancel",
+      tone = "info",
+      icon = null,
+    } = options;
 
-        const icons = {
-            danger:  'fa-exclamation-triangle',
-            warning: 'fa-exclamation-circle',
-            info:    'fa-question-circle',
-            success: 'fa-check-circle',
-        };
+    const icons = {
+      danger: "fa-exclamation-triangle",
+      warning: "fa-exclamation-circle",
+      info: "fa-question-circle",
+      success: "fa-check-circle",
+    };
 
-        const overlay = document.getElementById('confirmModal');
-        if (!overlay) {
-            // Fallback — should never happen if markup is deployed correctly
-            console.warn('[showConfirmModal] Modal markup missing — falling back to native confirm()');
-            resolve(window.confirm(typeof message === 'string' ? message : title));
-            return;
-        }
+    const overlay = document.getElementById("confirmModal");
+    if (!overlay) {
+      // Fallback — should never happen if markup is deployed correctly
+      console.warn(
+        "[showConfirmModal] Modal markup missing — falling back to native confirm()",
+      );
+      resolve(window.confirm(typeof message === "string" ? message : title));
+      return;
+    }
 
-        const iconEl    = document.getElementById('confirmModalIcon');
-        const titleEl   = document.getElementById('confirmModalTitle');
-        const bodyEl    = document.getElementById('confirmModalBody');
-        const cancelBtn = document.getElementById('confirmModalCancel');
-        const confirmBtn= document.getElementById('confirmModalConfirm');
+    const iconEl = document.getElementById("confirmModalIcon");
+    const titleEl = document.getElementById("confirmModalTitle");
+    const bodyEl = document.getElementById("confirmModalBody");
+    const cancelBtn = document.getElementById("confirmModalCancel");
+    const confirmBtn = document.getElementById("confirmModalConfirm");
 
-        // Set content
-        iconEl.innerHTML  = `<i class="fas ${icon || icons[tone] || icons.info}"></i>`;
-        iconEl.className  = `confirm-modal-icon ${tone}`;
-        titleEl.textContent = title;
+    // Set content
+    iconEl.innerHTML = `<i class="fas ${icon || icons[tone] || icons.info}"></i>`;
+    iconEl.className = `confirm-modal-icon ${tone}`;
+    titleEl.textContent = title;
 
-        if (typeof message === 'string') {
-            bodyEl.innerHTML = message;
-        } else {
-            bodyEl.innerHTML = '';
-            bodyEl.appendChild(message);
-        }
+    if (typeof message === "string") {
+      bodyEl.innerHTML = message;
+    } else {
+      bodyEl.innerHTML = "";
+      bodyEl.appendChild(message);
+    }
 
-        cancelBtn.textContent  = cancelText;
-        confirmBtn.textContent = confirmText;
-        confirmBtn.className   = `btn-wallet-submit confirm-btn-${tone}`;
+    cancelBtn.textContent = cancelText;
+    confirmBtn.textContent = confirmText;
+    confirmBtn.className = `btn-wallet-submit confirm-btn-${tone}`;
 
-        // Cleanup handler — removes listeners and closes modal
-        function cleanup() {
-            overlay.classList.remove('active');
-            confirmBtn.removeEventListener('click', onConfirm);
-            cancelBtn.removeEventListener('click', onCancel);
-            overlay.removeEventListener('click', onOverlayClick);
-            document.removeEventListener('keydown', onKeydown);
-        }
+    // Cleanup handler — removes listeners and closes modal
+    function cleanup() {
+      overlay.classList.remove("active");
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      overlay.removeEventListener("click", onOverlayClick);
+      document.removeEventListener("keydown", onKeydown);
+    }
 
-        function onConfirm() { cleanup(); resolve(true);  }
-        function onCancel()  { cleanup(); resolve(false); }
-        function onOverlayClick(e) {
-            // Only dismiss if the click was on the backdrop, not inside the modal
-            if (e.target === overlay) onCancel();
-        }
-        function onKeydown(e) {
-            if (e.key === 'Escape')     onCancel();
-            if (e.key === 'Enter')      { e.preventDefault(); onConfirm(); }
-        }
+    function onConfirm() {
+      cleanup();
+      resolve(true);
+    }
+    function onCancel() {
+      cleanup();
+      resolve(false);
+    }
+    function onOverlayClick(e) {
+      // Only dismiss if the click was on the backdrop, not inside the modal
+      if (e.target === overlay) onCancel();
+    }
+    function onKeydown(e) {
+      if (e.key === "Escape") onCancel();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onConfirm();
+      }
+    }
 
-        // Wire handlers
-        confirmBtn.addEventListener('click', onConfirm);
-        cancelBtn.addEventListener('click', onCancel);
-        overlay.addEventListener('click', onOverlayClick);
-        document.addEventListener('keydown', onKeydown);
+    // Wire handlers
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    overlay.addEventListener("click", onOverlayClick);
+    document.addEventListener("keydown", onKeydown);
 
-        // Show + focus
-        overlay.classList.add('active');
-        setTimeout(() => confirmBtn.focus(), 50);
-    });
+    // Show + focus
+    overlay.classList.add("active");
+    setTimeout(() => confirmBtn.focus(), 50);
+  });
 }

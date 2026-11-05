@@ -20,7 +20,7 @@ if (!isset($_SESSION['unique_id'])) {
 }
 
 // Check user role - only Super Admin or Admin can unlock accounts
-$user_id = $_SESSION['unique_id'];
+$user_id   = $_SESSION['unique_id'];
 $user_role = $_SESSION['role'] ?? '';
 
 if (!in_array($user_role, ['Super Admin', 'Admin'])) {
@@ -51,310 +51,322 @@ try {
 }
 
 /**
- * Get user type specific table configuration
+ * Get user type specific table configuration.
+ *
+ * secret_attempts_table is only set for tables that actually exist in the DB:
+ *   - admin_secret_attempts   (exists)
+ *   - client_secret_attempts  (exists)
+ *   - tenant_secret_attempts  (exists)
+ *   - agent_secret_attempts   (does not exist — null)
  */
 function getUserTypeConfig($userType) {
     $configs = [
         'admin' => [
-            'table' => 'admin_tbl',
-            'id_column' => 'unique_id',
-            'name_columns' => ['firstname', 'lastname'],
-            'email_column' => 'email',
-            'role_column' => 'role',
-            'attempts_table' => 'admin_login_attempts',
-            'attempts_id_column' => 'unique_id',
-            'lock_history_table' => 'admin_lock_history',
-            'lock_history_id_column' => 'unique_id',
-            'secret_attempts_table' => 'admin_secret_attempts',
-            'default_role' => 'Admin',
-            'icon' => 'user-shield'
+            'table'                     => 'admin_tbl',
+            'id_column'                 => 'unique_id',
+            'name_columns'              => ['firstname', 'lastname'],
+            'email_column'              => 'email',
+            'role_column'               => 'role',
+            'attempts_table'            => 'admin_login_attempts',
+            'attempts_id_column'        => 'unique_id',
+            'lock_history_table'        => 'admin_lock_history',
+            'lock_history_id_column'    => 'unique_id',
+            'secret_attempts_table'     => 'admin_secret_attempts',
+            'secret_attempts_id_column' => 'unique_id',
+            'default_role'              => 'Admin',
+            'icon'                      => 'user-shield',
         ],
         'tenant' => [
-            'table' => 'tenants',
-            'id_column' => 'tenant_code',
-            'name_columns' => ['firstname', 'lastname'],
-            'email_column' => 'email',
-            'role_column' => null,
-            'attempts_table' => 'tenant_login_attempts',
-            'attempts_id_column' => 'tenant_code',
-            'lock_history_table' => 'tenant_lock_history',
-            'lock_history_id_column' => 'tenant_code',
-            'secret_attempts_table' => 'tenant_secret_attempts',
-            'default_role' => 'Tenant',
-            'icon' => 'user'
+            'table'                     => 'tenants',
+            'id_column'                 => 'tenant_code',
+            'name_columns'              => ['firstname', 'lastname'],
+            'email_column'              => 'email',
+            'role_column'               => null,
+            'attempts_table'            => 'tenant_login_attempts',
+            'attempts_id_column'        => 'tenant_code',
+            'lock_history_table'        => 'tenant_lock_history',
+            'lock_history_id_column'    => 'tenant_code',
+            'secret_attempts_table'     => 'tenant_secret_attempts',
+            'secret_attempts_id_column' => 'tenant_code',
+            'default_role'              => 'Tenant',
+            'icon'                      => 'user',
         ],
         'agent' => [
-            'table' => 'agents',
-            'id_column' => 'agent_code',
-            'name_columns' => ['firstname', 'lastname'],
-            'email_column' => 'email',
-            'role_column' => null,
-            'attempts_table' => 'agent_login_attempts',
-            'attempts_id_column' => 'agent_code',
-            'lock_history_table' => 'agent_lock_history',
-            'lock_history_id_column' => 'agent_code',
-            'secret_attempts_table' => null,
-            'default_role' => 'Agent',
-            'icon' => 'user-tie'
+            'table'                     => 'agents',
+            'id_column'                 => 'agent_code',
+            'name_columns'              => ['firstname', 'lastname'],
+            'email_column'              => 'email',
+            'role_column'               => null,
+            'attempts_table'            => 'agent_login_attempts',
+            'attempts_id_column'        => 'agent_code',
+            'lock_history_table'        => 'agent_lock_history',
+            'lock_history_id_column'    => 'agent_code',
+            'secret_attempts_table'     => 'agent_secret_attempts',
+            'secret_attempts_id_column' => 'tenant_code',
+            'default_role'              => 'Agent',
+            'icon'                      => 'user-tie',
         ],
         'client' => [
-            'table' => 'clients',
-            'id_column' => 'client_code',
-            'name_columns' => ['firstname', 'lastname'],
-            'email_column' => 'email',
-            'role_column' => null,
-            'attempts_table' => 'client_login_attempts',
-            'attempts_id_column' => 'client_code',
-            'lock_history_table' => 'client_lock_history',
-            'lock_history_id_column' => 'client_code',
-            'secret_attempts_table' => null,
-            'default_role' => 'Client',
-            'icon' => 'briefcase'
-        ]
+            'table'                     => 'clients',
+            'id_column'                 => 'client_code',
+            'name_columns'              => ['firstname', 'lastname'],
+            'email_column'              => 'email',
+            'role_column'               => null,
+            'attempts_table'            => 'client_login_attempts',
+            'attempts_id_column'        => 'client_code',
+            'lock_history_table'        => 'client_lock_history',
+            'lock_history_id_column'    => 'client_code',
+            'secret_attempts_table'     => 'client_secret_attempts',
+            'secret_attempts_id_column' => 'client_code',
+            'default_role'              => 'Client',
+            'icon'                      => 'briefcase',
+        ],
     ];
-    
+
     return $configs[$userType] ?? $configs['admin'];
 }
 
 /**
- * Check if a table exists
+ * Check if a table exists.
  */
 function tableExists($conn, $tableName) {
-    $result = $conn->query("SHOW TABLES LIKE '{$tableName}'");
+    if ($tableName === null || $tableName === '') return false;
+    $result = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($tableName) . "'");
     return $result && $result->num_rows > 0;
 }
 
 function handleGet($conn, $admin_id, $admin_role) {
     global $requestId;
-    
+
     $userType = $_GET['user_type'] ?? 'admin';
-    $config = getUserTypeConfig($userType);
-    
+    $config   = getUserTypeConfig($userType);
+
     logActivity("[MULTI_USER_UNLOCK_GET] [ID:{$requestId}] Fetching locked {$userType} accounts");
-    
+
     $search = $_GET['search'] ?? '';
-    $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
-    $limit = isset($_GET['limit']) ? min((int)$_GET['limit'], 100) : 20;
+    $page   = isset($_GET['page'])  ? max(1, (int)$_GET['page'])       : 1;
+    $limit  = isset($_GET['limit']) ? min((int)$_GET['limit'], 100)   : 20;
     $offset = ($page - 1) * $limit;
-    
-    // Check if attempts table exists
-    $attemptsTableExists = tableExists($conn, $config['attempts_table']);
+
+    $attemptsTableExists    = tableExists($conn, $config['attempts_table']);
     $lockHistoryTableExists = tableExists($conn, $config['lock_history_table']);
-    
-    // Build query based on table existence
-    $query = "SELECT 
+
+    $query = "SELECT
                 u.{$config['id_column']} as user_id,
                 u." . implode(", u.", $config['name_columns']) . ",
                 u.{$config['email_column']} as email";
-    
+
     if ($config['role_column']) {
         $query .= ", u.{$config['role_column']} as role";
     } else {
         $query .= ", '{$config['default_role']}' as role";
     }
-    
+
     $query .= ", u.status";
-    
+
     if ($attemptsTableExists) {
         $query .= ", ala.attempts, ala.locked_until";
     } else {
         $query .= ", NULL as attempts, NULL as locked_until";
     }
-    
+
     if ($lockHistoryTableExists) {
         $query .= ", alh.locked_at as last_locked_at, alh.lock_reason";
     } else {
         $query .= ", NULL as last_locked_at, NULL as lock_reason";
     }
-    
+
     $query .= " FROM {$config['table']} u";
-    
+
     if ($attemptsTableExists) {
         $query .= " LEFT JOIN {$config['attempts_table']} ala ON u.{$config['id_column']} = ala.{$config['attempts_id_column']}";
     }
-    
+
     if ($lockHistoryTableExists) {
         $query .= " LEFT JOIN (
-                        SELECT {$config['lock_history_id_column']}, MAX(locked_at) as locked_at, lock_reason 
-                        FROM {$config['lock_history_table']} 
-                        WHERE status = 'locked' 
+                        SELECT {$config['lock_history_id_column']}, MAX(locked_at) as locked_at, lock_reason
+                        FROM {$config['lock_history_table']}
+                        WHERE status = 'locked'
                         AND unlocked_at IS NULL
                         GROUP BY {$config['lock_history_id_column']}
                     ) alh ON u.{$config['id_column']} = alh.{$config['lock_history_id_column']}";
     }
-    
+
     $query .= " WHERE (";
     $conditions = [];
-    
+
     if ($attemptsTableExists) {
         $conditions[] = "(ala.attempts >= 3 AND ala.locked_until > NOW())";
     }
-    
     if ($lockHistoryTableExists) {
         $conditions[] = "alh.locked_at IS NOT NULL";
     }
-    
-    // If no lock tables exist, add condition that will always be false
+
     if (empty($conditions)) {
         $query .= " 1=0";
     } else {
         $query .= implode(" OR ", $conditions);
     }
     $query .= ")";
-    
-    $params = [];
+
+    $params     = [];
     $paramTypes = "";
-    
+
     if ($search) {
         $query .= " AND (u.{$config['email_column']} LIKE ?";
+        $paramTypes = "s";
+        $params[]   = "%{$search}%";
+
         foreach ($config['name_columns'] as $nameCol) {
             $query .= " OR u.{$nameCol} LIKE ?";
-            $params[] = "%{$search}%";
             $paramTypes .= "s";
+            $params[]   = "%{$search}%";
         }
         $query .= ")";
-        $params = array_merge([$searchTerm = "%{$search}%"], $params);
-        $paramTypes = "s" . str_repeat("s", count($config['name_columns']));
     }
-    
-    // Get total count
+
+    // ---- Total count ----
     $countQuery = "SELECT COUNT(*) as total FROM ({$query}) as subquery";
-    $countStmt = $conn->prepare($countQuery);
-    
+    $countStmt  = $conn->prepare($countQuery);
+    if (!$countStmt) {
+        throw new Exception("Count prepare failed: " . $conn->error);
+    }
     if ($search) {
         $countStmt->bind_param($paramTypes, ...$params);
     }
-    
     $countStmt->execute();
     $countResult = $countStmt->get_result();
-    $totalCount = $countResult->fetch_assoc()['total'] ?? 0;
+    $totalCount  = $countResult->fetch_assoc()['total'] ?? 0;
     $countStmt->close();
-    
-    // Add pagination
-    $query .= " ORDER BY ala.locked_until DESC, alh.locked_at DESC LIMIT ? OFFSET ?";
-    $params[] = $limit;
-    $params[] = $offset;
-    $paramTypes .= "ii";
-    
+
+    // ---- Paginated query ----
+    $orderParts = [];
+    if ($attemptsTableExists)    $orderParts[] = "ala.locked_until DESC";
+    if ($lockHistoryTableExists) $orderParts[] = "alh.locked_at DESC";
+    $orderBy = !empty($orderParts) ? implode(", ", $orderParts) : "u.{$config['id_column']} ASC";
+
+    $query .= " ORDER BY {$orderBy} LIMIT ? OFFSET ?";
+
+    $paginatedParams     = $params;              // copy
+    $paginatedParamTypes = $paramTypes;
+    $paginatedParams[]   = $limit;
+    $paginatedParams[]   = $offset;
+    $paginatedParamTypes .= "ii";
+
     $stmt = $conn->prepare($query);
     if (!$stmt) {
         throw new Exception("Database error: " . $conn->error);
     }
-    
-    if ($search) {
-        $stmt->bind_param($paramTypes, ...$params);
-    } else {
-        $stmt->bind_param("ii", $limit, $offset);
-    }
-    
+
+    $stmt->bind_param($paginatedParamTypes, ...$paginatedParams);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     $lockedAccounts = [];
     while ($row = $result->fetch_assoc()) {
-        $isLocked = false;
-        $lockType = '';
+        $isLocked          = false;
+        $lockType          = '';
         $lockTimeRemaining = '';
-        
+
         if ($attemptsTableExists && $row['locked_until']) {
             $lockedUntil = new DateTime($row['locked_until']);
             $currentTime = new DateTime();
-            
+
             if ($currentTime < $lockedUntil) {
-                $isLocked = true;
-                $lockType = 'login_attempts';
-                $remaining = $currentTime->diff($lockedUntil);
+                $isLocked          = true;
+                $lockType          = 'login_attempts';
+                $remaining         = $currentTime->diff($lockedUntil);
                 $lockTimeRemaining = $remaining->format('%h hours %i minutes');
             }
         }
-        
+
         if ($lockHistoryTableExists && $row['last_locked_at'] && !$isLocked) {
-            $isLocked = true;
-            $lockType = 'manual_lock';
+            $isLocked          = true;
+            $lockType          = 'manual_lock';
             $lockTimeRemaining = 'Manually locked';
         }
-        
+
         if ($isLocked) {
             $name = [];
             foreach ($config['name_columns'] as $col) {
                 $name[] = $row[$col];
             }
-            
+
             $lockedAccounts[] = [
-                'user_id' => $row['user_id'],
-                'name' => implode(' ', $name),
-                'email' => $row['email'],
-                'role' => $row['role'],
-                'user_type' => $userType,
-                'user_type_icon' => $config['icon'],
-                'lock_type' => $lockType,
-                'lock_reason' => $row['lock_reason'] ?? 'Too many failed login attempts',
-                'attempts' => $row['attempts'] ?? 'N/A',
-                'locked_until' => $row['locked_until'],
+                'user_id'             => $row['user_id'],
+                'name'                => implode(' ', $name),
+                'email'               => $row['email'],
+                'role'                => $row['role'],
+                'user_type'           => $userType,
+                'user_type_icon'      => $config['icon'],
+                'lock_type'           => $lockType,
+                'lock_reason'         => $row['lock_reason'] ?? 'Too many failed login attempts',
+                'attempts'            => $row['attempts'] ?? 'N/A',
+                'locked_until'        => $row['locked_until'],
                 'lock_time_remaining' => $lockTimeRemaining,
-                'status' => 'locked'
+                'status'              => 'locked',
             ];
         }
     }
-    
+
     $stmt->close();
-    
+
     echo json_encode([
-        'success' => true,
-        'user_type' => $userType,
-        'accounts' => $lockedAccounts,
+        'success'    => true,
+        'user_type'  => $userType,
+        'accounts'   => $lockedAccounts,
         'pagination' => [
-            'total' => $totalCount,
-            'page' => $page,
-            'limit' => $limit,
-            'total_pages' => ceil($totalCount / $limit)
-        ]
+            'total'       => $totalCount,
+            'page'        => $page,
+            'limit'       => $limit,
+            'total_pages' => (int) ceil($totalCount / $limit),
+        ],
     ]);
 }
 
 function handlePost($conn, $admin_id, $admin_role) {
     global $requestId;
-    
+
     $input = file_get_contents('php://input');
-    $data = json_decode($input, true);
-    
-    if (json_last_error() !== JSON_ERROR_NONE) {
+    $data  = json_decode($input, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
         logActivity("[MULTI_USER_UNLOCK_POST_ERROR] [ID:{$requestId}] Invalid JSON");
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid JSON data']);
         return;
     }
-    
+
     if (!isset($data['action'])) {
         logActivity("[MULTI_USER_UNLOCK_POST_ERROR] [ID:{$requestId}] No action specified");
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Action is required']);
         return;
     }
-    
-    $action = $data['action'];
+
+    $action   = $data['action'];
     $userType = $data['user_type'] ?? 'admin';
-    $config = getUserTypeConfig($userType);
-    
+    $config   = getUserTypeConfig($userType);
+
     switch ($action) {
         case 'unlock_account':
-            if (!isset($data['account_id'])) {
+            if (!isset($data['account_id']) || !is_string($data['account_id']) || trim($data['account_id']) === '') {
                 http_response_code(400);
-                echo json_encode(['success' => false, 'message' => 'Account ID is required']);
+                echo json_encode(['success' => false, 'message' => 'Valid account ID is required']);
                 return;
             }
             unlockAccount($conn, $admin_id, $admin_role, $config, $data['account_id'], $data['reason'] ?? '');
             break;
-            
+
         case 'bulk_unlock':
-            if (!isset($data['account_ids']) || !is_array($data['account_ids'])) {
+            if (!isset($data['account_ids']) || !is_array($data['account_ids']) || empty($data['account_ids'])) {
                 http_response_code(400);
                 echo json_encode(['success' => false, 'message' => 'Account IDs array is required']);
                 return;
             }
             bulkUnlockAccounts($conn, $admin_id, $admin_role, $config, $data['account_ids'], $data['reason'] ?? '');
             break;
-            
+
         default:
             http_response_code(400);
             echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -363,158 +375,255 @@ function handlePost($conn, $admin_id, $admin_role) {
 
 function unlockAccount($conn, $admin_id, $admin_role, $config, $account_id, $reason = '') {
     global $requestId;
-    
+
     logActivity("[MULTI_USER_UNLOCK_SINGLE] [ID:{$requestId}] Admin {$admin_id} unlocking {$config['table']} account {$account_id}");
-    
+
     $conn->begin_transaction();
-    
+
     try {
-        // Get account details
+        // ---- Load account ----
         $nameCols = implode(", ", $config['name_columns']);
-        $stmt = $conn->prepare("SELECT {$config['email_column']} as email, {$nameCols} FROM {$config['table']} WHERE {$config['id_column']} = ?");
+        $stmt = $conn->prepare("
+            SELECT {$config['email_column']} as email, {$nameCols}
+            FROM {$config['table']}
+            WHERE {$config['id_column']} = ?
+        ");
+        if (!$stmt) throw new Exception("Prepare failed (load account): " . $conn->error);
         $stmt->bind_param("s", $account_id);
         $stmt->execute();
-        $result = $stmt->get_result();
+        $result  = $stmt->get_result();
         $account = $result->fetch_assoc();
         $stmt->close();
-        
-        if (!$account) {
-            throw new Exception("Account not found");
-        }
-        
-        // Build name
+
+        if (!$account) throw new Exception("Account not found");
+
         $nameParts = [];
         foreach ($config['name_columns'] as $col) {
             $nameParts[] = $account[$col] ?? '';
         }
         $fullName = implode(' ', $nameParts);
-        
-        // 1. Clear login attempts if table exists
+
+        // ---- 1) Clear login attempts ----
         if (tableExists($conn, $config['attempts_table'])) {
             $stmt = $conn->prepare("DELETE FROM {$config['attempts_table']} WHERE {$config['attempts_id_column']} = ?");
             $stmt->bind_param("s", $account_id);
             $stmt->execute();
             $stmt->close();
         }
-        
-        // 2. Clear secret answer attempts if table exists
-        if ($config['secret_attempts_table'] && tableExists($conn, $config['secret_attempts_table'])) {
-            $stmt = $conn->prepare("DELETE FROM {$config['secret_attempts_table']} WHERE {$config['attempts_id_column']} = ?");
+
+        // ---- 2) Clear secret-answer attempts ----
+        if (!empty($config['secret_attempts_table'])
+            && !empty($config['secret_attempts_id_column'])
+            && tableExists($conn, $config['secret_attempts_table'])) {
+            $stmt = $conn->prepare("
+                DELETE FROM {$config['secret_attempts_table']}
+                WHERE {$config['secret_attempts_id_column']} = ?
+            ");
             $stmt->bind_param("s", $account_id);
             $stmt->execute();
             $stmt->close();
         }
-        
-        // 3. Update lock history if table exists
+
+        // ---- 3) Update lock history ----
         if (tableExists($conn, $config['lock_history_table'])) {
             $stmt = $conn->prepare("
-                UPDATE {$config['lock_history_table']} 
-                SET status = 'unlocked', 
-                    unlocked_by = ?, 
-                    unlock_method = 'Manual unlock by admin',
-                    unlock_reason = ?,
-                    unlocked_at = NOW() 
-                WHERE {$config['lock_history_id_column']} = ? 
+                UPDATE {$config['lock_history_table']}
+                SET status          = 'unlocked',
+                    unlocked_by     = ?,
+                    unlock_method   = 'Manual unlock by admin',
+                    unlock_reason   = ?,
+                    unlocked_at     = NOW()
+                WHERE {$config['lock_history_id_column']} = ?
                 AND status = 'locked'
                 AND unlocked_at IS NULL
             ");
-            $unlockReason = $reason ?: 'Unlocked by administrator';
+            $unlockReason = $reason !== '' ? $reason : 'Unlocked by administrator';
             $stmt->bind_param("iss", $admin_id, $unlockReason, $account_id);
             $stmt->execute();
             $stmt->close();
         }
-        
+
         $conn->commit();
-        
         logActivity("[MULTI_USER_UNLOCK_SUCCESS] [ID:{$requestId}] {$config['table']} account {$account_id} unlocked");
-        
-        echo json_encode([
-            'success' => true,
-            'message' => "Account unlocked successfully",
-            'account' => [
-                'id' => $account_id,
-                'email' => $account['email'],
-                'name' => $fullName,
-                'user_type' => $config['default_role']
-            ]
-        ]);
-        
+
     } catch (Exception $e) {
         $conn->rollback();
         logActivity("[MULTI_USER_UNLOCK_ERROR] [ID:{$requestId}] Failed to unlock: " . $e->getMessage());
         http_response_code(500);
         echo json_encode(['success' => false, 'message' => 'Failed to unlock account: ' . $e->getMessage()]);
+        return;
     }
+
+    // ---- Notify the user (best-effort, post-commit) ----
+    try {
+        $notifTitle   = 'Account Unlocked';
+        $notifMsg     = "Your account has been unlocked by an administrator"
+                      . ($reason !== '' ? ": {$reason}" : ".");
+        $notifDetails = ['unlock_reason' => $reason];
+
+        if ($config['table'] === 'clients' && function_exists('createClientNotification')) {
+            createClientNotification(
+                $conn, $account_id, 'security',
+                $notifTitle, $notifMsg, $notifDetails,
+                'normal', '../profile.php', 'View Profile'
+            );
+        } elseif ($config['table'] === 'tenants' && function_exists('createNotification')) {
+            createNotification(
+                $conn, $account_id, 'security',
+                $notifTitle, $notifMsg, $notifDetails,
+                'normal', '../profile.php', 'View Profile'
+            );
+        } elseif ($config['table'] === 'admin_tbl' && function_exists('createAdminNotification')) {
+            createAdminNotification(
+                $conn, (int) $account_id, 'system_alert',
+                $notifTitle, $notifMsg, 'info'
+            );
+        }
+        // Agents have no notification helper — skipped.
+    } catch (Throwable $notifErr) {
+        logActivity("[MULTI_USER_UNLOCK_NOTIF_ERROR] [ID:{$requestId}] " . $notifErr->getMessage(), 'WARN');
+    }
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Account unlocked successfully',
+        'account' => [
+            'id'        => $account_id,
+            'email'     => $account['email'],
+            'name'      => $fullName,
+            'user_type' => $config['default_role'],
+        ],
+    ]);
 }
 
 function bulkUnlockAccounts($conn, $admin_id, $admin_role, $config, $account_ids, $reason = '') {
     global $requestId;
-    
+
     logActivity("[MULTI_USER_UNLOCK_BULK] [ID:{$requestId}] Admin {$admin_id} bulk unlocking " . count($account_ids) . " {$config['table']} accounts");
-    
+
+    // Pre-checks — done once, outside the loop, so a missing table doesn't repeat
+    $hasLoginAttempts  = tableExists($conn, $config['attempts_table']);
+    $hasSecretAttempts = !empty($config['secret_attempts_table'])
+                      && !empty($config['secret_attempts_id_column'])
+                      && tableExists($conn, $config['secret_attempts_table']);
+    $hasLockHistory    = tableExists($conn, $config['lock_history_table']);
+
     $conn->begin_transaction();
-    
+
     try {
-        $results = [];
-        $failed = [];
-        
+        $successful = [];
+        $failed     = [];
+
         foreach ($account_ids as $account_id) {
+            if (!is_string($account_id) || trim($account_id) === '') {
+                $failed[] = ['id' => $account_id, 'error' => 'Invalid account ID'];
+                continue;
+            }
+
             try {
-                // Clear login attempts
-                if (tableExists($conn, $config['attempts_table'])) {
+                // 1) Clear login attempts
+                if ($hasLoginAttempts) {
                     $stmt = $conn->prepare("DELETE FROM {$config['attempts_table']} WHERE {$config['attempts_id_column']} = ?");
+                    if (!$stmt) throw new Exception("Prepare failed (login attempts): " . $conn->error);
                     $stmt->bind_param("s", $account_id);
                     $stmt->execute();
                     $stmt->close();
                 }
-                
-                // Update lock history
-                if (tableExists($conn, $config['lock_history_table'])) {
+
+                // 2) Clear secret-answer attempts
+                if ($hasSecretAttempts) {
                     $stmt = $conn->prepare("
-                        UPDATE {$config['lock_history_table']} 
-                        SET unlocked_by = ?, 
+                        DELETE FROM {$config['secret_attempts_table']}
+                        WHERE {$config['secret_attempts_id_column']} = ?
+                    ");
+                    if (!$stmt) throw new Exception("Prepare failed (secret attempts): " . $conn->error);
+                    $stmt->bind_param("s", $account_id);
+                    $stmt->execute();
+                    $stmt->close();
+                }
+
+                // 3) Update lock history
+                if ($hasLockHistory) {
+                    $stmt = $conn->prepare("
+                        UPDATE {$config['lock_history_table']}
+                        SET unlocked_by   = ?,
                             unlock_method = 'Bulk unlock by admin',
                             unlock_reason = ?,
-                            status = 'unlocked',
-                            unlocked_at = NOW() 
-                        WHERE {$config['lock_history_id_column']} = ? 
+                            status        = 'unlocked',
+                            unlocked_at   = NOW()
+                        WHERE {$config['lock_history_id_column']} = ?
                         AND status = 'locked'
                         AND unlocked_at IS NULL
                     ");
-                    $unlockReason = $reason ?: 'Bulk unlock by administrator';
+                    if (!$stmt) throw new Exception("Prepare failed (lock history): " . $conn->error);
+                    $unlockReason = $reason !== '' ? $reason : 'Bulk unlock by administrator';
                     $stmt->bind_param("iss", $admin_id, $unlockReason, $account_id);
                     $stmt->execute();
                     $stmt->close();
                 }
-                
-                $results[] = ['id' => $account_id, 'success' => true];
-                
+
+                $successful[] = ['id' => $account_id, 'success' => true];
+
             } catch (Exception $e) {
                 $failed[] = ['id' => $account_id, 'error' => $e->getMessage()];
             }
         }
-        
+
         $conn->commit();
-        
-        logActivity("[MULTI_USER_UNLOCK_BULK_SUCCESS] [ID:{$requestId}] Bulk unlock completed: " . count($results) . " successful");
-        
-        echo json_encode([
-            'success' => true,
-            'message' => 'Bulk unlock completed',
-            'results' => $results,
-            'failed' => $failed,
-            'summary' => [
-                'total' => count($account_ids),
-                'successful' => count($results),
-                'failed' => count($failed)
-            ]
-        ]);
-        
+        logActivity("[MULTI_USER_UNLOCK_BULK_SUCCESS] [ID:{$requestId}] Bulk unlock completed: " . count($successful) . " successful, " . count($failed) . " failed");
+
     } catch (Exception $e) {
         $conn->rollback();
         logActivity("[MULTI_USER_UNLOCK_BULK_ERROR] [ID:{$requestId}] Bulk unlock failed: " . $e->getMessage());
         http_response_code(500);
         echo json_encode(['success' => false, 'message' => 'Bulk unlock failed: ' . $e->getMessage()]);
+        return;
     }
+
+    // ---- Notify each successfully unlocked user (best-effort, post-commit) ----
+    if (!empty($successful)) {
+        try {
+            $notifTitle   = 'Account Unlocked';
+            $notifMsg     = "Your account has been unlocked by an administrator"
+                          . ($reason !== '' ? ": {$reason}" : ".");
+            $notifDetails = ['unlock_reason' => $reason];
+
+            foreach ($successful as $row) {
+                $account_id = $row['id'];
+
+                if ($config['table'] === 'clients' && function_exists('createClientNotification')) {
+                    createClientNotification(
+                        $conn, $account_id, 'security',
+                        $notifTitle, $notifMsg, $notifDetails,
+                        'normal', '../profile.php', 'View Profile'
+                    );
+                } elseif ($config['table'] === 'tenants' && function_exists('createNotification')) {
+                    createNotification(
+                        $conn, $account_id, 'security',
+                        $notifTitle, $notifMsg, $notifDetails,
+                        'normal', '../profile.php', 'View Profile'
+                    );
+                } elseif ($config['table'] === 'admin_tbl' && function_exists('createAdminNotification')) {
+                    createAdminNotification(
+                        $conn, (int) $account_id, 'system_alert',
+                        $notifTitle, $notifMsg, 'info'
+                    );
+                }
+            }
+        } catch (Throwable $notifErr) {
+            logActivity("[MULTI_USER_UNLOCK_BULK_NOTIF_ERROR] [ID:{$requestId}] " . $notifErr->getMessage(), 'WARN');
+        }
+    }
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Bulk unlock completed',
+        'results' => $successful,
+        'failed'  => $failed,
+        'summary' => [
+            'total'      => count($account_ids),
+            'successful' => count($successful),
+            'failed'     => count($failed),
+        ],
+    ]);
 }
-?>

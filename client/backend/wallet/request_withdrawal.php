@@ -2,11 +2,7 @@
 // client/backend/wallet/request_withdrawal.php
 // Client (landlord) requests withdrawal to their saved bank account.
 //
-// SECURITY: The beneficiary is looked up from the client's saved bank
-// record. The client cannot redirect to another account. Balance is
-// debited immediately (reserve-then-approve model).
-//
-// SECURITY: Secret answer verified with lockout (3 fails → 15 min lock).
+// IMPORTANT: Secret-answer verification runs OUTSIDE the transaction.
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
@@ -55,75 +51,115 @@ if (!preg_match('/^\d{10}$/', $accountNumber)) json_error("Account number must b
 if ($bankCode === '')     json_error("Bank is required", 400);
 if ($secretAns === '')    json_error("Secret answer is required", 400);
 
+// ============ OUTSIDE TRANSACTION: LOCKOUT + SECRET VERIFICATION ============
+
+$lockState = checkSecretLockout($conn, 'client', $clientCode);
+if ($lockState['locked']) {
+    logActivity("[CLIENT_WITHDRAW] Blocked: account locked for {$clientCode}", 'WARN');
+    json_error(
+        $lockState['message'],
+        423,
+        null,
+        'ACCOUNT_LOCKED',
+        [
+            'client_code'  => $clientCode,
+            'locked_until' => $lockState['locked_until'],
+            'source'       => 'secret_answer',
+        ]
+    );
+}
+
+$stmt = $conn->prepare("
+    SELECT secret_answer, has_secret_set, bank_name, bank_account_name, bank_account_number, bank_code
+    FROM clients WHERE client_code = ? AND status = 1 LIMIT 1
+");
+if (!$stmt) throw new Exception("Prepare failed (load client): " . $conn->error);
+$stmt->bind_param("s", $clientCode);
+if (!$stmt->execute()) throw new Exception("Load client failed: " . $stmt->error);
+$clientSecret = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$clientSecret) json_error("Client not found", 404);
+
+if (empty($clientSecret['bank_account_number'])) {
+    json_error("No bank account on file. Please add one first.", 400);
+}
+if ($clientSecret['bank_account_number'] !== $accountNumber) {
+    json_error("Account number does not match the account on file.", 400);
+}
+if ((string)$clientSecret['bank_code'] !== (string)$bankCode) {
+    json_error("Bank does not match the account on file.", 400);
+}
+
+if ((int)$clientSecret['has_secret_set'] !== 1 || empty($clientSecret['secret_answer'])) {
+    json_error("Please set up your secret question first", 400);
+}
+
+$verify = verifySecretAnswer($conn, 'client', $clientCode, $clientSecret['secret_answer'], $secretAns);
+
+if (!$verify['ok']) {
+    $isLocked = !empty($verify['locked']);
+    logActivity(
+        "[CLIENT_WITHDRAW] Secret answer rejected for {$clientCode}: " . ($verify['message'] ?? ''),
+        'WARN'
+    );
+
+    // Pull the real lockout expiry so the frontend countdown matches the
+    // 15-minute secret-answer lock (not the 60-minute password default).
+    $lockoutData = null;
+    if ($isLocked) {
+        $attemptState = getSecretAttempts($conn, 'client', $clientCode);
+        $lockoutData = [
+            'client_code'  => $clientCode,
+            'locked_until' => $attemptState['locked_until'] ?? date('Y-m-d H:i:s', time() + 900),
+            'source'       => 'secret_answer',
+        ];
+    }
+
+    json_error(
+        $verify['message'] ?? 'Incorrect secret answer',
+        $isLocked ? 423 : 401,
+        null,
+        $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_SECRET_ANSWER',
+        $lockoutData
+    );
+}
+logActivity("[CLIENT_WITHDRAW] Secret answer verified for {$clientCode}");
+
+// ============ INSIDE TRANSACTION: BUSINESS LOGIC ============
+
 $conn->begin_transaction();
 logActivity("[CLIENT_WITHDRAW] Transaction started");
 
 try {
-    // ---- 1) Lock client row ----
     $stmt = $conn->prepare("
-        SELECT wallet_balance, secret_answer, has_secret_set,
-               bank_name, bank_account_name, bank_account_number, bank_code
+        SELECT wallet_balance, bank_name, bank_account_name, bank_account_number, bank_code
         FROM clients WHERE client_code = ? FOR UPDATE
     ");
-    if (!$stmt) throw new Exception("Prepare failed (load client): " . $conn->error);
+    if (!$stmt) throw new Exception("Prepare failed (lock client): " . $conn->error);
     $stmt->bind_param("s", $clientCode);
-    if (!$stmt->execute()) throw new Exception("Load client failed: " . $stmt->error);
+    if (!$stmt->execute()) throw new Exception("Lock client failed: " . $stmt->error);
     $client = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-
     if (!$client) throw new Exception("Client not found", 404);
 
-    // ---- 2) Bank must match saved account ----
-    if (empty($client['bank_account_number'])) {
-        throw new Exception("No bank account on file. Please add one first.", 400);
-    }
-    if ($client['bank_account_number'] !== $accountNumber) {
-        logActivity("[CLIENT_WITHDRAW] Account mismatch for {$clientCode}: submitted ******"
-            . substr($accountNumber, -4) . ", on file ******"
-            . substr($client['bank_account_number'], -4), 'WARN');
-        throw new Exception("Account number does not match the account on file.", 400);
-    }
-    if ((string)$client['bank_code'] !== (string)$bankCode) {
-        throw new Exception("Bank does not match the account on file.", 400);
+    // Concurrent re-verify bank details
+    if (empty($client['bank_account_number']) || $client['bank_account_number'] !== $accountNumber
+        || (string)$client['bank_code'] !== (string)$bankCode) {
+        throw new Exception("Your bank details changed concurrently. Please refresh and try again.", 409);
     }
 
-    // ---- 3) Lockout check FIRST ----
-    $lockState = checkSecretLockout($conn, 'client', $clientCode);
-    if ($lockState['locked']) {
-        logActivity("[CLIENT_WITHDRAW] Blocked: account locked for {$clientCode}", 'WARN');
-        throw new Exception($lockState['message'], 429);
-    }
-
-    // ---- 4) Secret verification with lockout ----
-    if ((int)$client['has_secret_set'] !== 1 || empty($client['secret_answer'])) {
-        throw new Exception("Please set up your secret question first", 400);
-    }
-
-    $verify = verifySecretAnswer($conn, 'client', $clientCode, $client['secret_answer'], $secretAns);
-    if (!$verify['ok']) {
-        logActivity("[CLIENT_WITHDRAW] Secret answer failed for {$clientCode}: "
-            . ($verify['message'] ?? ''), 'WARN');
-        throw new Exception(
-            $verify['message'] ?? 'Incorrect secret answer',
-            $verify['locked'] ? 429 : 401
-        );
-    }
-
-    // ---- 5) Balance check ----
-    $oldBalance = round((float) $client['wallet_balance'], 2);
+    // Balance check
+    $oldBalance = round((float)$client['wallet_balance'], 2);
     if ($amount > $oldBalance) {
         logActivity("[CLIENT_WITHDRAW] Insufficient balance: requested ₦" . number_format($amount, 2)
             . ", available ₦" . number_format($oldBalance, 2), 'WARN');
-        throw new Exception(
-            "Insufficient wallet balance. Available: ₦" . number_format($oldBalance, 2),
-            400
-        );
+        throw new Exception("Insufficient wallet balance. Available: ₦" . number_format($oldBalance, 2), 400);
     }
 
-    // ---- 6) One pending withdrawal at a time ----
+    // One pending at a time
     $pendingCount = countPendingWithdrawals($conn, 'client', $clientCode);
     if ($pendingCount === PHP_INT_MAX) {
-        logActivity("[CLIENT_WITHDRAW] Pending check failed (DB error) for {$clientCode}", 'ERROR');
         throw new Exception("Unable to verify pending withdrawals — please try again", 500);
     }
     if ($pendingCount > 0) {
@@ -131,7 +167,7 @@ try {
         throw new Exception("You already have a pending withdrawal request", 409);
     }
 
-    // ---- 7) Reserve funds ----
+    // Reserve funds
     $newBalance  = round($oldBalance - $amount, 2);
     $requestCode = 'CWD_' . strtoupper(bin2hex(random_bytes(6)));
     $masked      = '******' . substr($accountNumber, -4);
@@ -146,7 +182,7 @@ try {
     logActivity("[CLIENT_WITHDRAW] Wallet debited: {$clientCode} ₦" . number_format($oldBalance, 2)
         . " → ₦" . number_format($newBalance, 2));
 
-    // ---- 8) Ledger row (Pending) ----
+    // Ledger row
     $ledger = $conn->prepare("
         INSERT INTO client_wallet_transactions
             (client_code, transaction_type, amount, running_balance,
@@ -158,7 +194,6 @@ try {
     $ledger->bind_param("sddss", $clientCode, $debitAmount, $newBalance, $requestCode, $note);
     if (!$ledger->execute()) {
         if ($ledger->errno === 1062) {
-            logActivity("[CLIENT_WITHDRAW] DB rejected: duplicate withdrawal ledger for {$requestCode}", 'WARN');
             throw new Exception("Duplicate withdrawal ledger entry — please retry", 409);
         }
         throw new Exception("Ledger insert failed: " . $ledger->error);
@@ -168,7 +203,7 @@ try {
     logActivity("[CLIENT_WITHDRAW] Ledger inserted: id={$ledgerId}, status=Pending, "
         . "request_id={$requestCode}, running_balance=₦" . number_format($newBalance, 2));
 
-    // ---- 9) wallet_requests row ----
+    // wallet_requests row
     $req = $conn->prepare("
         INSERT INTO wallet_requests
             (request_code, user_type, user_code, request_type, amount,
@@ -187,10 +222,8 @@ try {
             $errText = $req->error;
             if (stripos($errText, 'pending_marker') !== false
                 || stripos($errText, 'uniq_pending_per_user_type') !== false) {
-                logActivity("[CLIENT_WITHDRAW] DB rejected: pending withdrawal already exists for {$clientCode}", 'WARN');
                 throw new Exception("You already have a pending withdrawal request", 409);
             }
-            logActivity("[CLIENT_WITHDRAW] DB rejected: request_code collision {$requestCode}", 'WARN');
             throw new Exception("Please try again (transient issue)", 409);
         }
         throw new Exception("Request insert failed: " . $req->error);
@@ -198,7 +231,7 @@ try {
     $req->close();
     logActivity("[CLIENT_WITHDRAW] wallet_requests row inserted: request_code={$requestCode}");
 
-    // ---- 10) Reset lockout on success ----
+    // Reset lockout (safe — verification already passed, counter autocommitted earlier)
     setSecretAttempts($conn, 'client', $clientCode, 0, null);
 
     $conn->commit();
@@ -210,18 +243,13 @@ try {
     logActivity("[CLIENT_WITHDRAW] ========== FAILED ==========");
     json_error($e->getMessage(), $e->getCode() >= 400 ? $e->getCode() : 500);
     exit;
-} 
-// finally {
-//     if (isset($conn) && $conn instanceof mysqli && !$conn->connect_errno) {
-//         $conn->close();
-//     }
-// }
+}
 
 // ---- Notify admins (best-effort, post-commit) ----
 try {
     $admins = $conn->query("SELECT unique_id FROM admin_tbl
-    WHERE status = '1' AND role IN ('Super Admin', 'Admin')
-    LIMIT 20");
+        WHERE status = '1' AND role IN ('Super Admin', 'Admin')
+        LIMIT 20");
     if ($admins) {
         while ($adm = $admins->fetch_assoc()) {
             if (function_exists('createAdminNotification')) {

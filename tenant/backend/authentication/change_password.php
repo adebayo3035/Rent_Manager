@@ -8,7 +8,8 @@
 //   - Both verification calls happen OUTSIDE the transaction so counters persist
 //   - Password update + attempt clearing wrapped in transaction
 //   - Argon2id hash
-//   - 423 responses include data.tenant_code for client-side forced logout
+//   - 423 responses include data.tenant_code, locked_until, and source
+//     so the client can render an accurate modal + forced logout
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
@@ -176,12 +177,22 @@ try {
             'WARN'
         );
 
+        // Password lockouts are always 60 minutes; compute the exact expiry
+        // so the frontend countdown is accurate.
+        $lockoutData = $isLocked
+            ? [
+                'tenant_code'  => $tenant_code,
+                'locked_until' => date('Y-m-d H:i:s', time() + 3600),
+                'source'       => 'password',
+            ]
+            : null;
+
         json_error(
             $pwCheck['message'] ?? 'Current password is incorrect',
             $isLocked ? 423 : 401,
             null,
             $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_PASSWORD',
-            $isLocked ? ['tenant_code' => $tenant_code] : null
+            $lockoutData
         );
     }
     logActivity("[TENANT_PASSWORD_CHANGE] Current password verified");
@@ -203,12 +214,24 @@ try {
             'WARN'
         );
 
+        // Pull the real lockout expiry so the countdown matches the
+        // 15-minute secret-answer lock instead of the 60-minute password default.
+        $lockoutData = null;
+        if ($isLocked) {
+            $attemptState = getSecretAttempts($conn, 'tenant', $tenant_code);
+            $lockoutData = [
+                'tenant_code'  => $tenant_code,
+                'locked_until' => $attemptState['locked_until'] ?? date('Y-m-d H:i:s', time() + 900),
+                'source'       => 'secret_answer',
+            ];
+        }
+
         json_error(
             $saCheck['message'] ?? 'Incorrect secret answer',
             $isLocked ? 423 : 401,
             null,
             $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_SECRET_ANSWER',
-            $isLocked ? ['tenant_code' => $tenant_code] : null
+            $lockoutData
         );
     }
     logActivity("[TENANT_PASSWORD_CHANGE] Secret answer verified");

@@ -179,7 +179,6 @@ try {
         $currentPassword,
         $current_password_hash,
         session_id()
-
     );
 
     if (!$pwCheck['ok']) {
@@ -189,12 +188,22 @@ try {
             'WARN'
         );
 
+        // Password lockouts are always 60 minutes; compute the exact expiry so the
+        // frontend can render an accurate countdown.
+        $lockoutData = $isLocked
+            ? [
+                'client_code' => $client_code,
+                'locked_until' => date('Y-m-d H:i:s', time() + 3600),
+                'source' => 'password',
+            ]
+            : null;
+
         json_error(
             $pwCheck['message'] ?? 'Current password is incorrect',
             $isLocked ? 423 : 401,
-            null,                                              // no field errors
-            $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_PASSWORD', // error_code
-            $isLocked ? ['client_code' => $client_code] : null // data (client_code on lockout only)
+            null,
+            $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_PASSWORD',
+            $lockoutData
         );
     }
     logActivity("[CLIENT_PASSWORD_CHANGE] Current password verified");
@@ -204,7 +213,6 @@ try {
         json_error("Security question not set. Please set it first.", 400);
     }
 
-    // ---- Verify secret answer with lockout — OUTSIDE any transaction ----
     // ---- Verify secret answer with lockout — OUTSIDE any transaction ----
     $saCheck = verifySecretAnswer(
         $conn,
@@ -221,12 +229,25 @@ try {
             'WARN'
         );
 
+        // Pull the real lockout expiry from client_secret_attempts so the
+        // countdown matches the 15-min lock instead of the 60-min default.
+        $lockoutData = null;
+        if ($isLocked) {
+            $attemptState = getSecretAttempts($conn, 'client', $client_code);
+            $lockoutData = [
+                'client_code' => $client_code,
+                'locked_until' => $attemptState['locked_until']
+                    ?? date('Y-m-d H:i:s', time() + 900),
+                'source' => 'secret_answer',
+            ];
+        }
+
         json_error(
             $saCheck['message'] ?? 'Incorrect secret answer',
             $isLocked ? 423 : 401,
             null,
             $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_SECRET_ANSWER',
-            $isLocked ? ['client_code' => $client_code] : null
+            $lockoutData
         );
     }
     logActivity("[CLIENT_PASSWORD_CHANGE] Secret answer verified");

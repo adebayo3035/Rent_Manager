@@ -1,4 +1,9 @@
 <?php
+// tenant/backend/profile/update_profile.php
+// Update tenant profile. Sensitive changes (email / phone) require password reauth.
+//
+// IMPORTANT: Password verification runs OUTSIDE the transaction — the lockout
+// counter must persist even when subsequent business logic fails.
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
@@ -9,8 +14,7 @@ require_once __DIR__ . '/../utilities/rate_limit.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/wallet_security.php';   // verifyTenantPasswordWithLockout
 
-if (session_status() === PHP_SESSION_NONE)
-    session_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
 rateLimiter();
 
 $auth = requireAuth([
@@ -97,12 +101,23 @@ try {
         if (!$pwCheck['ok']) {
             $isLocked = !empty($pwCheck['locked']);
             logActivity("[UPDATE_PROFILE] Password reauth rejected: " . ($pwCheck['message'] ?? ''), 'WARN');
+
+            // Password lockouts are always 60 minutes; send the exact expiry so
+            // the frontend modal renders an accurate countdown.
+            $lockoutData = $isLocked
+                ? [
+                    'tenant_code'  => $tenant_code,
+                    'locked_until' => date('Y-m-d H:i:s', time() + 3600),
+                    'source'       => 'password',
+                ]
+                : null;
+
             json_error(
                 $pwCheck['message'] ?? 'Incorrect password',
                 $isLocked ? 423 : 401,
                 null,
                 $isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_PASSWORD',
-                $isLocked ? ['tenant_code' => $tenant_code] : null
+                $lockoutData
             );
         }
         logActivity("[UPDATE_PROFILE] Password reauth succeeded for sensitive change");
