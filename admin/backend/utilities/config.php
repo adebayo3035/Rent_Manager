@@ -38,3 +38,13 @@ include('activity_logger.php');
     $stmt->execute();
     $stmt->close();
   }
+
+  function guardPageIfAdmin(mysqli $conn): void
+{
+    if (!isset($_SESSION['unique_id'])) return;
+
+    if (!function_exists('requireNoActiveLockout')) {
+        require_once __DIR__ . '/page_guard.php';
+    }
+    requireNoActiveLockout($conn, $_SESSION['unique_id']);
+}

@@ -38,3 +38,18 @@ include('activity_logger.php');
     $stmt->execute();
     $stmt->close();
   }
+
+  // ============================================================
+// PAGE GUARD WRAPPERS (call explicitly from authenticated pages)
+// ============================================================
+// Only fires when called — safe to define here without auto-executing.
+
+function guardPageIfClient(mysqli $conn): void
+{
+    if (!isset($_SESSION['client_code'])) return;
+
+    if (!function_exists('requireNoActiveLockout')) {
+        require_once __DIR__ . '/page_guard.php';
+    }
+    requireNoActiveLockout($conn, $_SESSION['client_code']);
+}

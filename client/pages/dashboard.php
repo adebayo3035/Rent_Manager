@@ -1,4 +1,16 @@
 <?php
+// --- Page guard bootstrap ---
+require_once __DIR__ . '/../backend/utilities/config.php';
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+
+$clientCode = $_SESSION['client_code'] ?? null;   // or tenant_code
+if (!$clientCode) {
+    header('Location: index.php');
+    exit;
+}
+
+guardPageIfClient($conn);   // or guardPageIfTenant($conn)
 $dashboardContent = <<<'HTML'
 <section class="dashboard-container" aria-label="Client dashboard">
     <div class="dashboard-header">

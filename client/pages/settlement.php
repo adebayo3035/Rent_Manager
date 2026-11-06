@@ -1,4 +1,17 @@
 <?php
+// --- Page guard bootstrap ---
+require_once __DIR__ . '/../backend/utilities/config.php';
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+
+$clientCode = $_SESSION['client_code'] ?? null;   // or tenant_code
+if (!$clientCode) {
+    header('Location: index.php');
+    exit;
+}
+
+guardPageIfClient($conn);   // or guardPageIfTenant($conn)
+
 $settlementContent = <<<'HTML'
 <section class="settlement-container" aria-label="Settlement approvals">
     <div class="settlement-header">

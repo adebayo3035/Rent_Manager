@@ -1,3 +1,17 @@
+<?php
+// --- Page guard bootstrap ---
+require_once __DIR__ . '/../backend/utilities/config.php';
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+
+$tenantCode = $_SESSION['tenant_code'] ?? null;   // or tenant_code
+if (!$tenantCode) {
+    header('Location: index.php');
+    exit;
+}
+
+guardPageIfTenant($conn);   // or guardPageIfTenant($conn)
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
