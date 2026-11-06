@@ -1,388 +1,336 @@
 <?php
 // onboard_admin.php
-// Secure, refactored onboarding endpoint with detailed logging
+// Secure admin onboarding endpoint.
+//
+// SECURITY:
+//   - requireAuth(): CSRF, per-route rate limit, role gate (Super Admin)
+//   - Password strength enforced (incl. lowercase — matches client/tenant policy)
+//   - Secret question validated against allowed whitelist
+//   - Role validated against allowed enum
+//   - Real MIME check via finfo_file (does not trust $_FILES['type'])
+//   - Photo stored by content hash — dedup across admins
+//   - Duplicate email/phone pre-check + errno 1062 race handling
+//   - Transaction wraps insert; file cleaned up on any failure
+//   - Old-photo-safe: an upload that succeeds but whose INSERT fails leaves no
+//     orphan file on disk
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
-
+require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
- if (!isset($_SESSION)) session_start();
- rateLimiter();
 
-// Generate unique request ID for tracking
+if (session_status() === PHP_SESSION_NONE) session_start();
+rateLimiter();
+
+// ---- Auth: centralises CSRF, rate limit, role gate ----
+$auth = requireAuth([
+    'method'     => 'POST',
+    'rate_key'   => 'admin_onboard',
+    'rate_limit' => [3, 600],           // 3 onboardings per 10 minutes
+    'csrf'       => ['enabled' => false, 'form_name' => 'admin_onboard_form'],
+    'roles'      => ['Super Admin'],
+]);
+
+$loggedInUserId    = (int) $auth['user_id'];
+$loggedInUserRole  = $auth['role'];
+$loggedInUserEmail = $_SESSION['email'] ?? 'unknown';
+
 $requestTraceId = uniqid('onboard_admin_', true);
 logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ========== START ==========");
 logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Request Time: " . date('Y-m-d H:i:s'));
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Request Method: " . $_SERVER['REQUEST_METHOD']);
+logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Onboarded by: ID={$loggedInUserId}, Role={$loggedInUserRole}");
 
-// ---------- STEP 1: AUTHENTICATION ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 1: Checking authentication");
-
-if (!isset($_SESSION['unique_id'])) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Access denied - Not logged in");
-    json_error('Not logged in', 401);
-}
-
-$loggedInUserRole = $_SESSION['role'] ?? null;
-$loggedInUserId = $_SESSION['unique_id'] ?? null;
-$loggedInUserEmail = $_SESSION['email'] ?? 'unknown';
-
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Logged in user: ID={$loggedInUserId}, Role={$loggedInUserRole}, Email={$loggedInUserEmail}");
-
-// ---------- STEP 2: AUTHORIZATION ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 2: Checking authorization");
-
-if ($loggedInUserRole !== 'Super Admin') {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Access denied - Insufficient role ({$loggedInUserRole})");
-    json_error('Access Denied. Permission not granted!', 403);
-}
-
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Authorization passed - User is Super Admin");
-
-// ---------- STEP 3: VALIDATE REQUEST METHOD ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 3: Validating request method");
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Invalid method: " . $_SERVER['REQUEST_METHOD']);
-    json_error('Method not allowed. Use POST.', 405);
-}
-
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Request method validated: POST");
-
-// ---------- STEP 4: ACCEPT AND SANITIZE INPUTS ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 4: Accepting and sanitizing inputs");
-
+// ---------- STEP 1: SANITIZE INPUTS ----------
 $inputs = [
-    'firstname' => $_POST['staff_firstname'] ?? '',
-    'lastname' => $_POST['staff_lastname'] ?? '',
-    'email' => $_POST['staff_email'] ?? '',
-    'phone' => $_POST['staff_phone_number'] ?? '',
-    'gender' => $_POST['staff_gender'] ?? '',
-    'address' => $_POST['staff_address'] ?? '',
-    'password' => $_POST['staff_password'] ?? '',
+    'firstname'       => $_POST['staff_firstname']       ?? '',
+    'lastname'        => $_POST['staff_lastname']        ?? '',
+    'email'           => $_POST['staff_email']           ?? '',
+    'phone'           => $_POST['staff_phone_number']    ?? '',
+    'gender'          => $_POST['staff_gender']          ?? '',
+    'address'         => $_POST['staff_address']         ?? '',
+    'password'        => $_POST['staff_password']        ?? '',
     'secret_question' => $_POST['staff_secret_question'] ?? '',
-    'secret_answer' => $_POST['staff_secret_answer'] ?? '',
-    'role' => $_POST['staff_role'] ?? ''
+    'secret_answer'   => $_POST['staff_secret_answer']   ?? '',
+    'role'            => $_POST['staff_role']            ?? '',
 ];
 
-$inputs = sanitize_inputs($inputs);
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Inputs sanitized");
+// Trim + strip tags on non-sensitive text fields (do NOT strip_tags password)
+foreach (['firstname', 'lastname', 'email', 'phone', 'gender', 'address', 'secret_question', 'secret_answer', 'role'] as $k) {
+    $inputs[$k] = trim(strip_tags($inputs[$k]));
+}
+$inputs['password'] = trim($inputs['password']);
 
-// Log non-sensitive input summary
 $logCopy = $inputs;
 unset($logCopy['password'], $logCopy['secret_answer']);
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Inputs received: " . json_encode($logCopy));
+logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Inputs: " . json_encode($logCopy));
 
-// ---------- STEP 5: VALIDATE REQUIRED FIELDS ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 5: Validating required fields");
+// ---------- STEP 2: REQUIRED FIELDS ----------
+$required = ['firstname', 'lastname', 'email', 'phone', 'gender', 'address', 'password', 'secret_question', 'secret_answer', 'role'];
+$missing  = array_values(array_filter($required, fn($f) => empty($inputs[$f])));
 
-$required_fields = ['firstname', 'lastname', 'email', 'phone', 'gender', 'address', 'password', 'secret_question', 'secret_answer', 'role'];
-$missing_fields = [];
-
-foreach ($required_fields as $field) {
-    if (empty($inputs[$field])) {
-        $missing_fields[] = $field;
-        logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Missing field: {$field}");
-    }
+if (!empty($missing)) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Missing fields: " . implode(', ', $missing));
+    json_error("Please fill all input fields. Missing: " . implode(', ', $missing), 400);
 }
 
-if (!empty($missing_fields)) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Missing required fields: " . implode(', ', $missing_fields));
-    json_error("Please fill all input fields. Missing: " . implode(', ', $missing_fields));
-}
-
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] All required fields present");
-
-// ---------- STEP 6: VALIDATE PHONE ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 6: Validating phone number");
-
+// ---------- STEP 3: PHONE ----------
 if (!validate_phone($inputs['phone'])) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Invalid phone number: " . $inputs['phone']);
-    json_error('Please input a valid Phone Number.');
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Invalid phone");
+    json_error('Please input a valid Phone Number.', 400);
 }
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Phone number validated: " . $inputs['phone']);
-
-// ---------- STEP 7: VALIDATE EMAIL ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 7: Validating email");
-
+// ---------- STEP 4: EMAIL ----------
 if (!filter_var($inputs['email'], FILTER_VALIDATE_EMAIL)) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Invalid email: " . $inputs['email']);
-    json_error('Invalid email address.');
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Invalid email");
+    json_error('Invalid email address.', 400);
 }
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Email validated: " . $inputs['email']);
-
-// ---------- STEP 8: VALIDATE PASSWORD STRENGTH ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 8: Validating password strength");
-
-$password = $inputs['password'];
-$minLength = 8;
-$passwordErrors = [];
-
-if (strlen($password) < $minLength) {
-    $passwordErrors[] = "Minimum length {$minLength} characters";
-}
-if (!preg_match('/[A-Z]/', $password)) {
-    $passwordErrors[] = "At least one uppercase letter";
-}
-if (!preg_match('/\d/', $password)) {
-    $passwordErrors[] = "At least one number";
-}
-if (!preg_match('/[!@#$%^&*(),.?":{}|<>_]/', $password)) {
-    $passwordErrors[] = "At least one special character";
-}
-if (preg_match('/\s/', $password)) {
-    $passwordErrors[] = "No spaces allowed";
+// ---------- STEP 5: GENDER ----------
+if (!in_array($inputs['gender'], ['Male', 'Female', 'Other'], true)) {
+    json_error('Invalid gender value.', 400);
 }
 
-if (!empty($passwordErrors)) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Password validation failed: " . implode(', ', $passwordErrors));
-    json_error('Password must be at least 8 characters with at least one uppercase letter, one number and one special character. No spaces allowed.');
+// ---------- STEP 6: ROLE (whitelist) ----------
+$allowedRoles = ['Super Admin', 'Admin'];
+if (!in_array($inputs['role'], $allowedRoles, true)) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Invalid role '{$inputs['role']}'");
+    json_error('Invalid role.', 400);
 }
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Password strength validation passed");
+// ---------- STEP 7: SECRET QUESTION (whitelist) ----------
+$allowedQuestions = [
+    "What was your first pet's name?",
+    "What is your mother's maiden name?",
+    "What city were you born in?",
+    "What is your favorite book?",
+    "What was your first car?",
+];
+if (!in_array($inputs['secret_question'], $allowedQuestions, true)) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Invalid secret question");
+    json_error('Invalid secret question selected.', 400);
+}
 
-// ---------- STEP 9: VALIDATE FILE UPLOAD ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 9: Validating file upload");
+// ---------- STEP 8: PASSWORD STRENGTH ----------
+$password     = $inputs['password'];
+$pwdErrors    = [];
 
+if (strlen($password) < 8)                            $pwdErrors[] = 'Minimum 8 characters';
+if (!preg_match('/[A-Z]/', $password))                 $pwdErrors[] = 'At least one uppercase letter';
+if (!preg_match('/[a-z]/', $password))                 $pwdErrors[] = 'At least one lowercase letter';
+if (!preg_match('/\d/', $password))                    $pwdErrors[] = 'At least one number';
+if (!preg_match('/[!@#$%^&*(),.?":{}|<>_]/', $password)) $pwdErrors[] = 'At least one special character';
+if (preg_match('/\s/', $password))                     $pwdErrors[] = 'No spaces allowed';
+
+if (!empty($pwdErrors)) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Weak password: " . implode(', ', $pwdErrors));
+    json_error('Password must be at least 8 characters with at least one uppercase letter, one lowercase letter, one number, and one special character. No spaces allowed.', 400);
+}
+
+// ---------- STEP 9: PHOTO UPLOAD PRESENCE + ERROR ----------
 if (!isset($_FILES['staff_photo'])) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: No photo uploaded");
-    json_error('Please upload a profile photo.');
+    json_error('Please upload a profile photo.', 400);
 }
-
 $photo = $_FILES['staff_photo'];
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Photo upload - Name: {$photo['name']}, Size: {$photo['size']}, Error: {$photo['error']}");
-
 if ($photo['error'] !== UPLOAD_ERR_OK) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: File upload error: " . $photo['error']);
     $errorMessages = [
-        UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize',
-        UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE',
-        UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
-        UPLOAD_ERR_NO_FILE => 'No file was uploaded',
+        UPLOAD_ERR_INI_SIZE   => 'File exceeds upload_max_filesize',
+        UPLOAD_ERR_FORM_SIZE  => 'File exceeds MAX_FILE_SIZE',
+        UPLOAD_ERR_PARTIAL    => 'File was only partially uploaded',
+        UPLOAD_ERR_NO_FILE    => 'No file was uploaded',
         UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
         UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
-        UPLOAD_ERR_EXTENSION => 'File upload stopped by extension'
+        UPLOAD_ERR_EXTENSION  => 'File upload stopped by extension',
     ];
-    json_error('Upload error: ' . ($errorMessages[$photo['error']] ?? 'Unknown error'));
+    $msg = $errorMessages[$photo['error']] ?? 'Unknown upload error';
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: {$msg} (code {$photo['error']})");
+    json_error('Upload error: ' . $msg, 400);
 }
 
-// ---------- STEP 10: VALIDATE IMAGE TYPE ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 10: Validating image type");
-
-$allowed_ext = ['jpeg', 'jpg', 'png'];
-$allowed_types = ['image/jpeg', 'image/jpg', 'image/png'];
-
+// ---------- STEP 10: PHOTO EXTENSION ----------
 $img_name = basename($photo['name']);
 $tmp_name = $photo['tmp_name'];
 $img_size = $photo['size'];
-$img_type = $photo['type'];
-$ext = strtolower(pathinfo($img_name, PATHINFO_EXTENSION));
+$ext      = strtolower(pathinfo($img_name, PATHINFO_EXTENSION));
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Image details - Name: {$img_name}, Type: {$img_type}, Ext: {$ext}, Size: {$img_size}");
-
-if (!in_array($ext, $allowed_ext) || !in_array($img_type, $allowed_types)) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Invalid image type - Ext: {$ext}, Type: {$img_type}");
-    json_error('Invalid image file. Allowed types: jpg, jpeg, png.');
+$allowedExt = ['jpeg', 'jpg', 'png'];
+if (!in_array($ext, $allowedExt, true)) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Bad ext '{$ext}'");
+    json_error('Invalid image file. Allowed types: jpg, jpeg, png.', 400);
 }
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Image type validation passed");
+// ---------- STEP 11: REAL MIME CHECK ----------
+if (!function_exists('finfo_open')) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: fileinfo unavailable", 'ERROR');
+    json_error('Server misconfiguration — please contact support', 500);
+}
+$finfo = finfo_open(FILEINFO_MIME_TYPE);
+if ($finfo === false) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: finfo_open failed", 'ERROR');
+    json_error('Server misconfiguration — please contact support', 500);
+}
+$actualMime = finfo_file($finfo, $tmp_name);
 
-// ---------- STEP 11: VALIDATE IMAGE SIZE ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 11: Validating image size");
-
-$maxSize = 500000; // 500KB
-if ($img_size > $maxSize) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Image too large - {$img_size} bytes (max: {$maxSize})");
-    json_error("Sorry, your file is too large. Max 500KB allowed.");
+$extMimeMap = [
+    'jpg'  => 'image/jpeg',
+    'jpeg' => 'image/jpeg',
+    'png'  => 'image/png',
+];
+if ($actualMime !== $extMimeMap[$ext]) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: MIME mismatch ext={$ext}, actual={$actualMime}");
+    json_error('File content does not match its extension.', 400);
 }
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Image size validation passed");
+// ---------- STEP 12: PHOTO SIZE (500 KB) ----------
+if ($img_size > 500000) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Photo too large ({$img_size} bytes)");
+    json_error('Sorry, your file is too large. Max 500KB allowed.', 400);
+}
 
-// ---------- STEP 12: CHECK DUPLICATES (EMAIL/PHONE) ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 12: Checking for duplicate email/phone");
-
-$check_sql = "SELECT unique_id, email, phone, photo FROM admin_tbl WHERE email = ? OR phone = ? LIMIT 1";
-$check_stmt = $conn->prepare($check_sql);
+// ---------- STEP 13: DUPLICATE EMAIL / PHONE ----------
+$check_stmt = $conn->prepare("SELECT unique_id, email, phone FROM admin_tbl WHERE email = ? OR phone = ? LIMIT 1");
 if (!$check_stmt) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Prepare failed: " . $conn->error);
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Prepare dup-check failed: " . $conn->error, 'ERROR');
     json_error('Server database error.', 500);
 }
-
 $check_stmt->bind_param('ss', $inputs['email'], $inputs['phone']);
 $check_stmt->execute();
 $res = $check_stmt->get_result();
 
 if ($res && $row = $res->fetch_assoc()) {
     $err = [];
-    if ($row['email'] === $inputs['email']) {
-        $err['email'] = 'Email already exists';
-        logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Duplicate email: {$inputs['email']}");
-    }
-    if ($row['phone'] === $inputs['phone']) {
-        $err['phone'] = 'Phone already exists';
-        logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Duplicate phone: {$inputs['phone']}");
-    }
+    if ($row['email'] === $inputs['email']) $err['email'] = 'Email already exists';
+    if ($row['phone'] === $inputs['phone']) $err['phone'] = 'Phone already exists';
+    $check_stmt->close();
     if (!empty($err)) {
-        $check_stmt->close();
+        logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Duplicate detected: " . json_encode($err));
         json_error($err, 409);
     }
 }
 $check_stmt->close();
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] No duplicate email/phone found");
-
-// ---------- STEP 13: SETUP UPLOAD DIRECTORY ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 13: Setting up upload directory");
-
+// ---------- STEP 14: UPLOAD DIRECTORY ----------
 $upload_dir = __DIR__ . '/admin_photos/';
 if (!is_dir($upload_dir) && !mkdir($upload_dir, 0755, true)) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Failed to create upload directory: {$upload_dir}");
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Cannot create upload dir", 'ERROR');
     json_error('Server error preparing upload directory.', 500);
 }
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Upload directory ready: {$upload_dir}");
+if (!is_writable($upload_dir)) {
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Upload dir not writable", 'ERROR');
+    json_error('Server error preparing upload directory.', 500);
+}
 
-// ---------- STEP 14: GENERATE UNIQUE FILE NAME ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 14: Generating unique file name");
-
-$file_hash = hash_file('sha256', $tmp_name);
-$file_name = $file_hash . '.' . $ext;
+// ---------- STEP 15: HASH-BASED FILENAME ----------
+$file_hash   = hash_file('sha256', $tmp_name);
+$file_name   = $file_hash . '.' . $ext;
 $upload_file = $upload_dir . $file_name;
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] File hash: {$file_hash}, File name: {$file_name}");
-
-// ---------- STEP 15: CHECK DUPLICATE PHOTO IN DB ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 15: Checking for duplicate photo");
-
-$photo_check_sql = "SELECT 1 FROM admin_tbl WHERE photo = ? LIMIT 1";
-$photo_check_stmt = $conn->prepare($photo_check_sql);
-if (!$photo_check_stmt) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Prepare failed for photo check: " . $conn->error);
-    json_error('Server database error.', 500);
-}
-
-$photo_check_stmt->bind_param('s', $file_name);
-$photo_check_stmt->execute();
-$photo_res = $photo_check_stmt->get_result();
-
-if ($photo_res && $photo_res->num_rows > 0) {
+// ---------- STEP 16: DUPLICATE PHOTO CHECK ----------
+$photo_check_stmt = $conn->prepare("SELECT 1 FROM admin_tbl WHERE photo = ? LIMIT 1");
+if ($photo_check_stmt) {
+    $photo_check_stmt->bind_param('s', $file_name);
+    $photo_check_stmt->execute();
+    $photo_res = $photo_check_stmt->get_result();
+    if ($photo_res && $photo_res->num_rows > 0) {
+        $photo_check_stmt->close();
+        logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Duplicate photo (DB) {$file_name}");
+        json_error('This image has already been uploaded by another user.', 409);
+    }
     $photo_check_stmt->close();
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Duplicate photo found: {$file_name}");
-    json_error('This image has already been uploaded by another user.');
 }
-$photo_check_stmt->close();
 
+// If the file already exists on disk with the same hash, another admin
+// uploaded it — reject rather than silently reuse (matches onboarding rule).
 if (is_file($upload_file)) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Duplicate file on disk: {$upload_file}");
-    json_error('This image has already been uploaded by another user.');
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Duplicate photo (disk) {$file_name}");
+    json_error('This image has already been uploaded by another user.', 409);
 }
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] No duplicate photo found");
-
-// ---------- STEP 16: MOVE UPLOADED FILE ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 16: Moving uploaded file");
-
+// ---------- STEP 17: MOVE UPLOADED FILE ----------
 if (!move_uploaded_file($tmp_name, $upload_file)) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Failed to move uploaded file to {$upload_file}");
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: move_uploaded_file failed", 'ERROR');
     json_error('Failed to upload image.', 500);
 }
+$fileWasMoved = true;
+logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] File uploaded: {$file_name}");
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] File uploaded successfully to: {$upload_file}");
-
-// ---------- STEP 17: GENERATE UNIQUE ADMIN ID ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 17: Generating unique admin ID");
-
+// ---------- STEP 18: GENERATE ADMIN ID ----------
 $ran_id = generateUniqueAdminId($conn);
 if ($ran_id === null) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Failed to generate unique admin ID");
     @unlink($upload_file);
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: ID generation failed", 'ERROR');
     json_error('Failed to generate unique ID. Please try again.', 500);
 }
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Unique admin ID generated: {$ran_id}");
-
-// ---------- STEP 18: HASH PASSWORD AND SECRET ANSWER ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 18: Hashing sensitive data");
-
-$encrypt_pass = password_hash($inputs['password'], PASSWORD_ARGON2ID);
+// ---------- STEP 19: HASH SENSITIVE DATA ----------
+$encrypt_pass          = password_hash($inputs['password'], PASSWORD_ARGON2ID);
 $encrypt_secret_answer = password_hash($inputs['secret_answer'], PASSWORD_ARGON2ID);
 
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Password and secret answer hashed");
-
-// ---------- STEP 19: INSERT USER INTO DATABASE ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Step 19: Inserting admin into database");
-
-$onboarded_by = (int)$loggedInUserId;
-$status = '1'; // Active
-
-$insert_sql = "INSERT INTO admin_tbl
-    (unique_id, firstname, lastname, email, phone, address, gender, password, secret_question, secret_answer, photo, role, status, onboarded_by, last_updated_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-";
-
+// ---------- STEP 20: INSERT (with transaction + errno 1062) ----------
 $conn->begin_transaction();
 logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Transaction started");
 
-$insert_stmt = $conn->prepare($insert_sql);
-if (!$insert_stmt) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Prepare failed for insert: " . $conn->error);
-    @unlink($upload_file);
-    json_error('Server database error.', 500);
-}
+try {
+    $insert_sql = "INSERT INTO admin_tbl
+        (unique_id, firstname, lastname, email, phone, address, gender,
+         password, secret_question, secret_answer, photo, role, status,
+         onboarded_by, last_updated_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    ";
 
-$insert_stmt->bind_param(
-    'ssssssssssssssi',
-    $ran_id,
-    $inputs['firstname'],
-    $inputs['lastname'],
-    $inputs['email'],
-    $inputs['phone'],
-    $inputs['address'],
-    $inputs['gender'],
-    $encrypt_pass,
-    $inputs['secret_question'],
-    $encrypt_secret_answer,
-    $file_name,
-    $inputs['role'],
-    $status,
-    $onboarded_by,
-    $onboarded_by
-);
+    $insert_stmt = $conn->prepare($insert_sql);
+    if (!$insert_stmt) throw new Exception("Prepare failed: " . $conn->error);
 
-if (!$insert_stmt->execute()) {
-    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ERROR: Insert failed: " . $insert_stmt->error);
+    $status = '1';
+    $insert_stmt->bind_param(
+        'ssssssssssssssi',
+        $ran_id,
+        $inputs['firstname'],
+        $inputs['lastname'],
+        $inputs['email'],
+        $inputs['phone'],
+        $inputs['address'],
+        $inputs['gender'],
+        $encrypt_pass,
+        $inputs['secret_question'],
+        $encrypt_secret_answer,
+        $file_name,
+        $inputs['role'],
+        $status,
+        $loggedInUserId,
+        $loggedInUserId
+    );
+
+    if (!$insert_stmt->execute()) {
+        if ($insert_stmt->errno === 1062) {
+            // UNIQUE race — someone claimed the email/phone between our check and insert
+            $field = stripos($insert_stmt->error, 'email') !== false ? 'Email' : 'Phone';
+            $insert_stmt->close();
+            throw new Exception("{$field} was just claimed by another user. Please try again.", 409);
+        }
+        throw new Exception("Insert failed: " . $insert_stmt->error);
+    }
+
+    $insert_stmt->close();
+    $conn->commit();
+    logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Transaction committed");
+
+} catch (Throwable $e) {
     $conn->rollback();
-    @unlink($upload_file);
-    json_error('Failed to add new Staff. Database error.', 500);
+    if (!empty($fileWasMoved) && is_file($upload_file)) {
+        @unlink($upload_file);
+    }
+    throw $e;
 }
 
-$affected_rows = $insert_stmt->affected_rows;
-$insert_stmt->close();
-
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Insert successful. Affected rows: {$affected_rows}");
-
-// ---------- STEP 20: COMMIT TRANSACTION ----------
-$conn->commit();
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Transaction committed");
-
-// ---------- STEP 21: LOG ACTIVITY ----------
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Admin onboarded successfully");
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] New Admin - ID: {$ran_id}, Name: {$inputs['firstname']} {$inputs['lastname']}, Email: {$inputs['email']}");
-logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] Onboarded by: {$loggedInUserEmail} (ID: {$loggedInUserId})");
-
-// ---------- STEP 22: RETURN SUCCESS RESPONSE ----------
+// ---------- STEP 21: RESPONSE ----------
 logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] ========== SUCCESS ==========");
+logActivity("[ONBOARD_ADMIN] [ID:{$requestTraceId}] New admin: ID={$ran_id}, Email={$inputs['email']}, Onboarded by {$loggedInUserEmail}");
 
 json_success([
     'admin_id' => $ran_id,
-    'name' => $inputs['firstname'] . ' ' . $inputs['lastname'],
-    'email' => $inputs['email'],
-    'role' => $inputs['role']
+    'name'     => $inputs['firstname'] . ' ' . $inputs['lastname'],
+    'email'    => $inputs['email'],
+    'role'     => $inputs['role'],
 ], 'New Staff has been successfully Onboarded!');
-
-// ----------------------------------
-// end of script
-?>

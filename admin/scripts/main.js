@@ -145,69 +145,6 @@ class DataManager {
           : "none";
     }
   }
-
-  /** ------------------------- Form Submission ------------------------- **/
-
-  // setupAddForm() {
-  //   const form = document.getElementById(this.config.formId);
-  //   if (!form) return;
-
-  //   const messageDiv =
-  //     form.querySelector(".message") || document.createElement("div");
-  //   if (!form.querySelector(".message")) {
-  //     form.appendChild(messageDiv);
-  //   }
-
-  //   const photoPreview = form.querySelector(".photoPreview");
-
-  //   form.addEventListener("submit", (event) => {
-  //     event.preventDefault();
-  //     UI.confirm(
-  //       `Are you sure you want to add a new ${this.config.itemName}?`,
-  //       async () => {
-  //         try {
-  //           const formData = new FormData(form);
-  //           const response = await fetch(this.config.addUrl, {
-  //             method: "POST",
-  //             body: formData,
-  //           });
-
-  //           const data = await response.json();
-
-  //           if (data.success) {
-  //             this.showSuccessMessage(
-  //               messageDiv,
-  //               `New ${this.config.itemName} has been successfully added!`
-  //             );
-  //             UI.toast(
-  //               `New ${this.config.itemName} added successfully!`,
-  //               "success"
-  //             );
-  //             form.reset();
-  //             photoPreview.innerHTML = `<span style="font-size:12px;color:#777;">No image</span>`;
-  //             document.getElementById(this.config.addModalId).style.display =
-  //               "none";
-  //             this.fetchData();
-  //           } else {
-  //             UI.toast(
-  //               `Failed to add ${this.config.itemName}: ${data.message}`,
-  //               "danger"
-  //             );
-  //             this.showErrorMessage(messageDiv, data.message);
-  //           }
-  //         } catch (error) {
-  //           console.error("Error:", error);
-  //           UI.toast("An error occurred. Please try again later.", "danger");
-  //           this.showErrorMessage(
-  //             messageDiv,
-  //             "An error occurred. Please try again later."
-  //           );
-  //         }
-  //       }
-  //     );
-  //   });
-  // }
-
   /** ------------------------- Form Submission (UPDATED) ------------------------- **/
   /** ------------------------- Form Submission ------------------------- **/
   setupAddForm() {

@@ -1,25 +1,48 @@
 <?php
-function json_error($message, $code = 400)
+function json_error(
+    $message,
+    $code = 400,
+    $field_errors = null,
+    $error_code = null,
+    $data = null
+)
 {
     http_response_code($code);
 
-    // Get caller location for error logging
-    $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
-    $caller = $backtrace[0];
-    $callerFile = basename($caller['file'] ?? 'unknown');
-    $callerLine = $caller['line'] ?? 0;
+    // Caller location for logging
+    $backtrace      = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
+    $caller         = $backtrace[0] ?? [];
+    $callerFile     = basename($caller['file'] ?? 'unknown');
+    $callerLine     = $caller['line'] ?? 0;
     $callerFunction = $caller['function'] ?? 'unknown';
 
     $payload = [
         'success'      => false,
         'responseCode' => $code,
-        'message'      => $message
+        'message'      => $message,
     ];
 
-    // Convert message safely for logs
-    $safeMessage = is_array($message) ? json_encode($message) : $message;
+    // Attach field errors (for form validation responses)
+    if ($field_errors !== null) {
+        $payload['errors'] = $field_errors;
+    }
 
-    logActivity("Response error: {$safeMessage} | Code: {$code} | Called from: {$callerFile}:{$callerLine} ({$callerFunction})");
+    // Attach error code (for frontend branching: INVALID_PASSWORD, ACCOUNT_LOCKED, etc.)
+    if ($error_code !== null) {
+        $payload['error_code'] = $error_code;
+    }
+
+    // Attach structured data (locked_until, source, next_allowed, etc.)
+    if ($data !== null) {
+        $payload['data'] = $data;
+    }
+
+    // Safe log message
+    $safeMessage = is_array($message) ? json_encode($message) : (string)$message;
+
+    logActivity("Response error: {$safeMessage} | Code: {$code}"
+        . ($error_code ? " | error_code: {$error_code}" : '')
+        . " | Called from: {$callerFile}:{$callerLine} ({$callerFunction})");
 
     echo json_encode($payload);
     exit();

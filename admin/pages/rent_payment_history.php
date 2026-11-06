@@ -1,4 +1,14 @@
-
+<?php
+// --- Page guard bootstrap ---
+require_once __DIR__ . '/../backend/utilities/config.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
+$adminCode = $_SESSION['unique_id'] ?? null;   // or tenant_code
+if (!$adminCode) {
+    header('Location: index.php');
+    exit;
+}
+guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
