@@ -275,3 +275,177 @@ function logFatal(string $m, array $c = []): void { logActivity($m, 'FATAL', $c)
 if (!isset($GLOBALS['__REQUEST_START'])) {
     $GLOBALS['__REQUEST_START'] = microtime(true);
 }
+// ==================== ERROR / EXCEPTION / SHUTDOWN BRIDGE ====================
+// Must be included once per request (require_once is fine).
+// Installs handlers that funnel PHP errors, uncaught exceptions,
+// and fatal shutdown errors into logActivity().
+
+if (!defined('LOG_ERROR_BRIDGE_INSTALLED')) {
+    define('LOG_ERROR_BRIDGE_INSTALLED', true);
+
+    // ---- Map PHP error constants to your log levels ----
+    $GLOBALS['__LOG_ERR_LEVEL_MAP'] = [
+        E_ERROR             => 'FATAL',
+        E_PARSE             => 'FATAL',
+        E_CORE_ERROR        => 'FATAL',
+        E_COMPILE_ERROR     => 'FATAL',
+        E_USER_ERROR        => 'FATAL',
+        E_RECOVERABLE_ERROR => 'ERROR',
+        E_WARNING           => 'WARN',
+        E_USER_WARNING      => 'WARN',
+        E_NOTICE            => 'INFO',
+        E_USER_NOTICE       => 'INFO',
+        E_DEPRECATED        => 'DEBUG',
+        E_USER_DEPRECATED   => 'DEBUG',
+        E_STRICT            => 'DEBUG',
+    ];
+
+    /**
+     * set_error_handler callback.
+     * Returning false lets PHP's default handler also run
+     * (so nothing changes behaviorally — we only ADD logging).
+     */
+    set_error_handler(function (int $errno, string $errstr, string $errfile, int $errline): bool {
+        // Respect @-suppression
+        if (!(error_reporting() & $errno)) {
+            return false;
+        }
+
+        $map   = $GLOBALS['__LOG_ERR_LEVEL_MAP'];
+        $level = $map[$errno] ?? 'ERROR';
+        $type  = log_error_name($errno);
+
+        try {
+            logActivity(
+                "PHP {$type}: {$errstr}",
+                $level,
+                [
+                    'errno'    => $errno,
+                    'errfile'  => $errfile,
+                    'errline'  => $errline,
+                    'backtrace' => log_short_backtrace(6),
+                ]
+            );
+        } catch (Throwable $_) { /* never crash inside the handler */ }
+
+        return false; // let PHP continue its normal handling
+    });
+
+    /**
+     * set_exception_handler callback — catches uncaught Throwable.
+     */
+    set_exception_handler(function (Throwable $e): void {
+        try {
+            logActivity(
+                'UNCAUGHT ' . get_class($e) . ': ' . $e->getMessage(),
+                'FATAL',
+                [
+                    'exception' => get_class($e),
+                    'code'      => $e->getCode(),
+                    'file'      => $e->getFile(),
+                    'line'      => $e->getLine(),
+                    'trace'     => log_short_backtrace(15, $e->getTrace()),
+                ]
+            );
+        } catch (Throwable $_) { /* ignore */ }
+
+        // Emit a safe JSON error response for API endpoints, or plain text
+        $isJson = (
+            (defined('LOG_FORMAT') && LOG_FORMAT === 'json')
+            || (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'json') !== false)
+            || (isset($_SERVER['CONTENT_TYPE']) && stripos($_SERVER['CONTENT_TYPE'], 'json') !== false)
+            || preg_match('#/(api|backend|ajax)/#', $_SERVER['REQUEST_URI'] ?? '')
+        );
+
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: ' . ($isJson ? 'application/json' : 'text/plain'));
+        }
+
+        echo $isJson
+            ? json_encode([
+                'success' => false,
+                'message' => 'An unexpected error occurred. Please try again later.',
+                'request_id' => getOrCreateRequestId(),
+            ])
+            : 'An unexpected error occurred.';
+    });
+
+    /**
+     * register_shutdown_function — catches the fatals PHP never lets
+     * set_error_handler see (E_ERROR, E_PARSE, E_COMPILE_ERROR, OOM, timeouts).
+     */
+    register_shutdown_function(function (): void {
+        $err = error_get_last();
+        if (!$err) return;
+
+        $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
+        if (!in_array($err['type'], $fatalTypes, true)) return;
+
+        $map   = $GLOBALS['__LOG_ERR_LEVEL_MAP'];
+        $level = $map[$err['type']] ?? 'FATAL';
+        $type  = log_error_name($err['type']);
+
+        try {
+            logActivity(
+                "FATAL {$type}: {$err['message']}",
+                $level,
+                [
+                    'type'    => $err['type'],
+                    'file'    => $err['file'],
+                    'line'    => $err['line'],
+                ]
+            );
+        } catch (Throwable $_) { /* ignore */ }
+
+        // If the app already sent a response (headers_sent), don't
+        // clobber it — but if NOT, emit a clean error body so the
+        // frontend doesn't get "Unexpected end of JSON input".
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => false,
+                'message' => 'A fatal error occurred. Please try again later.',
+                'request_id' => getOrCreateRequestId(),
+            ]);
+        }
+    });
+
+    // ---- Helpers used by the bridge ----
+
+    function log_error_name(int $errno): string
+    {
+        static $names = [
+            E_ERROR => 'E_ERROR', E_WARNING => 'E_WARNING',
+            E_PARSE => 'E_PARSE', E_NOTICE => 'E_NOTICE',
+            E_CORE_ERROR => 'E_CORE_ERROR', E_CORE_WARNING => 'E_CORE_WARNING',
+            E_COMPILE_ERROR => 'E_COMPILE_ERROR',
+            E_COMPILE_WARNING => 'E_COMPILE_WARNING',
+            E_USER_ERROR => 'E_USER_ERROR', E_USER_WARNING => 'E_USER_WARNING',
+            E_USER_NOTICE => 'E_USER_NOTICE', E_STRICT => 'E_STRICT',
+            E_RECOVERABLE_ERROR => 'E_RECOVERABLE_ERROR',
+            E_DEPRECATED => 'E_DEPRECATED', E_USER_DEPRECATED => 'E_USER_DEPRECATED',
+        ];
+        return $names[$errno] ?? ('E_UNKNOWN(' . $errno . ')');
+    }
+
+    /**
+     * Compact backtrace: [{file, line, fn}...] — no arguments
+     * (args can be huge and leak secrets).
+     */
+    function log_short_backtrace(int $limit = 10, ?array $trace = null): array
+    {
+        $trace = $trace ?? debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, $limit);
+        $out   = [];
+        foreach ($trace as $t) {
+            $out[] = [
+                'file' => isset($t['file']) ? basename($t['file']) : null,
+                'line' => $t['line'] ?? null,
+                'fn'   => (isset($t['class']) ? $t['class'] . ($t['type'] ?? '::') : '')
+                        . ($t['function'] ?? ''),
+            ];
+        }
+        return $out;
+    }
+}

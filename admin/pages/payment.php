@@ -146,10 +146,10 @@ guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
                                 <option value="mobile_money">Mobile Money</option>
                             </select>
                         </div>
-                        <div class="form-group">
+                        <!-- <div class="form-group">
                             <label>Transaction Reference</label>
                             <input type="text" class="form-control" id="quickTransactionReference" required disabled>
-                        </div>
+                        </div> -->
                     </div>
                 </form>
             </div>

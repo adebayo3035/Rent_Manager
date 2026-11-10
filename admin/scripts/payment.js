@@ -35,10 +35,10 @@ document.addEventListener("DOMContentLoaded", function () {
     feeSelect.addEventListener("change", onFeeTypeChange);
   }
 
-  const methodSelect = document.getElementById("quickMethod");
-  if (methodSelect) {
-    methodSelect.addEventListener("change", updateQuickTransactionReference);
-  }
+  // const methodSelect = document.getElementById("quickMethod");
+  // if (methodSelect) {
+  //   methodSelect.addEventListener("change", updateQuickTransactionReference);
+  // }
 
   resetQuickPaymentFeeFields();
 });
@@ -50,6 +50,11 @@ async function openInitiatePaymentModal() {
   await loadAdminTenants();
   openModal("initiateRentPaymentModal");
 }
+
+// async function openCreateInvoiceModal() {
+//   await loadAdminTenants();
+//   openModal("initiateInvoiceModal");
+// }
 
 function openModal(modalId) {
   const modal = document.getElementById(modalId);
@@ -446,9 +451,9 @@ async function processAdminRentPayment() {
         loadStatistics();
       }, 2000);
     } else {
-      throw new Error(data.message);
       OTPNotifier.textContent =
-        "Unable to Complete Rent Payment. Please Try Again";
+        "Unable to Complete Rent Payment. Please Try Again" + data.message;
+        throw new Error(data.message);
     }
   } catch (error) {
     console.error("Error processing payment:", error);
@@ -1166,7 +1171,7 @@ function onFeeTypeChange() {
     // document.getElementById("quickAmount").disabled = false;
     // document.getElementById("quickDueDate").disabled = false;
 
-    updateQuickTransactionReference();
+    // updateQuickTransactionReference();
   } else {
     resetQuickPaymentFeeFields({ keepFeeOptions: true });
   }
@@ -1176,9 +1181,9 @@ function resetQuickPaymentFeeFields({ keepFeeOptions = false } = {}) {
   const feeSelect = document.getElementById("quickFeeType");
   const amountInput = document.getElementById("quickAmount");
   const dueDateInput = document.getElementById("quickDueDate");
-  const transactionReferenceInput = document.getElementById(
-    "quickTransactionReference",
-  );
+  // const transactionReferenceInput = document.getElementById(
+  //   "quickTransactionReference",
+  // );
 
   if (feeSelect) {
     feeSelect.value = "";
@@ -1198,30 +1203,30 @@ function resetQuickPaymentFeeFields({ keepFeeOptions = false } = {}) {
     dueDateInput.disabled = true;
   }
 
-  if (transactionReferenceInput) {
-    transactionReferenceInput.value = "";
-    transactionReferenceInput.disabled = true;
-  }
+  // if (transactionReferenceInput) {
+  //   transactionReferenceInput.value = "";
+  //   transactionReferenceInput.disabled = true;
+  // }
 }
 
-function updateQuickTransactionReference() {
-  const feeSelect = document.getElementById("quickFeeType");
-  const methodSelect = document.getElementById("quickMethod");
-  const transactionReferenceInput = document.getElementById(
-    "quickTransactionReference",
-  );
+// function updateQuickTransactionReference() {
+//   const feeSelect = document.getElementById("quickFeeType");
+//   const methodSelect = document.getElementById("quickMethod");
+//   const transactionReferenceInput = document.getElementById(
+//     "quickTransactionReference",
+//   );
 
-  if (!transactionReferenceInput) return;
+//   if (!transactionReferenceInput) return;
 
-  if (!feeSelect || !feeSelect.value || !methodSelect || !methodSelect.value) {
-    transactionReferenceInput.value = "";
-    transactionReferenceInput.disabled = true;
-    return;
-  }
+//   if (!feeSelect || !feeSelect.value || !methodSelect || !methodSelect.value) {
+//     transactionReferenceInput.value = "";
+//     transactionReferenceInput.disabled = true;
+//     return;
+//   }
 
-  transactionReferenceInput.value = generateReferenceNumber(methodSelect.value);
-//   transactionReferenceInput.disabled = false;
-}
+//   transactionReferenceInput.value = generateReferenceNumber(methodSelect.value);
+// //   transactionReferenceInput.disabled = false;
+// }
 
 // Generate transaction reference
 function generateReferenceNumber(paymentMethod) {
@@ -1304,9 +1309,9 @@ async function quickRecordPayment(event) {
   const tenantSelect = document.getElementById("quickTenant");
   const tenantFeeSelect = document.getElementById("quickFeeType");
   const amountInput = document.getElementById("quickAmount");
-  const transactionReference = document.getElementById(
-    "quickTransactionReference",
-  );
+  // const transactionReference = document.getElementById(
+  //   "quickTransactionReference",
+  // );
   const dueDate = document.getElementById("quickDueDate");
   const methodSelect = document.getElementById("quickMethod");
 
@@ -1331,7 +1336,7 @@ async function quickRecordPayment(event) {
     return;
   }
 
-  updateQuickTransactionReference();
+  // updateQuickTransactionReference();
   const selectedOption = tenantFeeSelect.options[tenantFeeSelect.selectedIndex];
 
   const data = {
@@ -1339,7 +1344,7 @@ async function quickRecordPayment(event) {
     tenant_fee_id: tenantFeeSelect.value,
     amount: parseFloat(amountInput.value),
     payment_method: methodSelect ? methodSelect.value : "cash",
-    reference_number: transactionReference ? transactionReference.value : "",
+    // reference_number: transactionReference ? transactionReference.value : "",
     due_date: dueDate.value,
   };
 
@@ -1348,7 +1353,7 @@ async function quickRecordPayment(event) {
     `Fee: ${selectedOption.text}\n` +
     `Amount: NGN ${data.amount.toLocaleString()}\n` +
     `Payment Method: ${formatPaymentMethod(data.payment_method)}\n` +
-    `Reference: ${data.reference_number}\n\n` +
+    // `Reference: ${data.reference_number}\n\n` +
     `Record this payment?`;
 
   const confirmed = await showConfirmModal({
@@ -1388,10 +1393,12 @@ async function quickRecordPayment(event) {
     const result = await response.json();
 
     if (result.success) {
-      showAlert(
-        `✓ Payment recorded successfully!\nReceipt #: ${result.receipt_number}`,
+     showAlert(
+        `✓ Payment recorded successfully!\n` +
+        `Receipt #: ${result.receipt_number}\n` +
+        `Reference #: ${result.reference_number}`,
         "success",
-      );
+    );
 
       // Reset form
       resetQuickPaymentForm();

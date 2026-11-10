@@ -958,7 +958,7 @@ function recordPayment($conn, $adminId)
     $tenantFeeId = isset($input['tenant_fee_id']) ? (int) $input['tenant_fee_id'] : 0;
     $amount = isset($input['amount']) ? (float) $input['amount'] : 0;
     $paymentMethod = $input['payment_method'] ?? 'cash';
-    $referenceNumber = $input['reference_number'] ?? null;
+    // $referenceNumber = $input['reference_number'] ?? null;
     $dueDate = $input['due_date'] ?? '';
     $notes = $input['notes'] ?? '';
 
@@ -1039,6 +1039,12 @@ function recordPayment($conn, $adminId)
 
         return;
     }
+    // Generate reference server-side from the validated payment method
+    $referenceNumber = generateFeePaymentReference($paymentMethod);
+
+    logActivity(
+        "[ADMIN_FEE_PAYMENT] [ID:{$requestId}] Generated reference for Fee Payment: {$referenceNumber}"
+    );
 
     // ==================== START TRANSACTION ====================
 
@@ -1483,12 +1489,19 @@ function recordPayment($conn, $adminId)
                 "ERROR: Failed to insert into payments: " .
                 $payment_stmt->error
             );
+            if ($payment_stmt->errno === 1062) {
+                throw new Exception(
+                    "Reference collision — please retry",
+                    409
+                );
+            }
 
             throw new Exception(
                 "Failed to record payment",
                 500
             );
         }
+
 
         $payment_id = $payment_stmt->insert_id;
 
@@ -1747,6 +1760,7 @@ function recordPayment($conn, $adminId)
             "success" => true,
             "message" => "Payment recorded successfully!",
             "receipt_number" => $receipt_number,
+            "reference_number" => $referenceNumber,
             "transaction_id" => $transaction_id,
             "payment_id" => $payment_id,
             "tenant_fee_id" => $tenantFeeId,
@@ -2171,6 +2185,26 @@ function updatePaymentStatus($conn, $adminId)
         logActivity("ERROR in updatePaymentStatus: " . $e->getMessage());
         echo json_encode(["success" => false, "message" => "Failed to update payment status: " . $e->getMessage()]);
     }
+}
+
+function generateFeePaymentReference(string $paymentMethod): string
+{
+    $prefixes = [
+        'bank_transfer' => 'BNK',
+        'card' => 'CARD',
+        'cash' => 'CSH',
+        'cheque' => 'CHQ',
+        'mobile_money' => 'MM',
+    ];
+
+    $methodSlug = strtolower(trim($paymentMethod));
+    $prefix = $prefixes[$methodSlug] ?? 'REF';
+
+    $date = date('Ymd');
+    $random = strtoupper(bin2hex(random_bytes(3)));   // 6 hex chars
+    $timestamp = substr((string) time(), -6);            // last 6 of unix ts
+
+    return "{$prefix}-{$date}-{$random}-{$timestamp}";
 }
 
 ?>
