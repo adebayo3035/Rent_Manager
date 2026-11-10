@@ -7,7 +7,7 @@
 const HOMEPAGE_ENDPOINT = "../backend/homepage/fetch_homepage_data.php";
 
 document.addEventListener("DOMContentLoaded", function () {
-  console.log("KaraKata Pro Admin Homepage loaded");
+  console.log("RentFlow Admin Homepage loaded");
 
   fetchHomepageData();
   initStatsAnimation();

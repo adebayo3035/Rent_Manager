@@ -16,7 +16,7 @@ function sendEmailWithGmailSMTP($to, $body, $subject, $attachments = []) {
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
         $mail->Port       = 465;
 
-        $mail->setFrom('rahmondebayo@gmail.com', 'RentFlow Pro');
+        $mail->setFrom('rahmondebayo@gmail.com', 'Rent Flow Estate Manageent');
         $mail->addAddress($to);
 
         $mail->isHTML(true);

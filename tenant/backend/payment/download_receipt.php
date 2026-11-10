@@ -389,7 +389,7 @@ function generateHTMLReceipt($data) {
     <body>
         <div class="receipt-container">
             <div class="receipt-header">
-                <h1>RentFlow Pro</h1>
+                <h1>RentFlow</h1>
                 <p>Professional Property Management</p>
             </div>
             <div class="receipt-body">
@@ -457,7 +457,7 @@ function generateHTMLReceipt($data) {
                 <div class="footer">
                     <p>This is a computer-generated receipt and requires no signature.</p>
                     <p>Generated on: ' . date('F j, Y g:i A') . '</p>
-                    <p>&copy; ' . date('Y') . ' RentFlow Pro - All Rights Reserved</p>
+                    <p>&copy; ' . date('Y') . ' RentFlow - All Rights Reserved</p>
                 </div>
             </div>
         </div>
@@ -483,8 +483,8 @@ function generatePDFReceipt($data) {
     $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
 
     // Set document information
-    $pdf->SetCreator('RentFlow Pro');
-    $pdf->SetAuthor('RentFlow Pro');
+    $pdf->SetCreator('RentFlow');
+    $pdf->SetAuthor('RentFlow');
     $pdf->SetTitle('Rent Payment Receipt');
     $pdf->SetSubject('Payment Receipt');
 
@@ -518,7 +518,7 @@ function generatePDFReceipt($data) {
     <table width="100%" cellpadding="5">
         <tr>
             <td width="60%" style="border-bottom: 1px solid #333;">
-                <h1 style="color: #667eea; margin: 0;">RentFlow Pro</h1>
+                <h1 style="color: #667eea; margin: 0;">RentFlow</h1>
                 <p style="margin: 5px 0 0 0; color: #666;">Professional Property Management</p>
             </td>
             <td width="40%" style="border-bottom: 1px solid #333; text-align: right;">
@@ -634,7 +634,7 @@ function generatePDFReceipt($data) {
         <tr>
             <td style="text-align: center;">
                 <p style="font-size: 10px; color: #999;">
-                    RentFlow Pro - Property Management System<br>
+                    RentFlow - Property Management System<br>
                     Generated on: ' . date('F j, Y g:i A') . '
                 </p>
              </td>

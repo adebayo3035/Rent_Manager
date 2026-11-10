@@ -70,7 +70,7 @@ set_time_limit(0);
 // --------------------------------------
 $pdf = new TCPDF('L', PDF_UNIT, 'A4', true, 'UTF-8', false);
 
-$pdf->SetCreator('Property Management System');
+$pdf->SetCreator('RentFlow Estate Management System');
 $pdf->SetAuthor('Admin');
 $pdf->SetTitle('Query Report');
 

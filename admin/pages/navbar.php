@@ -23,7 +23,7 @@
             <div class="nav-brand">
                 <a href="homepage.php" class="logo-link">
                     <span class="logo-icon">🏠</span>
-                    <span class="logo-text">Easy Rent</span>
+                    <span class="logo-text">RenFlow</span>
                 </a>
             </div>
 

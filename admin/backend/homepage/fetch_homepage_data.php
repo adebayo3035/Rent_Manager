@@ -250,7 +250,7 @@ try {
             'name'   => 'David Johnson',
             'role'   => 'Property Manager, Elite Estates',
             'rating' => 5,
-            'text'   => 'KaraKata Pro transformed how we manage our 50+ properties. The automation features saved us 20 hours per week!',
+            'text'   => 'RentFlow Estate Management System transformed how we manage our 50+ properties. The automation features saved us 20 hours per week!',
         ],
         [
             'name'   => 'Sarah Williams',

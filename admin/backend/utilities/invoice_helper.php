@@ -17,16 +17,16 @@ define('INVOICE_DIR', __DIR__ . '/../tenant_documents/invoices/');
 define('INVOICE_URL_PATH', '/admin/backend/tenant_documents/invoices/');
 
 // Company details for invoice (customize these)
-define('COMPANY_NAME', 'RentFlow Pro');
-define('COMPANY_TAGLINE', 'Professional Property Management');
-define('COMPANY_SUPPORT_EMAIL', 'support@rentflowpro.com');
+define('COMPANY_NAME', 'RentFlow');
+define('COMPANY_TAGLINE', 'Professional Estate Management System');
+define('COMPANY_SUPPORT_EMAIL', 'support@rentflow.com');
 define('COMPANY_SUPPORT_PHONE', '+234 800 000 0000');
 
 // Bank details for payment instructions
-define('BANK_NAME', 'Your Bank Name');
-define('BANK_ACCOUNT_NAME', 'RentFlow Pro Ltd');
-define('BANK_ACCOUNT_NUMBER', '0123456789');
-define('BANK_SORT_CODE', '000000');
+define('BANK_NAME', 'Titanic Bank');
+define('BANK_ACCOUNT_NAME', 'RentFlow Ltd');
+define('BANK_ACCOUNT_NUMBER', '0139876543');
+define('BANK_SORT_CODE', '0097');
 
 // Ensure invoice directory exists
 if (!is_dir(INVOICE_DIR)) {

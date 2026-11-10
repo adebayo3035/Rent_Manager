@@ -8,7 +8,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <link rel="stylesheet" href="../css/style.css">
 
-    <title>Login</title>
+    <title>RentFlow - Tenant Login</title>
 </head>
 
 
@@ -16,7 +16,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>Welcome To Rent Pilot</h1>
+            <h1>Welcome To RentFlow</h1>
         </header>
 
         <div class="login">

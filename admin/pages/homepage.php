@@ -14,7 +14,7 @@ guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KaraKata Pro - Admin Dashboard</title>
+    <title>RentFlow - Admin Homepage</title>
 
     <!-- Font Awesome -->
     <script src="https://kit.fontawesome.com/7cab3097e7.js" crossorigin="anonymous"></script>
@@ -43,7 +43,7 @@ guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
                     </span>
                 </div>
                 <h1 class="hero-title">
-                    <span class="gradient-text">Simplify Property Management</span>
+                    <span class="gradient-text">Simplify Estate Management</span>
                     <br>with Smart Automation
                 </h1>
                 <p class="hero-subtitle">
@@ -236,7 +236,7 @@ guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
     <section class="cta-section">
         <div class="cta-container" data-aos="zoom-in">
             <h2>Ready to Transform Your Property Management?</h2>
-            <p>Join thousands of property professionals who trust KaraKata Pro</p>
+            <p>Join thousands of property professionals who trust  RentFlow Estate Managament</p>
             <div class="cta-buttons">
                 <a href="dashboard.php" class="btn-primary btn-large">
                     <i class="fas fa-play-circle"></i> Start Free Trial
@@ -259,7 +259,7 @@ guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
             <div class="footer-brand">
                 <div class="footer-logo">
                     <i class="fas fa-building"></i>
-                    <span>KaraKata <strong>Pro</strong></span>
+                    <span>Rentflow <strong>Estate Management</strong></span>
                 </div>
                 <p class="footer-tagline">Professional Property Management Solutions</p>
                 <div class="footer-social">
@@ -297,13 +297,13 @@ guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
                 <div class="footer-column">
                     <h4>Contact</h4>
                     <p><i class="fas fa-phone"></i> +234-810-327-3279</p>
-                    <p><i class="fas fa-envelope"></i> support@karakata.com</p>
+                    <p><i class="fas fa-envelope"></i> support@rentflow.com</p>
                     <p><i class="fas fa-map-marker-alt"></i> Lagos, Nigeria</p>
                 </div>
             </div>
         </div>
         <div class="footer-bottom">
-            <p>&copy; 2025 KaraKata Pro. All rights reserved.</p>
+            <p>&copy; 2025 RentFlow. All rights reserved.</p>
             <div class="footer-legal">
                 <a href="#">Privacy Policy</a>
                 <a href="#">Terms of Service</a>

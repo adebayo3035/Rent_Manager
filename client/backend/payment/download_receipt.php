@@ -593,8 +593,8 @@ function generateHTMLReceipt($data) {
     <body>
         <div class="receipt-container">
             <div class="receipt-header">
-                <h1>RentEase</h1>
-                <p>Professional Property Management</p>
+                <h1>RentFlow</h1>
+                <p>Professional Estate Management</p>
             </div>
             <div class="receipt-body">
                 <div class="receipt-title">
@@ -619,7 +619,7 @@ function generateHTMLReceipt($data) {
                     </div>
                     <div class="info-box">
                         <h4>PROPERTY DETAILS</h4>
-                        <p><strong>Property:</strong> ' . htmlspecialchars($data['property_name']) . '</p>
+                        <p><strong>Property Name:</strong> ' . htmlspecialchars($data['property_name']) . '</p>
                         <p><strong>Address:</strong> ' . htmlspecialchars($data['property_address']) . '</p>
                         <p><strong>Apartment:</strong> ' . htmlspecialchars($data['apartment_number']) . '</p>
                     </div>
@@ -679,7 +679,7 @@ function generateHTMLReceipt($data) {
                 <div class="footer">
                     <p>This is a computer-generated receipt and requires no signature.</p>
                     <p>Generated on: ' . date('F j, Y g:i A') . '</p>
-                    <p>&copy; ' . date('Y') . ' RentEase - All Rights Reserved</p>
+                    <p>&copy; ' . date('Y') . ' RentFlow - All Rights Reserved</p>
                 </div>
             </div>
         </div>
@@ -705,8 +705,8 @@ function generatePDFReceipt($data) {
     $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
 
     // Set document information
-    $pdf->SetCreator('RentEase');
-    $pdf->SetAuthor('RentEase');
+    $pdf->SetCreator('RentFlow');
+    $pdf->SetAuthor('RentFlow');
     $pdf->SetTitle('Payment Receipt');
     $pdf->SetSubject('Payment Receipt');
 
@@ -742,8 +742,8 @@ function generatePDFReceipt($data) {
     <table width="100%" cellpadding="5">
         <tr>
             <td width="60%" style="border-bottom: 1px solid #333;">
-                <h1 style="color: #1e3c72; margin: 0;">RentEase</h1>
-                <p style="margin: 5px 0 0 0; color: #666;">Professional Property Management</p>
+                <h1 style="color: #1e3c72; margin: 0;">RentFlow</h1>
+                <p style="margin: 5px 0 0 0; color: #666;">Professional Estate Management System</p>
             </td>
             <td width="40%" style="border-bottom: 1px solid #333; text-align: right;">
                 <h2 style="margin: 0;">RECEIPT</h2>
@@ -781,7 +781,7 @@ function generatePDFReceipt($data) {
         <tr>
             <td width="50%" style="background-color: #f8f9fa;">
                 <strong>PROPERTY DETAILS</strong><br>
-                Property: ' . htmlspecialchars($data['property_name']) . '<br>
+                Property Name: ' . htmlspecialchars($data['property_name']) . '<br>
                 Address: ' . htmlspecialchars($data['property_address']) . '<br>
                 Apartment: ' . htmlspecialchars($data['apartment_number']) . '<br>
                 Apartment Code: ' . htmlspecialchars($data['apartment_code']) . '
@@ -866,7 +866,7 @@ function generatePDFReceipt($data) {
         <tr>
             <td style="text-align: center;">
                 <p style="font-size: 10px; color: #999;">
-                    RentEase - Property Management System<br>
+                    RentFlow - Estate Management System<br>
                     Generated on: ' . date('F j, Y g:i A') . '
                 </p>
               </td>

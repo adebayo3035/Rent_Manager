@@ -18,7 +18,7 @@ function sendEmailWithMailtrap($to, $otp) {
         $mail->Port       = 2525;  // Mailtrap port
 
         //Recipients
-        $mail->setFrom('noreply@example.com', 'Transaction_Manager');  // Your from email
+        $mail->setFrom('noreply@rentflow.com', 'Rent Flow Estate Manageent');  // Your from email
         $mail->addAddress($to);  // User's email address
 
         // Content

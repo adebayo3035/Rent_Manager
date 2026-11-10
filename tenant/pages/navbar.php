@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rent Pilot</title>
+    <title>RentFlow</title>
     <link rel="stylesheet" href="../css/navbar.css">
     <!-- Font Awesome -->
     <script src="https://kit.fontawesome.com/7cab3097e7.js" crossorigin="anonymous"></script>
@@ -20,7 +20,7 @@
     <div class="tenant-wrapper">
         <aside class="tenant-sidebar" id="tenantSidebar">
             <div class="sidebar-header">
-                <h2>RentEase</h2>
+                <h2>RentFlow</h2>
                 <button class="sidebar-close" id="sidebarClose">
                     <i class="fas fa-times"></i>
                 </button>

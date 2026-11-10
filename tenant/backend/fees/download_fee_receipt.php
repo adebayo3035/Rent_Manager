@@ -134,8 +134,8 @@ try {
 <table>
     <tr>
         <td width="60%">
-            <span class="title">RentEase</span><br>
-            Property Management System
+            <span class="title">RentFlow</span><br>
+            Estate Management System
         </td>
         <td width="40%" class="right">
             <b>RECEIPT</b><br>

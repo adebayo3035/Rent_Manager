@@ -28,8 +28,8 @@ rateLimiter();
 $auth = requireAuth([
     'method'     => 'POST',
     'rate_key'   => 'admin_onboard',
-    'rate_limit' => [3, 600],           // 3 onboardings per 10 minutes
-    'csrf'       => ['enabled' => false, 'form_name' => 'admin_onboard_form'],
+    'rate_limit' => [10, 60],           // 10 onboardings per minute
+    'csrf'       => ['enabled' => true, 'form_name' => 'add_staff_form'],
     'roles'      => ['Super Admin'],
 ]);
 

@@ -19,7 +19,7 @@
     <div class="client-wrapper">
         <aside class="client-sidebar" id="clientSidebar">
             <div class="sidebar-header">
-                <h2>RentEase</h2>
+                <h2>RentFlow</h2>
                 <button class="sidebar-close" id="sidebarClose">
                     <i class="fas fa-times"></i>
                 </button>

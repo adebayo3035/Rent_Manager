@@ -65,7 +65,7 @@ try {
     $pdf = new TCPDF('L', PDF_UNIT, 'A4', true, 'UTF-8', false);
     
     // Set document information
-    $pdf->SetCreator('Property Management System');
+    $pdf->SetCreator('RentFlow Estate Management System');
     $pdf->SetAuthor('System Admin');
     $pdf->SetTitle('Query Report');
     $pdf->SetSubject('SQL Query Results');
