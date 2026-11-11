@@ -10,43 +10,55 @@ require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
-require_once __DIR__ . '/../../../utilities/wallet_security.php';
+require_once __DIR__ . '/../utilities/wallet_security.php';
+require_once __DIR__ . '/../utilities/tenant_status.php';
 
-if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE)
+    session_start();
 rateLimiter();
 
 $auth = requireAuth([
-    'method'     => 'POST',
-    'rate_key'   => 'tenant_setup_bank',
+    'method' => 'POST',
+    'rate_key' => 'tenant_setup_bank',
     'rate_limit' => [5, 600],
-    'csrf'       => ['enabled' => true, 'form_name' => 'tenant_withdrawal_form'],
-    'roles'      => ['Tenant'],
+    'csrf' => ['enabled' => true, 'form_name' => 'tenant_withdrawal_form'],
+    'roles' => ['Tenant'],
 ]);
 
 $tenantCode = $_SESSION['tenant_code'] ?? null;
-if (!$tenantCode) json_error("Session expired", 401);
+if (!$tenantCode)
+    json_error("Session expired", 401);
 
 $input = json_decode(file_get_contents('php://input'), true);
-if (!is_array($input) && !empty($_POST)) $input = $_POST;
+if (!is_array($input) && !empty($_POST))
+    $input = $_POST;
 
-$bankName    = trim($input['bank_name'] ?? '');
-$bankCode    = trim($input['bank_code'] ?? '');
+$bankName = trim($input['bank_name'] ?? '');
+$bankCode = trim($input['bank_code'] ?? '');
 $accountName = trim($input['account_name'] ?? '');
-$accountNo   = trim($input['account_number'] ?? '');
-$secretAns   = trim($input['secret_answer'] ?? '');
+$accountNo = trim($input['account_number'] ?? '');
+$secretAns = trim($input['secret_answer'] ?? '');
 
 logActivity("[TENANT_SAVE_BANK] ========== START ==========");
 logActivity("[TENANT_SAVE_BANK] Tenant: {$tenantCode}");
 
 // ---- Input validation ----
-if ($bankName === '')    json_error("Bank name is required", 400);
-if ($bankCode === '')    json_error("Bank code is required", 400);
-if ($accountName === '') json_error("Account name is required", 400);
-if (strlen($accountName) > 100) json_error("Account name is too long", 400);
-if (!preg_match('/^\d{10}$/', $accountNo)) json_error("Account number must be 10 digits", 400);
-if ($secretAns === '')   json_error("Please provide your secret answer", 400);
+if ($bankName === '')
+    json_error("Bank name is required", 400);
+if ($bankCode === '')
+    json_error("Bank code is required", 400);
+if ($accountName === '')
+    json_error("Account name is required", 400);
+if (strlen($accountName) > 100)
+    json_error("Account name is too long", 400);
+if (!preg_match('/^\d{10}$/', $accountNo))
+    json_error("Account number must be 10 digits", 400);
+if ($secretAns === '')
+    json_error("Please provide your secret answer", 400);
 
 // ============ OUTSIDE TRANSACTION: LOCKOUT + SECRET VERIFICATION ============
+
+// ============ OUTSIDE TRANSACTION: LOCKOUT + ELIGIBILITY + SECRET ============
 
 $lockState = checkSecretLockout($conn, 'tenant', $tenantCode);
 if ($lockState['locked']) {
@@ -64,28 +76,59 @@ if ($lockState['locked']) {
     );
 }
 
-$stmt = $conn->prepare("
-    SELECT secret_answer, has_secret_set, bank_account_number
-    FROM tenants WHERE tenant_code = ? AND status = 1 LIMIT 1
-");
-if (!$stmt) throw new Exception("Prepare failed (load tenant): " . $conn->error);
-$stmt->bind_param("s", $tenantCode);
-if (!$stmt->execute()) throw new Exception("Load tenant failed: " . $stmt->error);
-$tenantSecret = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+try {
+    $tenantRow = loadTenantForWalletOp($conn, $tenantCode);
+} catch (Throwable $e) {
+    logActivity("[TENANT_SAVE_BANK] Load tenant failed: " . $e->getMessage(), 'ERROR');
+    json_error("Unable to load tenant record. Please try again.", 500);
+}
 
-if (!$tenantSecret) json_error("Tenant not found", 404);
+if (!$tenantRow) {
+    logActivity("[TENANT_SAVE_BANK] Tenant not found: {$tenantCode}", 'WARN');
+    json_error("Tenant not found", 404);
+}
 
-if (!empty($tenantSecret['bank_account_number'])) {
+$accountStatus = (int) $tenantRow['status'];
+$tenancyStatus = (int) $tenantRow['tenant_status'];
+
+logActivity(
+    "[TENANT_SAVE_BANK] Tenant loaded: {$tenantCode} | " .
+    "account_status={$accountStatus} | tenancy_status={$tenancyStatus}"
+);
+
+if (!tenantCanPerformWalletOps($accountStatus, $tenancyStatus)) {
+    logActivity(
+        "[TENANT_SAVE_BANK] Blocked: ineligible tenancy state | " .
+        "tenant={$tenantCode} | account_status={$accountStatus} | tenancy_status={$tenancyStatus}",
+        'WARN'
+    );
+    json_error(
+        tenantWalletBlockedMessage($tenancyStatus),
+        403,
+        null,
+        'TENANCY_SAVE_BANK_BLOCKED',
+        [
+            'tenant_code'    => $tenantCode,
+            'account_status' => $accountStatus,
+            'tenancy_status' => $tenancyStatus,
+            'tenancy_label'  => TENANT_STATE_LABELS[$tenancyStatus] ?? 'Unknown',
+        ]
+    );
+}
+
+// --- Existing bank-on-file check ---
+if (!empty($tenantRow['bank_account_number'])) {
     logActivity("[TENANT_SAVE_BANK] Refused: bank already on file for {$tenantCode}", 'WARN');
     json_error("A bank account is already on file. Please use the change-bank flow to update it.", 409);
 }
 
-if ((int)$tenantSecret['has_secret_set'] !== 1 || empty($tenantSecret['secret_answer'])) {
+// --- Secret must be configured ---
+if ((int) $tenantRow['has_secret_set'] !== 1 || empty($tenantRow['secret_answer'])) {
+    logActivity("[TENANT_SAVE_BANK] Secret not configured for {$tenantCode}", 'WARN');
     json_error("Please set up your secret question first", 400);
 }
 
-$verify = verifySecretAnswer($conn, 'tenant', $tenantCode, $tenantSecret['secret_answer'], $secretAns);
+$verify = verifySecretAnswer($conn, 'tenant', $tenantCode, $tenantRow['secret_answer'], $secretAns);
 
 if (!$verify['ok']) {
     $isLocked = !empty($verify['locked']);
@@ -94,8 +137,6 @@ if (!$verify['ok']) {
         'WARN'
     );
 
-    // Pull the real lockout expiry so the frontend countdown matches the
-    // 15-minute secret-answer lock (not the 60-minute password default).
     $lockoutData = null;
     if ($isLocked) {
         $attemptState = getSecretAttempts($conn, 'tenant', $tenantCode);
@@ -115,22 +156,32 @@ if (!$verify['ok']) {
     );
 }
 logActivity("[TENANT_SAVE_BANK] Secret answer verified for {$tenantCode}");
-
 // ============ INSIDE TRANSACTION ============
 
 $conn->begin_transaction();
 logActivity("[TENANT_SAVE_BANK] Transaction started");
 
 try {
-    $stmt = $conn->prepare("
-        SELECT bank_account_number FROM tenants WHERE tenant_code = ? FOR UPDATE
-    ");
-    if (!$stmt) throw new Exception("Prepare failed (lock tenant): " . $conn->error);
-    $stmt->bind_param("s", $tenantCode);
-    if (!$stmt->execute()) throw new Exception("Lock tenant failed: " . $stmt->error);
-    $tenant = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$tenant) throw new Exception("Tenant not found", 404);
+    $tenant = lockTenantForWalletOp($conn, $tenantCode);
+    if (!$tenant) {
+        throw new Exception("Tenant not found", 404);
+    }
+
+    // Re-check eligibility inside the transaction
+    $accRecheck = (int) $tenant['status'];
+    $tenRecheck = (int) $tenant['tenant_status'];
+
+    if (!tenantCanPerformWalletOps($accRecheck, $tenRecheck)) {
+        logActivity(
+            "[TENANT_SAVE_BANK] Eligibility changed during request: " .
+            "tenant={$tenantCode} | account_status={$accRecheck} | tenancy_status={$tenRecheck}",
+            'WARN'
+        );
+        throw new Exception(
+            "Your tenancy state changed during this request. Please refresh and try again.",
+            409
+        );
+    }
 
     if (!empty($tenant['bank_account_number'])) {
         logActivity("[TENANT_SAVE_BANK] Concurrent: bank appeared for {$tenantCode}", 'WARN');
@@ -148,9 +199,11 @@ try {
         SET bank_name = ?, bank_code = ?, bank_account_name = ?, bank_account_number = ?
         WHERE tenant_code = ?
     ");
-    if (!$save) throw new Exception("Prepare failed (save): " . $conn->error);
+    if (!$save)
+        throw new Exception("Prepare failed (save): " . $conn->error);
     $save->bind_param("sssss", $bankName, $bankCode, $accountName, $accountNo, $tenantCode);
-    if (!$save->execute()) throw new Exception("Failed to save bank details: " . $save->error);
+    if (!$save->execute())
+        throw new Exception("Failed to save bank details: " . $save->error);
     $save->close();
 
     recordBankClaim($conn, $tenantCode, $bankCode, $accountNo, $accountName);
@@ -176,10 +229,10 @@ logActivity("[TENANT_SAVE_BANK] ========== SUCCESS ==========");
 logActivity("[TENANT_SAVE_BANK] tenant={$tenantCode}, bank={$bankName} ({$masked})");
 
 json_success([
-    'bank_name'           => $bankName,
-    'bank_code'           => $bankCode,
-    'bank_account_name'   => $accountName,
+    'bank_name' => $bankName,
+    'bank_code' => $bankCode,
+    'bank_account_name' => $accountName,
     'bank_account_number' => $accountNo,
-    'masked_account'      => $masked,
-    'has_bank_account'    => true,
+    'masked_account' => $masked,
+    'has_bank_account' => true,
 ], "Bank account saved");

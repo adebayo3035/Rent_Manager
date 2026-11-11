@@ -600,7 +600,7 @@ try {
     
     // All checks passed, proceed to reset
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-    if ($hashedPassword === false) {
+    if (!$hashedPassword) {
         throw new Exception("Password hashing failed");
     }
     

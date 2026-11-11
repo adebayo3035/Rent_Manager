@@ -18,11 +18,16 @@ class LockHistoryManager {
   hydrateFromUrl() {
     const p = new URLSearchParams(location.search);
     this.page = parseInt(p.get("page")) || 1;
-    ["user_type", "action_type", "status", "search", "date_from", "date_to"].forEach(
-      (k) => {
-        if (p.get(k)) this.filters[k] = p.get(k);
-      },
-    );
+    [
+      "user_type",
+      "action_type",
+      "status",
+      "search",
+      "date_from",
+      "date_to",
+    ].forEach((k) => {
+      if (p.get(k)) this.filters[k] = p.get(k);
+    });
   }
 
   syncUrl() {
@@ -55,19 +60,25 @@ class LockHistoryManager {
     Object.entries(map).forEach(([id, key]) => {
       const el = document.getElementById(id);
       if (!el) return;
-      if (el.tagName === "SELECT") el.value = this.filters[key] || "all";
-      else el.value = this.filters[key] || "";
+      if (el.tagName === "SELECT") {
+        // Fall back to the first option if the desired value isn't present
+        const desired = this.filters[key] || "all";
+        const exists = Array.from(el.options).some((o) => o.value === desired);
+        el.value = exists ? desired : (el.options[0]?.value ?? "");
+      } else {
+        el.value = this.filters[key] || "";
+      }
     });
   }
 
   readFilterInputs() {
     return {
-      user_type: document.getElementById("historyUserTypeFilter")?.value || "all",
+      user_type:
+        document.getElementById("historyUserTypeFilter")?.value || "all",
       action_type:
         document.getElementById("historyActionTypeFilter")?.value || "all",
       status: document.getElementById("historyStatusFilter")?.value || "all",
-      search:
-        document.getElementById("historySearchInput")?.value.trim() || "",
+      search: document.getElementById("historySearchInput")?.value.trim() || "",
       date_from: document.getElementById("historyDateFrom")?.value || "",
       date_to: document.getElementById("historyDateTo")?.value || "",
     };
@@ -85,6 +96,7 @@ class LockHistoryManager {
     document
       .getElementById("resetHistoryFilters")
       ?.addEventListener("click", () => {
+        // 1. Reset the filter state to defaults
         this.filters = {
           user_type: "all",
           action_type: "all",
@@ -93,8 +105,17 @@ class LockHistoryManager {
           date_from: "",
           date_to: "",
         };
+
+        // 2. Reset to first page
         this.page = 1;
+
+        // 3. Re-sync the URL (removes stale query params)
+        this.syncUrl();
+
+        // 4. Repaint the form inputs to reflect the reset state
         this.populateFilterInputs();
+
+        // 5. Reload data
         this.load();
       });
 
@@ -102,14 +123,20 @@ class LockHistoryManager {
       document.getElementById("filterBody")?.classList.toggle("collapsed");
     });
 
-    document
-      .getElementById("historySearchInput")
-      ?.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          document.getElementById("applyHistoryFilters")?.click();
-        }
-      });
+    document.getElementById("historySearchInput")?.addEventListener(
+      "input",
+      (() => {
+        let t;
+        return (e) => {
+          clearTimeout(t);
+          t = setTimeout(() => {
+            this.filters.search = e.target.value.trim();
+            this.page = 1;
+            this.load();
+          }, 400); // 400ms debounce
+        };
+      })(),
+    );
   }
 
   bindDetailModal() {
@@ -143,7 +170,10 @@ class LockHistoryManager {
     set("detailRole", record.role || "—");
     set("detailLockReason", record.lock_reason || "—");
     set("detailLockedAt", this.fmt(record.locked_at));
-    set("detailUnlockedAt", record.unlocked_at ? this.fmt(record.unlocked_at) : "—");
+    set(
+      "detailUnlockedAt",
+      record.unlocked_at ? this.fmt(record.unlocked_at) : "—",
+    );
     set("detailUnlockedBy", record.unlocked_by || "—");
     set("detailUnlockMethod", record.unlock_method || "—");
 
@@ -216,11 +246,14 @@ class LockHistoryManager {
       search: this.filters.search || "",
     });
 
-    if (this.filters.date_from) params.append("date_from", this.filters.date_from);
+    if (this.filters.date_from)
+      params.append("date_from", this.filters.date_from);
     if (this.filters.date_to) params.append("date_to", this.filters.date_to);
 
     try {
-      const res = await fetch(`../backend/utilities/lock_history.php?${params}`);
+      const res = await fetch(
+        `../backend/utilities/lock_history.php?${params}`,
+      );
       const data = await res.json();
 
       if (!data.success) throw new Error(data.message || "Load failed");
@@ -231,8 +264,7 @@ class LockHistoryManager {
 
       if (loadingRow) loadingRow.style.display = "none";
       if (emptyState)
-        emptyState.style.display =
-          data.history.length === 0 ? "block" : "none";
+        emptyState.style.display = data.history.length === 0 ? "block" : "none";
     } catch (err) {
       console.error("Error loading lock history:", err);
       if (loadingRow) loadingRow.style.display = "none";

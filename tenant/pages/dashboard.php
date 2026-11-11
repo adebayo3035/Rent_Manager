@@ -2,7 +2,8 @@
 // --- Page guard bootstrap ---
 require_once __DIR__ . '/../backend/utilities/config.php';
 
-if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE)
+    session_start();
 
 $tenantCode = $_SESSION['tenant_code'] ?? null;   // or tenant_code
 if (!$tenantCode) {
@@ -14,18 +15,24 @@ guardPageIfTenant($conn);   // or guardPageIfTenant($conn)
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tenant Dashboard | RentEase</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../css/navbar.css">
     <link rel="stylesheet" href="../css/dashboard.css">
 </head>
+
 <body>
     <?php include('navbar.php'); ?>
-    
+    <div id="evacuationInfoCard" class="evacuation-card" style="display: none;">
+        <!-- injected by JS -->
+    </div>
+
     <!-- Maintenance Request Modal -->
     <div class="modal" id="maintenanceModal">
         <div class="modal-content">
@@ -58,7 +65,8 @@ guardPageIfTenant($conn);   // or guardPageIfTenant($conn)
                     </div>
                     <div class="form-group">
                         <label>Description</label>
-                        <textarea id="description" rows="4" placeholder="Please describe the issue in detail..." required></textarea>
+                        <textarea id="description" rows="4" placeholder="Please describe the issue in detail..."
+                            required></textarea>
                     </div>
                 </form>
             </div>
@@ -71,4 +79,5 @@ guardPageIfTenant($conn);   // or guardPageIfTenant($conn)
 
     <script src="../scripts/dashboard.js"></script>
 </body>
+
 </html>

@@ -12,23 +12,27 @@ require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/../utilities/wallet_security.php';
+require_once __DIR__ . '/../utilities/tenant_status.php';
 
-if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE)
+    session_start();
 rateLimiter();
 
 $auth = requireAuth([
-    'method'     => 'POST',
-    'rate_key'   => 'tenant_withdrawal',
+    'method' => 'POST',
+    'rate_key' => 'tenant_withdrawal',
     'rate_limit' => [3, 600],
-    'csrf'       => ['enabled' => true, 'form_name' => 'tenant_withdrawal_form'],
-    'roles'      => ['Tenant'],
+    'csrf' => ['enabled' => true, 'form_name' => 'tenant_withdrawal_form'],
+    'roles' => ['Tenant'],
 ]);
 
 $tenantCode = $_SESSION['tenant_code'] ?? null;
-if (!$tenantCode) json_error("Session expired", 401);
+if (!$tenantCode)
+    json_error("Session expired", 401);
 
 $input = json_decode(file_get_contents('php://input'), true);
-if (!is_array($input)) $input = $_POST;
+if (!is_array($input))
+    $input = $_POST;
 
 $amountRaw = trim($input['amount'] ?? '');
 $accountNo = trim($input['account_number'] ?? '');
@@ -45,14 +49,20 @@ if (!preg_match('/^\d{1,8}(\.\d{1,2})?$/', $amountClean)) {
     json_error("Please enter a valid amount (numbers only, up to 2 decimal places)", 400);
 }
 $amount = round((float) $amountClean, 2);
-if ($amount < 1000)       json_error("Minimum withdrawal is ₦1,000", 400);
-if ($amount > 50_000_000) json_error("Maximum withdrawal is ₦50,000,000", 400);
-if ($accountNo === '')    json_error("Account number is required", 400);
-if (!preg_match('/^\d{10}$/', $accountNo)) json_error("Account number must be 10 digits", 400);
-if ($bankCode === '')     json_error("Bank is required", 400);
-if ($secretAns === '')    json_error("Please provide your secret answer", 400);
+if ($amount < 1000)
+    json_error("Minimum withdrawal is ₦1,000", 400);
+if ($amount > 50_000_000)
+    json_error("Maximum withdrawal is ₦50,000,000", 400);
+if ($accountNo === '')
+    json_error("Account number is required", 400);
+if (!preg_match('/^\d{10}$/', $accountNo))
+    json_error("Account number must be 10 digits", 400);
+if ($bankCode === '')
+    json_error("Bank is required", 400);
+if ($secretAns === '')
+    json_error("Please provide your secret answer", 400);
 
-// ============ OUTSIDE TRANSACTION: LOCKOUT + SECRET VERIFICATION ============
+// ============ OUTSIDE TRANSACTION: LOCKOUT + TENANT ELIGIBILITY + SECRET ============
 
 $lockState = checkSecretLockout($conn, 'tenant', $tenantCode);
 if ($lockState['locked']) {
@@ -70,33 +80,69 @@ if ($lockState['locked']) {
     );
 }
 
-$stmt = $conn->prepare("
-    SELECT secret_answer, has_secret_set, bank_name, bank_account_name, bank_account_number, bank_code
-    FROM tenants WHERE tenant_code = ? AND status = 1 LIMIT 1
-");
-if (!$stmt) throw new Exception("Prepare failed (load tenant): " . $conn->error);
-$stmt->bind_param("s", $tenantCode);
-if (!$stmt->execute()) throw new Exception("Load tenant failed: " . $stmt->error);
-$tenantSecret = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+// --- Load tenant WITHOUT status filters so we can explain WHY we block ---
+try {
+    $tenantRow = loadTenantForWalletOp($conn, $tenantCode);
+} catch (Throwable $e) {
+    logActivity("[TENANT_WITHDRAW] Load tenant failed: " . $e->getMessage(), 'ERROR');
+    json_error("Unable to load tenant record. Please try again.", 500);
+}
 
-if (!$tenantSecret) json_error("Tenant not found", 404);
+if (!$tenantRow) {
+    logActivity("[TENANT_WITHDRAW] Tenant not found: {$tenantCode}", 'WARN');
+    json_error("Tenant not found", 404);
+}
 
-if (empty($tenantSecret['bank_account_number'])) {
+$accountStatus = (int) $tenantRow['status'];
+$tenancyStatus = (int) $tenantRow['tenant_status'];
+
+logActivity(
+    "[TENANT_WITHDRAW] Tenant loaded: {$tenantCode} | " .
+    "account_status={$accountStatus} | tenancy_status={$tenancyStatus}"
+);
+
+if (!tenantCanPerformWalletOps($accountStatus, $tenancyStatus)) {
+    logActivity(
+        "[TENANT_WITHDRAW] Blocked: ineligible tenancy state | " .
+        "tenant={$tenantCode} | account_status={$accountStatus} | tenancy_status={$tenancyStatus}",
+        'WARN'
+    );
+    json_error(
+        tenantWalletBlockedMessage($tenancyStatus),
+        403,
+        null,
+        'TENANCY_WITHDRAWAL_BLOCKED',
+        [
+            'tenant_code'    => $tenantCode,
+            'account_status' => $accountStatus,
+            'tenancy_status' => $tenancyStatus,
+            'tenancy_label'  => TENANT_STATE_LABELS[$tenancyStatus] ?? 'Unknown',
+        ]
+    );
+}
+
+// --- Bank details present? ---
+if (empty($tenantRow['bank_account_number'])) {
+    logActivity("[TENANT_WITHDRAW] No bank on file for {$tenantCode}", 'WARN');
     json_error("No bank account on file. Please add one first.", 400);
 }
-if ($tenantSecret['bank_account_number'] !== $accountNo) {
+if ($tenantRow['bank_account_number'] !== $accountNo) {
+    logActivity("[TENANT_WITHDRAW] Account mismatch for {$tenantCode}", 'WARN');
     json_error("Account number does not match the account on file.", 400);
 }
-if ((string)$tenantSecret['bank_code'] !== (string)$bankCode) {
+if ((string) $tenantRow['bank_code'] !== (string) $bankCode) {
+    logActivity("[TENANT_WITHDRAW] Bank code mismatch for {$tenantCode}", 'WARN');
     json_error("Bank does not match the account on file.", 400);
 }
 
-if ((int)$tenantSecret['has_secret_set'] !== 1 || empty($tenantSecret['secret_answer'])) {
+// --- Secret must be configured ---
+if ((int) $tenantRow['has_secret_set'] !== 1 || empty($tenantRow['secret_answer'])) {
+    logActivity("[TENANT_WITHDRAW] Secret not configured for {$tenantCode}", 'WARN');
     json_error("Please set up your secret question first", 400);
 }
 
-$verify = verifySecretAnswer($conn, 'tenant', $tenantCode, $tenantSecret['secret_answer'], $secretAns);
+// --- Verify secret answer ---
+$verify = verifySecretAnswer($conn, 'tenant', $tenantCode, $tenantRow['secret_answer'], $secretAns);
 
 if (!$verify['ok']) {
     $isLocked = !empty($verify['locked']);
@@ -105,8 +151,6 @@ if (!$verify['ok']) {
         'WARN'
     );
 
-    // Pull the real lockout expiry so the frontend countdown matches the
-    // 15-minute secret-answer lock (not the 60-minute password default).
     $lockoutData = null;
     if ($isLocked) {
         $attemptState = getSecretAttempts($conn, 'tenant', $tenantCode);
@@ -133,27 +177,40 @@ $conn->begin_transaction();
 logActivity("[TENANT_WITHDRAW] Transaction started");
 
 try {
-    $stmt = $conn->prepare("
-        SELECT wallet_balance, bank_name, bank_account_name, bank_account_number, bank_code
-        FROM tenants WHERE tenant_code = ? FOR UPDATE
-    ");
-    if (!$stmt) throw new Exception("Prepare failed (lock tenant): " . $conn->error);
-    $stmt->bind_param("s", $tenantCode);
-    if (!$stmt->execute()) throw new Exception("Lock tenant failed: " . $stmt->error);
-    $tenant = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$tenant) throw new Exception("Tenant not found", 404);
+    // --- Lock and re-check (guards against evacuation approval mid-request) ---
+    $tenant = lockTenantForWalletOp($conn, $tenantCode);
+    if (!$tenant) {
+        throw new Exception("Tenant not found", 404);
+    }
 
-    // Concurrent re-verify bank details
-    if (empty($tenant['bank_account_number']) || $tenant['bank_account_number'] !== $accountNo
-        || (string)$tenant['bank_code'] !== (string)$bankCode) {
+    // Re-check eligibility inside the transaction
+    $accRecheck = (int) $tenant['status'];
+    $tenRecheck = (int) $tenant['tenant_status'];
+
+    if (!tenantCanPerformWalletOps($accRecheck, $tenRecheck)) {
+        logActivity(
+            "[TENANT_WITHDRAW] Eligibility changed during request: " .
+            "tenant={$tenantCode} | account_status={$accRecheck} | tenancy_status={$tenRecheck}",
+            'WARN'
+        );
+        throw new Exception(
+            "Your tenancy state changed during this request. Please refresh and try again.",
+            409
+        );
+    }
+
+    // Re-verify bank details (could have changed concurrently)
+    if (
+        empty($tenant['bank_account_number']) || $tenant['bank_account_number'] !== $accountNo
+        || (string) $tenant['bank_code'] !== (string) $bankCode
+    ) {
         throw new Exception("Your bank details changed concurrently. Please refresh and try again.", 409);
     }
 
-    $accountName = $tenant['bank_account_name'];
-    $bankName    = $tenant['bank_name'];
+    $accountName   = $tenant['bank_account_name'];
+    $bankName      = $tenant['bank_name'];
+    $walletBalance = round((float) $tenant['wallet_balance'], 2);
 
-    $walletBalance = round((float)$tenant['wallet_balance'], 2);
     if ($amount > $walletBalance) {
         logActivity("[TENANT_WITHDRAW] Insufficient balance: requested ₦" . number_format($amount, 2)
             . ", available ₦" . number_format($walletBalance, 2), 'WARN');
@@ -169,22 +226,24 @@ try {
         throw new Exception("You already have a pending withdrawal request", 409);
     }
 
-    // Reserve funds
+    // --- Reserve funds ---
     $requestCode     = 'WRQ_' . strtoupper(bin2hex(random_bytes(6)));
     $referenceNumber = 'WRQ-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(5)));
     $newBalance      = round($walletBalance - $amount, 2);
     $maskedAcct      = '******' . substr($accountNo, -4);
 
     $debit = $conn->prepare("UPDATE tenants SET wallet_balance = wallet_balance - ? WHERE tenant_code = ?");
-    if (!$debit) throw new Exception("Prepare failed (debit): " . $conn->error);
+    if (!$debit)
+        throw new Exception("Prepare failed (debit): " . $conn->error);
     $debit->bind_param("ds", $amount, $tenantCode);
-    if (!$debit->execute()) throw new Exception("Failed to reserve funds: " . $debit->error);
+    if (!$debit->execute())
+        throw new Exception("Failed to reserve funds: " . $debit->error);
     $debit->close();
 
     logActivity("[TENANT_WITHDRAW] Wallet debited: {$tenantCode} ₦" . number_format($walletBalance, 2)
         . " → ₦" . number_format($newBalance, 2));
 
-    // Ledger row
+    // --- Ledger ---
     $note = "Withdrawal request to {$bankName} ({$maskedAcct}) — pending admin approval";
     $ledger = $conn->prepare("
         INSERT INTO tenant_wallet_transactions
@@ -192,7 +251,8 @@ try {
              request_id, status, notes, created_by)
         VALUES (?, 'withdrawal', ?, ?, ?, 'Pending', ?, NULL)
     ");
-    if (!$ledger) throw new Exception("Prepare failed (ledger): " . $conn->error);
+    if (!$ledger)
+        throw new Exception("Prepare failed (ledger): " . $conn->error);
     $debitAmt = -$amount;
     $ledger->bind_param("sddss", $tenantCode, $debitAmt, $newBalance, $requestCode, $note);
     if (!$ledger->execute()) {
@@ -206,7 +266,7 @@ try {
     logActivity("[TENANT_WITHDRAW] Ledger inserted: id={$ledgerId}, request_id={$requestCode}, "
         . "running_balance=₦" . number_format($newBalance, 2));
 
-    // wallet_requests row
+    // --- wallet_requests ---
     $reqStmt = $conn->prepare("
         INSERT INTO wallet_requests
             (request_code, user_type, user_code, request_type, amount, reference_number,
@@ -214,17 +274,25 @@ try {
              status, created_at)
         VALUES (?, 'tenant', ?, 'withdrawal', ?, ?, ?, ?, ?, 'pending', NOW())
     ");
-    if (!$reqStmt) throw new Exception("Prepare failed (request): " . $conn->error);
+    if (!$reqStmt)
+        throw new Exception("Prepare failed (request): " . $conn->error);
     $reqStmt->bind_param(
         "ssdssss",
-        $requestCode, $tenantCode, $amount, $referenceNumber,
-        $bankName, $accountName, $accountNo
+        $requestCode,
+        $tenantCode,
+        $amount,
+        $referenceNumber,
+        $bankName,
+        $accountName,
+        $accountNo
     );
     if (!$reqStmt->execute()) {
         if ($reqStmt->errno === 1062) {
             $errText = $reqStmt->error;
-            if (stripos($errText, 'pending_marker') !== false
-                || stripos($errText, 'uniq_pending_per_user_type') !== false) {
+            if (
+                stripos($errText, 'pending_marker') !== false
+                || stripos($errText, 'uniq_pending_per_user_type') !== false
+            ) {
                 throw new Exception("You already have a pending withdrawal request", 409);
             }
             throw new Exception("Please try again (transient issue)", 409);
@@ -234,7 +302,7 @@ try {
     $reqStmt->close();
     logActivity("[TENANT_WITHDRAW] wallet_requests row inserted: request_code={$requestCode}");
 
-    // Reset lockout (safe — verification already passed, counter autocommitted earlier)
+    // Reset lockout counter
     setSecretAttempts($conn, 'tenant', $tenantCode, 0, null);
 
     $conn->commit();
@@ -248,7 +316,7 @@ try {
     exit;
 }
 
-// ---- Notify admins (best-effort, post-commit) ----
+// ---- Notify admins (best-effort) ----
 try {
     $admins = $conn->query("SELECT unique_id FROM admin_tbl
         WHERE status = '1' AND role IN ('Super Admin', 'Admin')
@@ -262,7 +330,7 @@ try {
                     'payment_confirmation',
                     'New Tenant Withdrawal Request',
                     "Tenant {$tenantCode} requested a withdrawal of ₦" . number_format($amount, 2)
-                        . " to {$bankName} ({$maskedAcct}).",
+                    . " to {$bankName} ({$maskedAcct}).",
                     'info',
                     0
                 );
@@ -273,7 +341,7 @@ try {
     logActivity("[TENANT_WITHDRAW] Admin notification failed (non-fatal): " . $notifErr->getMessage(), 'WARN');
 }
 
-// ---- Acknowledge to the tenant (best-effort) ----
+// ---- Acknowledge to tenant (best-effort) ----
 try {
     createNotification(
         $conn,
@@ -281,8 +349,8 @@ try {
         'wallet',
         'Withdrawal Request Received',
         "We received your withdrawal request of ₦" . number_format($amount, 2)
-            . " to {$bankName} ({$maskedAcct}). Funds have been reserved. "
-            . "An admin will process the payment within 1-2 business days.",
+        . " to {$bankName} ({$maskedAcct}). Funds have been reserved. "
+        . "An admin will process the payment within 1-2 business days.",
         [
             'request_code'       => $requestCode,
             'amount'             => $amount,

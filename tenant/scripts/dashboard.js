@@ -158,6 +158,18 @@ function renderDashboard() {
     days_before_move_in = dashboardData.days_remaining - 360;
   }
 
+  // --- Evacuation / alumni detection ---
+  const isEvacuated =
+    dashboardData.is_alumni === true ||
+    dashboardData.tenant_state === "evacuated";
+  const alumni = dashboardData.alumni || null;
+
+  // Helper to format dates consistently with the rest of the dashboard
+  const fmtDate = (s) => (s ? formatDate(s) : "—");
+
+  // Currency helper (matches the ₦ + formatNumber pattern used everywhere)
+  const naira = (n) => `₦${formatNumber(Number(n) || 0)}`;
+
   const html = `
         <div class="dashboard-container">
             <!-- Welcome Section -->
@@ -207,6 +219,81 @@ function renderDashboard() {
 `
                  : ""
              }
+
+                         ${
+              isEvacuated && alumni
+                ? `
+            <!-- Evacuation / Alumni Summary -->
+            <div class="payment-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-house-circle-xmark"></i> Tenancy Ended</h2>
+                    <span class="btn-link" onclick="navigateToPage('wallet')">
+                        View Wallet <i class="fas fa-arrow-right"></i>
+                    </span>
+                </div>
+
+                <div class="payment-card alumni-banner-card">
+                    <div class="alumni-banner">
+                        <i class="fas fa-info-circle"></i>
+                        <div>
+                            <strong>${escapeHtml(alumni.banner?.title || "Your tenancy has ended")}</strong>
+                            <p>${escapeHtml(alumni.banner?.message || "You can still access your wallet, settlement, and documents.")}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="payment-card">
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Move-out Date</label>
+                            <span class="amount">${fmtDate(alumni.evacuation?.move_out_date)}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Final Settlement</label>
+                            <span class="amount success">${naira(alumni.evacuation?.final_settlement_amount)}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Deposit Refunded</label>
+                            <span class="amount">${naira(alumni.evacuation?.security_deposit_refund)}</span>
+                        </div>
+                    </div>
+
+                    <div class="payment-details">
+                        <div class="payment-amount">
+                            <label>Wallet Balance</label>
+                            <span class="amount">${escapeHtml(alumni.wallet?.balance_formatted || naira(alumni.wallet?.balance))}</span>
+                        </div>
+                        <div class="payment-amount">
+                            <label>Outstanding Debt</label>
+                            <span class="amount ${alumni.outstanding_debt?.has_debt ? "warning" : "success"}">
+                                ${
+                                  alumni.outstanding_debt?.has_debt
+                                    ? `${escapeHtml(alumni.outstanding_debt.balance_formatted || naira(alumni.outstanding_debt.balance))} (${alumni.outstanding_debt.count} item${alumni.outstanding_debt.count === 1 ? "" : "s"})`
+                                    : "None"
+                                }
+                            </span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Processed</label>
+                            <span class="date">${fmtDate(alumni.evacuation?.processed_at)}</span>
+                        </div>
+                    </div>
+
+                    <div class="payment-details alumni-refs">
+                        <div class="payment-date">
+                            <label>Evacuation Ref</label>
+                            <span class="date"><code>${escapeHtml(alumni.evacuation?.request_id || "—")}</code></span>
+                        </div>
+                        <div class="payment-date">
+                            <label>Settlement Receipt</label>
+                            <span class="date"><code>${escapeHtml(alumni.evacuation?.settlement_receipt_number || "—")}</code></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            `
+                : ""
+            }
 
             <!-- Stats Grid -->
             <div class="stats-grid">
@@ -678,6 +765,125 @@ function renderRecentRequests(requests) {
               .join("")}
         </div>
     `;
+}
+
+/**
+ * Render the evacuation summary card for an alumni tenant.
+ * Safe to call with no data — hides the card if not applicable.
+ */
+function renderEvacuationCard(data) {
+  const container = document.getElementById("evacuationInfoCard");
+  if (!container) return;
+
+  // Guard: only show if tenant is actually evacuated/alumni
+  const isAlumni =
+    data?.is_alumni === true || data?.tenant_state === "evacuated";
+  const alumni = data?.alumni;
+
+  if (!isAlumni || !alumni) {
+    container.style.display = "none";
+    return;
+  }
+
+  const {
+    banner = {},
+    wallet = {},
+    outstanding_debt: debt = {},
+    evacuation = {},
+  } = alumni;
+
+  // --- Helpers ---
+  const fmtMoney = (n) =>
+    Number.isFinite(Number(n))
+      ? "₦" +
+        Number(n).toLocaleString("en-NG", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })
+      : "₦0.00";
+
+  const fmtDate = (s) => {
+    if (!s) return "—";
+    const d = new Date(s);
+    if (isNaN(d)) return s;
+    return d.toLocaleDateString("en-NG", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const esc = (v) => {
+    const div = document.createElement("div");
+    div.textContent = v ?? "";
+    return div.innerHTML;
+  };
+
+  // --- Build HTML ---
+  container.innerHTML = `
+    <div class="evac-banner evac-banner--${esc(banner.type || "info")}">
+      <div class="evac-banner__icon">
+        <i class="fas fa-house-circle-xmark"></i>
+      </div>
+      <div class="evac-banner__body">
+        <h3>${esc(banner.title || "Your tenancy has ended")}</h3>
+        <p>${esc(banner.message || "")}</p>
+      </div>
+    </div>
+
+    <div class="evac-grid">
+      <div class="evac-tile">
+        <span class="evac-tile__label">Move-out Date</span>
+        <span class="evac-tile__value">${fmtDate(evacuation.move_out_date)}</span>
+      </div>
+
+      <div class="evac-tile">
+        <span class="evac-tile__label">Processed</span>
+        <span class="evac-tile__value">${fmtDate(evacuation.processed_at)}</span>
+      </div>
+
+      <div class="evac-tile">
+        <span class="evac-tile__label">Security Deposit Refunded</span>
+        <span class="evac-tile__value">${fmtMoney(evacuation.security_deposit_refund)}</span>
+      </div>
+
+      <div class="evac-tile">
+        <span class="evac-tile__label">Final Settlement</span>
+        <span class="evac-tile__value evac-tile__value--strong">
+          ${fmtMoney(evacuation.final_settlement_amount)}
+        </span>
+      </div>
+
+      <div class="evac-tile">
+        <span class="evac-tile__label">Wallet Balance</span>
+        <span class="evac-tile__value">${esc(wallet.balance_formatted || fmtMoney(wallet.balance))}</span>
+      </div>
+
+      <div class="evac-tile">
+        <span class="evac-tile__label">Outstanding Debt</span>
+        <span class="evac-tile__value ${debt.has_debt ? "evac-tile__value--danger" : ""}">
+          ${
+            debt.has_debt
+              ? `${esc(debt.balance_formatted || fmtMoney(debt.balance))} (${debt.count} item${debt.count === 1 ? "" : "s"})`
+              : "None"
+          }
+        </span>
+      </div>
+    </div>
+
+    <div class="evac-footer">
+      <div class="evac-ref">
+        <span>Evacuation Ref:</span>
+        <code>${esc(evacuation.request_id || "—")}</code>
+      </div>
+      <div class="evac-ref">
+        <span>Settlement Receipt:</span>
+        <code>${esc(evacuation.settlement_receipt_number || "—")}</code>
+      </div>
+    </div>
+  `;
+
+  container.style.display = "block";
 }
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -1745,18 +1951,18 @@ async function submitCancellationRequest() {
  * Adjust the threshold if your backend computes days_remaining differently.
  */
 function formatLeaseCountdown(daysRemaining) {
-    const days = parseInt(daysRemaining, 10) || 0;
+  const days = parseInt(daysRemaining, 10) || 0;
 
-    // Not moved in yet: show countdown to move-in
-    if (days >= 365) {
-        const n = days - 364;  // "moves in tomorrow" (365) → 1 day before
-        const unit = n === 1 ? 'day' : 'days';
-        return `${n} ${unit} before your move-in`;
-    }
+  // Not moved in yet: show countdown to move-in
+  if (days >= 365) {
+    const n = days - 364; // "moves in tomorrow" (365) → 1 day before
+    const unit = n === 1 ? "day" : "days";
+    return `${n} ${unit} before your move-in`;
+  }
 
-    // Moved in: standard countdown to lease end
-    const unit = days === 1 ? 'day' : 'days';
-    return `${days} ${unit} left`;
+  // Moved in: standard countdown to lease end
+  const unit = days === 1 ? "day" : "days";
+  return `${days} ${unit} left`;
 }
 // Start auto-refresh when page is visible
 document.addEventListener("visibilitychange", function () {

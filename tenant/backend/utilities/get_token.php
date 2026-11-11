@@ -1,43 +1,55 @@
 <?php
 // get-csrf-token.php
 header('Content-Type: application/json');
-// header('Access-Control-Allow-Origin: ' . $_SERVER['HTTP_ORIGIN'] ?? '*');
 header('Access-Control-Allow-Credentials: true');
 
 require_once __DIR__ . '/../utilities/config.php';
 require_once __DIR__ . '/../utilities/auth_utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
-if (!isset($_SESSION)) session_start();
- rateLimiter();
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+rateLimiter();
 
 $auth = requireAuth([
-    'method'                 => 'POST',
-    'rate_key'               => 'create_maintenance_request',
-    'roles'                  => ['Tenant'],
-    'require_active_tenancy' => true,
+    'method'   => 'POST',
+    'rate_key' => 'get_csrf_token',       // ← unique per endpoint
+    'roles'    => ['Tenant'],
+    // NO require_active_tenancy — token issuance is auth-only.
+    // Tenancy eligibility is enforced by the endpoints that USE the token.
 ]);
 
-
-// Only allow authenticated users to get tokens
+// requireAuth already guarantees an authenticated Tenant session,
+// so this is defense in depth (harmless if requireAuth changes later).
 if (!isset($_SESSION['tenant_code'])) {
+    echo json_encode(['success' => false, 'message' => 'Not authenticated']);
+    exit;
+}
+
+$formName = $_GET['form'] ?? 'default';
+
+// Validate form name against an allowlist to prevent token-farming for
+// arbitrary form names (each unique name produces a separate HMAC bucket).
+$allowedForms = [
+    'tenant_withdrawal_form',
+    'tenant_bank_setup_form',
+    'maintenance_request_form',
+    'profile_update_form',
+    // add as needed
+];
+if (!in_array($formName, $allowedForms, true)) {
     echo json_encode([
         'success' => false,
-        'message' => 'Not authenticated'
+        'message' => 'Unknown form name',
     ]);
     exit;
 }
 
-// Get form name from request or use default
-$formName = $_GET['form'] ?? 'default';
-
-// Generate token
 $token = generateCsrfToken($formName);
 
-// Return token
 echo json_encode([
-    'success' => true,
-    'token' => $token,
-    'form' => $formName,
-    'expires_in' => 3600 // 1 hour
+    'success'    => true,
+    'token'      => $token,
+    'form'       => $formName,
+    'expires_in' => 3600,
 ]);

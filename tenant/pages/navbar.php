@@ -43,6 +43,7 @@
                 <input type="file" id="cameraFileInput" accept="image/*" capture="user" style="display: none;">
                 <div class="tenant-name" id="tenantName">Loading...</div>
                 <div class="tenant-apartment" id="tenantApartment">-</div>
+                <div class="tenant-status" id="tenantStatus">-</div>
             </div>
             <nav class="sidebar-nav">
                 <a href="dashboard.php" class="nav-item" data-page="dashboard">

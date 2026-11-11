@@ -533,6 +533,7 @@ class LoginSecurity
                 'requires_action' => false,
                 'is_alumni' => ($user['evacuation_status'] === 'evacuated'), // NEW
                 'tenant_state' => $user['evacuation_status'], // NEW
+                'tenant_status' => $user['tenant_status'],
             ]
         ];
     }
@@ -605,6 +606,7 @@ class LoginSecurity
             'lastname' => $user['lastname'],
             'role' => "Tenant",
             'tenant_state' => $user['evacuation_status'], // 'active' | 'pending_evacuation' | 'evacuated'
+            'tenant_status' => $user['tenant_status'], // 'active' | 'pending_evacuation' | 'evacuated'
             'ip_address' => $_SERVER['REMOTE_ADDR'],
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
             'created_at' => time(),

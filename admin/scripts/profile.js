@@ -299,6 +299,8 @@ async function saveBasic() {
 
   closeEditModal();
   showNotification("Personal information updated", "success");
+  btn.disabled = false;
+  btn.innerHTML = original;
   setTimeout(fetchProfile, 400);
 }
 
@@ -420,6 +422,8 @@ async function savePassword() {
 
   closeEditModal();
   showNotification("Password changed successfully", "success");
+  btn.disabled = false;
+  btn.innerHTML = original;
   setTimeout(fetchProfile, 400);
 }
 
@@ -473,6 +477,8 @@ async function saveSecret() {
 
   closeEditModal();
   showNotification("Secret details updated", "success");
+  btn.disabled = false;
+  btn.innerHTML = original;
   setTimeout(fetchProfile, 400);
 }
 

@@ -11,6 +11,7 @@ require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
 require_once __DIR__ . '/../utilities/wallet_security.php';
+require_once __DIR__ . '/../utilities/tenant_status.php';
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 rateLimiter();
@@ -47,6 +48,8 @@ if ($currentSecret === '')   json_error("Current secret answer is required", 400
 
 // ============ OUTSIDE TRANSACTION: LOCKOUT + SECRET VERIFICATION ============
 
+// ============ OUTSIDE TRANSACTION: LOCKOUT + ELIGIBILITY + SECRET ============
+
 $lockState = checkSecretLockout($conn, 'tenant', $tenantCode);
 if ($lockState['locked']) {
     logActivity("[TENANT_CHANGE_BANK] Blocked: account locked for {$tenantCode}", 'WARN');
@@ -63,22 +66,52 @@ if ($lockState['locked']) {
     );
 }
 
-$stmt = $conn->prepare("
-    SELECT secret_answer, has_secret_set
-    FROM tenants WHERE tenant_code = ? AND status = 1 LIMIT 1
-");
-if (!$stmt) throw new Exception("Prepare failed (load tenant): " . $conn->error);
-$stmt->bind_param("s", $tenantCode);
-if (!$stmt->execute()) throw new Exception("Load tenant failed: " . $stmt->error);
-$tenantSecret = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+try {
+    $tenantRow = loadTenantForWalletOp($conn, $tenantCode);
+} catch (Throwable $e) {
+    logActivity("[TENANT_CHANGE_BANK] Load tenant failed: " . $e->getMessage(), 'ERROR');
+    json_error("Unable to load tenant record. Please try again.", 500);
+}
 
-if (!$tenantSecret) json_error("Tenant not found", 404);
-if ((int)$tenantSecret['has_secret_set'] !== 1 || empty($tenantSecret['secret_answer'])) {
+if (!$tenantRow) {
+    logActivity("[TENANT_CHANGE_BANK] Tenant not found: {$tenantCode}", 'WARN');
+    json_error("Tenant not found", 404);
+}
+
+$accountStatus = (int) $tenantRow['status'];
+$tenancyStatus = (int) $tenantRow['tenant_status'];
+
+logActivity(
+    "[TENANT_CHANGE_BANK] Tenant loaded: {$tenantCode} | " .
+    "account_status={$accountStatus} | tenancy_status={$tenancyStatus}"
+);
+
+if (!tenantCanPerformWalletOps($accountStatus, $tenancyStatus)) {
+    logActivity(
+        "[TENANT_CHANGE_BANK] Blocked: ineligible tenancy state | " .
+        "tenant={$tenantCode} | account_status={$accountStatus} | tenancy_status={$tenancyStatus}",
+        'WARN'
+    );
+    json_error(
+        tenantWalletBlockedMessage($tenancyStatus),
+        403,
+        null,
+        'TENANCY_CHANGE_BANK_BLOCKED',
+        [
+            'tenant_code'    => $tenantCode,
+            'account_status' => $accountStatus,
+            'tenancy_status' => $tenancyStatus,
+            'tenancy_label'  => TENANT_STATE_LABELS[$tenancyStatus] ?? 'Unknown',
+        ]
+    );
+}
+
+if ((int) $tenantRow['has_secret_set'] !== 1 || empty($tenantRow['secret_answer'])) {
+    logActivity("[TENANT_CHANGE_BANK] Secret not configured for {$tenantCode}", 'WARN');
     json_error("Please set up your secret question first", 400);
 }
 
-$verify = verifySecretAnswer($conn, 'tenant', $tenantCode, $tenantSecret['secret_answer'], $currentSecret);
+$verify = verifySecretAnswer($conn, 'tenant', $tenantCode, $tenantRow['secret_answer'], $currentSecret);
 
 if (!$verify['ok']) {
     $isLocked = !empty($verify['locked']);
@@ -87,8 +120,6 @@ if (!$verify['ok']) {
         'WARN'
     );
 
-    // Pull the real lockout expiry so the frontend countdown matches the
-    // 15-minute secret-answer lock (not the 60-minute password default).
     $lockoutData = null;
     if ($isLocked) {
         $attemptState = getSecretAttempts($conn, 'tenant', $tenantCode);
@@ -115,16 +146,26 @@ $conn->begin_transaction();
 logActivity("[TENANT_CHANGE_BANK] Transaction started");
 
 try {
-    $stmt = $conn->prepare("
-        SELECT wallet_balance, bank_name, bank_code, bank_account_name, bank_account_number, bank_changed_at
-        FROM tenants WHERE tenant_code = ? FOR UPDATE
-    ");
-    if (!$stmt) throw new Exception("Prepare failed (load tenant): " . $conn->error);
-    $stmt->bind_param("s", $tenantCode);
-    if (!$stmt->execute()) throw new Exception("Load tenant failed: " . $stmt->error);
-    $tenant = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$tenant) throw new Exception("Tenant not found", 404);
+    $tenant = lockTenantForWalletOp($conn, $tenantCode);
+    if (!$tenant) {
+        throw new Exception("Tenant not found", 404);
+    }
+
+    // Re-check eligibility inside the transaction
+    $accRecheck = (int) $tenant['status'];
+    $tenRecheck = (int) $tenant['tenant_status'];
+
+    if (!tenantCanPerformWalletOps($accRecheck, $tenRecheck)) {
+        logActivity(
+            "[TENANT_CHANGE_BANK] Eligibility changed during request: " .
+            "tenant={$tenantCode} | account_status={$accRecheck} | tenancy_status={$tenRecheck}",
+            'WARN'
+        );
+        throw new Exception(
+            "Your tenancy state changed during this request. Please refresh and try again.",
+            409
+        );
+    }
 
     $pending = countPendingWithdrawals($conn, 'tenant', $tenantCode);
     if ($pending === PHP_INT_MAX) {

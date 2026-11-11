@@ -26,6 +26,46 @@
     min-width: 0;
 }
 
+/* Alumni / evacuation additions — piggybacks on existing payment-card styles */
+.alumni-banner {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 10px;
+}
+.alumni-banner i {
+  font-size: 20px;
+  margin-top: 2px;
+}
+.alumni-banner strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.alumni-banner p {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.alumni-banner-card {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+}
+
+.alumni-refs code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #334155;
+}
 .welcome-section {
     display: grid;
     grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);

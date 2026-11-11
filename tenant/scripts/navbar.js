@@ -13,7 +13,7 @@ const WARNING_TIMEOUT = 2 * 60 * 1000; // 2 minutes warning
 const PHOTO_MAX_SIZE = 500000;
 const PHOTO_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/jpg"];
 const PHOTO_ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png"];
-const NOTIFICATION_REFRESH_MS = 5* 60 * 1000; // 5 minutes
+const NOTIFICATION_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
 
 // ==================== CAMERA VARIABLES ====================
 let cameraStream = null;
@@ -862,15 +862,31 @@ async function updateUserInfo() {
 
   const nameElement = document.getElementById("tenantName");
   const apartmentElement = document.getElementById("tenantApartment");
+  const statusElement = document.getElementById("tenantStatus");
   const photoElement = document.getElementById("photoElement");
 
   const fullName = `${user.firstname || ""} ${user.lastname || ""}`.trim();
   const apartmentNumber =
     user.apartment_number || user.apartment_code || "No Apartment";
+  const STATUS_MAP = {
+    1: { label: "Active", className: "status-active" },
+    0: { label: "Inactive", className: "status-inactive" },
+    2: { label: "Suspended", className: "status-suspended" },
+    3: { label: "Evacuated", className: "status-evacuated" },
+  };
+
+  const statusInfo = STATUS_MAP[Number(user.tenant_status)] ?? {
+    label: "Unknown",
+    className: "status-unknown",
+  };
 
   if (nameElement) nameElement.textContent = fullName || "Tenant";
   if (apartmentElement)
     apartmentElement.textContent = `Apartment Number: ${apartmentNumber}`;
+  if (statusElement) {
+    statusElement.textContent = `Tenancy Status: ${statusInfo.label}`;
+    statusElement.className = `tenant-status ${statusInfo.className}`;
+  }
 
   if (photoElement) {
     photoElement.innerHTML = "";
