@@ -680,6 +680,13 @@
     cursor: not-allowed;
 }
 
+/* Pending verification should look intentional, not broken */
+.btn-primary[data-state="pending"] {
+  background:  #fde68a;
+  border-color: #f59e0b;
+  color: #000;
+}
+
 .btn-secondary {
     background: #ffffff;
     color: var(--dash-ink);

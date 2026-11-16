@@ -8,13 +8,14 @@ require_once __DIR__ . '/../utilities/rate_limit.php';
 
 // ==================== CONSTANTS & CONFIGURATION ====================
 const MAX_LOGIN_ATTEMPTS = 3;
-const LOCKOUT_DURATION_MINUTES = 60; // 1 hour
-const SESSION_DURATION = 1800; // 30 minutes
+const LOCKOUT_DURATION_MINUTES = 60;
+const SESSION_DURATION = 1800;
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 rateLimiter();
+
 function logWithCaller($message)
 {
     $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
@@ -52,7 +53,7 @@ class LoginSecurity
     private function log($message)
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        logWithCaller("[LOGIN] [ID:{$this->requestId}] [IP:{$ip}] {$message}");
+        logWithCaller("[LOGIN_CLIENT] [ID:{$this->requestId}] [IP:{$ip}] {$message}");
     }
 
     public function validateInput($data)
@@ -72,7 +73,9 @@ class LoginSecurity
     {
         $this->log("Searching for user: {$username}");
 
-        $stmt = $this->conn->prepare("SELECT * FROM clients WHERE email = ? OR phone = ? OR client_code = ?");
+        $stmt = $this->conn->prepare(
+            "SELECT * FROM clients WHERE email = ? OR phone = ? OR client_code = ?"
+        );
         if (!$stmt) {
             logActivity("Database prepare failed: " . $this->conn->error);
             return [false, "Database error", 500];
@@ -105,13 +108,11 @@ class LoginSecurity
     {
         $userId = $user['client_code'];
 
-        // Check if account is blocked
         if ($user['client_status'] !== '1') {
             $this->log("Account blocked - ID: {$userId}");
             return [false, "This account has been blocked!", 403];
         }
 
-        // Check if account is deactivated
         if ($user['status'] == '0') {
             $this->log("Account deactivated - ID: {$userId}");
             return [false, "Account Deactivated, Raise a Reactivation Request", 403];
@@ -122,7 +123,6 @@ class LoginSecurity
 
     public function checkPasswordChangeRequired($user)
     {
-        // Check if password_changed flag exists and is 0
         if (isset($user['password_changed']) && $user['password_changed'] == 0) {
             $this->log("Password change required for user: {$user['client_code']}");
             return true;
@@ -132,9 +132,11 @@ class LoginSecurity
 
     public function checkSecretChangeRequired($user)
     {
-        // Check if has_secret_set flag exists and is 0
-        if ((isset($user['has_secret_set']) && ($user['has_secret_set'] == 0 || $user['has_secret_set'] == NULL))) {
-            $this->log("Secret Question and Answer change required for user: {$user['client_code']}");
+        if (
+            isset($user['has_secret_set'])
+            && ($user['has_secret_set'] == 0 || $user['has_secret_set'] === null)
+        ) {
+            $this->log("Secret change required for user: {$user['client_code']}");
             return true;
         }
         return false;
@@ -144,7 +146,9 @@ class LoginSecurity
     {
         $this->log("Checking lockout status for user: {$userId}");
 
-        $stmt = $this->conn->prepare("SELECT attempts, locked_until FROM client_login_attempts WHERE client_code = ?");
+        $stmt = $this->conn->prepare(
+            "SELECT attempts, locked_until FROM client_login_attempts WHERE client_code = ?"
+        );
         if (!$stmt) {
             logActivity("Lockout check prepare failed");
             return [false, "Database error", 500, null];
@@ -168,7 +172,7 @@ class LoginSecurity
         $data = $result->fetch_assoc();
         $stmt->close();
 
-        $attempts = $data['attempts'];
+        $attempts = (int) $data['attempts'];
         $lockedUntil = $data['locked_until'];
         $currentTime = new DateTime();
 
@@ -185,15 +189,15 @@ class LoginSecurity
                     "Your account is locked. Please try again in {$timeRemaining}",
                     423,
                     [
-                        'is_locked' => true,
+                        'is_locked'      => true,
                         'time_remaining' => $timeRemaining,
-                        'attempts' => $attempts
-                    ]
+                        'attempts'       => $attempts,
+                    ],
                 ];
-            } else {
-                $this->resetLoginAttempts($userId);
-                return [true, "Lock expired, attempts reset", 200, ['is_locked' => false, 'attempts' => 0]];
             }
+
+            $this->resetLoginAttempts($userId);
+            return [true, "Lock expired, attempts reset", 200, ['is_locked' => false, 'attempts' => 0]];
         }
 
         return [true, "Not locked", 200, ['is_locked' => false, 'attempts' => $attempts]];
@@ -218,14 +222,14 @@ class LoginSecurity
             $stmt->close();
 
             $stmt = $this->conn->prepare("
-                UPDATE client_lock_history 
-                SET status = 'unlocked', 
-                    unlocked_by = 0, 
-                    unlock_method = 'System auto-unlock', 
-                    unlocked_at = NOW() 
-                WHERE client_code = ? 
-                AND status = 'locked'
-                AND unlocked_at IS NULL
+                UPDATE client_lock_history
+                SET status = 'unlocked',
+                    unlocked_by = 0,
+                    unlock_method = 'System auto-unlock',
+                    unlocked_at = NOW()
+                WHERE client_code = ?
+                  AND status = 'locked'
+                  AND unlocked_at IS NULL
             ");
 
             if ($stmt) {
@@ -236,7 +240,6 @@ class LoginSecurity
 
             $this->conn->commit();
             $this->log("Login attempts reset successfully for user: {$userId}");
-
         } catch (Exception $e) {
             $this->conn->rollback();
             logActivity("Failed to reset login attempts: " . $e->getMessage());
@@ -248,14 +251,14 @@ class LoginSecurity
         $this->log("Checking secret-answer lockout status for user: {$userId}");
 
         $stmt = $this->conn->prepare("
-        SELECT attempts, locked_until
-        FROM client_secret_attempts
-        WHERE client_code = ?
-        LIMIT 1
-    ");
+            SELECT attempts, locked_until
+            FROM client_secret_attempts
+            WHERE client_code = ?
+            LIMIT 1
+        ");
         if (!$stmt) {
             logActivity("Secret lockout check prepare failed: " . $this->conn->error);
-            return [true, "No secret lockout", 200, null];  // fail-open on DB error (login should still work)
+            return [true, "No secret lockout", 200, null];
         }
 
         $stmt->bind_param("s", $userId);
@@ -294,16 +297,15 @@ class LoginSecurity
                     "Your account is temporarily locked due to failed security-answer attempts. Try again in {$timeRemaining}.",
                     423,
                     [
-                        'is_locked' => true,
-                        'lock_source' => 'secret_answer',
-                        'locked_until' => $lockedUntil,
+                        'is_locked'      => true,
+                        'lock_source'    => 'secret_answer',
+                        'locked_until'   => $lockedUntil,
                         'time_remaining' => $timeRemaining,
-                        'attempts' => $attempts,
+                        'attempts'       => $attempts,
                     ],
                 ];
             }
 
-            // Lock expired — clean up so the next attempt starts fresh
             $this->resetSecretAttempts($userId);
             return [true, "Secret lockout expired, attempts reset", 200, null];
         }
@@ -323,76 +325,143 @@ class LoginSecurity
         }
     }
 
-    public function handleFailedLogin($userId, $lockoutInfo = null)
+    /**
+     * Process a failed login attempt.
+     *
+     * @param string $userId
+     * @param array|null $lockoutInfo  From checkLockoutStatus()
+     * @param string $context  'login' | 'first_login'
+     */
+    public function handleFailedLogin($userId, $lockoutInfo = null, $context = 'login')
     {
-        $this->log("Processing failed login for user: {$userId}");
+        $this->log("Processing failed login for user: {$userId} (context: {$context})");
 
         $attempts = 0;
         if (is_array($lockoutInfo) && isset($lockoutInfo['attempts'])) {
             $attempts = (int) $lockoutInfo['attempts'];
         }
 
+        // Guard: don't increment if already locked
+        if (is_array($lockoutInfo) && !empty($lockoutInfo['is_locked'])) {
+            $this->log("Attempt to increment while already locked - user: {$userId}");
+            return [
+                false,
+                "Your account is locked. Please try again later.",
+                423,
+                $lockoutInfo,
+            ];
+        }
+
         $newAttempts = $attempts + 1;
-        $attemptsRemaining = MAX_LOGIN_ATTEMPTS - $newAttempts;
+        $attemptsRemaining = max(0, MAX_LOGIN_ATTEMPTS - $newAttempts);
 
         $this->conn->begin_transaction();
 
         try {
             if ($newAttempts === 1) {
-                $stmt = $this->conn->prepare("INSERT INTO client_login_attempts (client_code, attempts, last_attempt) VALUES (?, ?, NOW())");
+                $stmt = $this->conn->prepare(
+                    "INSERT INTO client_login_attempts (client_code, attempts, last_attempt) VALUES (?, ?, NOW())"
+                );
+                if (!$stmt) {
+                    throw new Exception("Prepare failed (insert): " . $this->conn->error);
+                }
                 $stmt->bind_param("si", $userId, $newAttempts);
             } else {
-                $stmt = $this->conn->prepare("UPDATE client_login_attempts SET attempts = ?, last_attempt = NOW() WHERE client_code = ?");
+                $stmt = $this->conn->prepare(
+                    "UPDATE client_login_attempts SET attempts = ?, last_attempt = NOW() WHERE client_code = ?"
+                );
+                if (!$stmt) {
+                    throw new Exception("Prepare failed (update): " . $this->conn->error);
+                }
                 $stmt->bind_param("is", $newAttempts, $userId);
             }
 
             if (!$stmt->execute()) {
-                throw new Exception("Execute failed: " . $stmt->error);
+                $err = $stmt->error;
+                $stmt->close();
+                throw new Exception("Execute failed: " . $err);
             }
             $stmt->close();
+
+            $lockoutData = null;
 
             if ($newAttempts >= MAX_LOGIN_ATTEMPTS) {
                 $lockUntil = (new DateTime())->modify("+" . LOCKOUT_DURATION_MINUTES . " minutes");
                 $lockPeriod = $lockUntil->format('Y-m-d H:i:s');
 
-                $stmt = $this->conn->prepare("UPDATE client_login_attempts SET locked_until = ? WHERE client_code = ?");
+                $stmt = $this->conn->prepare(
+                    "UPDATE client_login_attempts SET locked_until = ? WHERE client_code = ?"
+                );
+                if (!$stmt) {
+                    throw new Exception("Prepare failed (lockout): " . $this->conn->error);
+                }
                 $stmt->bind_param("ss", $lockPeriod, $userId);
-                $stmt->execute();
+                if (!$stmt->execute()) {
+                    $err = $stmt->error;
+                    $stmt->close();
+                    throw new Exception("Lockout update failed: " . $err);
+                }
                 $stmt->close();
 
                 $stmt = $this->conn->prepare("
-                    INSERT INTO client_lock_history 
-                    (client_code, status, locked_by, lock_reason, lock_method, locked_at) 
+                    INSERT INTO client_lock_history
+                        (client_code, status, locked_by, lock_reason, lock_method, locked_at)
                     VALUES (?, 'locked', 0, ?, 'Automatic lock', NOW())
                 ");
-                $lockReason = "Account locked due to {$newAttempts} failed login attempts";
+                if (!$stmt) {
+                    throw new Exception("Prepare failed (lock history): " . $this->conn->error);
+                }
+                $lockReason = "Account locked due to {$newAttempts} failed login attempts (context: {$context})";
                 $stmt->bind_param("ss", $userId, $lockReason);
-                $stmt->execute();
+                if (!$stmt->execute()) {
+                    $err = $stmt->error;
+                    $stmt->close();
+                    throw new Exception("Lock history insert failed: " . $err);
+                }
                 $stmt->close();
 
                 $this->log("Account locked - ID: {$userId}, Until: {$lockPeriod}");
-                $message = "Too many failed login attempts. Your account is locked for " . LOCKOUT_DURATION_MINUTES . " minutes.";
 
-                // Create and notify Super Admin on account lock
+                $message = "Too many failed login attempts. Your account is locked for "
+                         . LOCKOUT_DURATION_MINUTES . " minutes.";
+
+                $lockoutData = [
+                    'is_locked'    => true,
+                    'locked_until' => $lockPeriod,
+                    'attempts'     => $newAttempts,
+                    'source'       => 'password',
+                ];
+
                 try {
                     createNotification($this->conn, [
-                        'user_id' => $userId,
-                        'title' => 'Account Lock Notification',
-                        'message' => "User {$userId} account has been locked after too many failed login attempts.",
-                        'type' => 'DANGER',
-                        'category' => 'account_lock'
+                        'user_id'  => $userId,
+                        'title'    => 'Account Lock Notification',
+                        'message'  => "User {$userId} account has been locked after {$newAttempts} failed login attempts.",
+                        'type'     => 'DANGER',
+                        'category' => 'account_lock',
                     ]);
-                    logActivity("Notification created for user ID: {$userId}");
+                    logActivity("[NOTIFICATION_SUCCESS] Lock notification created for user ID: {$userId}");
                 } catch (Exception $e) {
-                    logActivity("[NOTIFICATION_ERROR] Failed to create user notification: " . $e->getMessage());
+                    logActivity("[NOTIFICATION_ERROR] Failed to create lock notification: " . $e->getMessage());
                 }
             } else {
-                $message = "Invalid credentials. Attempts remaining: {$attemptsRemaining}";
+                if ($context === 'first_login') {
+                    $message = "Invalid credentials. If this is your first login, "
+                             . "your password is your Client ID (found on your onboarding email or invoice). "
+                             . "Attempts remaining: {$attemptsRemaining}";
+                } else {
+                    $message = "Invalid credentials. Attempts remaining: {$attemptsRemaining}";
+                }
             }
 
             $this->conn->commit();
-            return [false, $message, 401, null];
 
+            return [
+                false,
+                $message,
+                $newAttempts >= MAX_LOGIN_ATTEMPTS ? 423 : 401,
+                $lockoutData,
+            ];
         } catch (Exception $e) {
             $this->conn->rollback();
             logActivity("Failed login processing error: " . $e->getMessage());
@@ -404,7 +473,7 @@ class LoginSecurity
     {
         $this->log("Login process started");
 
-        // Step 1: Validate input
+        // ─── 1. Validate input ───
         list($valid, $result, $code) = $this->validateInput($data);
         if (!$valid) {
             return [$valid, $result, $code, null];
@@ -413,7 +482,7 @@ class LoginSecurity
         $username = $result['username'];
         $password = $result['password'];
 
-        // Step 2: Find user
+        // ─── 2. Find user ───
         list($found, $user, $code) = $this->findUserByCredentials($username);
         if (!$found) {
             return [$found, $user, $code, null];
@@ -421,92 +490,68 @@ class LoginSecurity
 
         $userId = $user['client_code'];
 
-        // Step 3: Validate account status
-        list($active, $message, $code) = $this->validateAccountStatus($user);
-        if (!$active) {
-            return [$active, $message, $code, null];
-        }
-
-        // Step 4: Check lockout status
+        // ─── 3. Lockout check (highest priority) ───
         list($unlocked, $message, $code, $lockoutInfo) = $this->checkLockoutStatus($userId);
         if (!$unlocked) {
             return [$unlocked, $message, $code, $lockoutInfo ?? null];
         }
 
-        // Step 5: Verify password
+        // ─── 4. Account status check ───
+        list($active, $message, $code) = $this->validateAccountStatus($user);
+        if (!$active) {
+            return [$active, $message, $code, null];
+        }
+
+        // ─── 5. Compute setup flags ───
+        $needsPasswordChange = $this->checkPasswordChangeRequired($user);
+        $needsSecretChange   = $this->checkSecretChangeRequired($user);
+
+        // First-login = password has never been set
+        $isFirstLogin = $needsPasswordChange;
+
+        // ─── 6. First-login fast path ───
+        // Client accounts start with password = client_code (same rule as tenants).
+        // If the client hasn't set a password yet, we treat client_code as the
+        // initial password. Wrong password → count as failed attempt.
+        if ($isFirstLogin) {
+            if ($password !== $userId) {
+                $this->log("First-login: wrong password for {$userId}");
+                return $this->handleFailedLogin($userId, $lockoutInfo, 'first_login');
+            }
+
+            $this->log("First-login: client_code used as password for {$userId}");
+            return $this->issueSetupToken($user, $needsPasswordChange, $needsSecretChange);
+        }
+
+        // ─── 7. Normal password verify ───
         if (!verifyAndRehashPassword($this->conn, $userId, $password, $user['password'])) {
             $this->log("Password verification failed for user: {$userId}");
             return $this->handleFailedLogin($userId, $lockoutInfo);
         }
 
-        // Step 5b: Check secret-answer lockout (post-password-auth)
+        // ─── 8. Secret lockout check ───
         list($secretUnlocked, $secretMessage, $secretCode, $secretInfo) = $this->checkSecretLockout($userId);
         if (!$secretUnlocked) {
             $this->log("Login blocked by secret-answer lockout for user: {$userId}");
             return [$secretUnlocked, $secretMessage, $secretCode, $secretInfo];
         }
 
-        // Step 6: Check if password change is required (first login)
-        $needsPasswordChange = $this->checkPasswordChangeRequired($user);
-        $needsSecretChange = $this->checkSecretChangeRequired($user);
-        // If password change is required, store token in database and return early
+        // ─── 9. Post-verify setup required ───
         if ($needsPasswordChange || $needsSecretChange) {
-            $this->log("Password/Secret Question and Answer change required for user: {$userId}");
-
-            // Generate a temporary token
-            $tempToken = bin2hex(random_bytes(32));
-            $expiresAt = date('Y-m-d H:i:s', strtotime('+15 minutes'));
-
-            // Store token in database
-            $stmt = $this->conn->prepare("
-                INSERT INTO temp_auth_tokens (user_id, user_type, token, expires_at) 
-                VALUES (?, 'client', ?, ?)
-            ");
-            $stmt->bind_param("sss", $userId, $tempToken, $expiresAt);
-            $stmt->execute();
-            $stmt->close();
-
-            // Also store in session as a fallback (but primary is database)
-            $_SESSION['temp_auth_token'][$userId] = [
-                'token' => $tempToken,
-                'expires' => strtotime($expiresAt),
-                'user_data' => [
-                    'client_code' => $user['client_code'],
-                    'firstname' => $user['firstname'],
-                    'lastname' => $user['lastname'],
-                    'email' => $user['email']
-                ]
-            ];
-
-            $this->log("Temp token stored in database for user: {$userId}, expires: {$expiresAt}");
-
-            return [
-                true,
-                "Password change required",
-                200,
-                [
-                    'user_id' => $userId,
-                    'firstname' => $user['firstname'],
-                    'lastname' => $user['lastname'],
-                    'needs_password_change' => true,
-                    'requires_action' => true,
-                    'temp_token' => $tempToken
-                ]
-            ];
+            $this->log("Setup required after password auth for {$userId}");
+            return $this->issueSetupToken($user, $needsPasswordChange, $needsSecretChange);
         }
 
-        // Step 7: Destroy existing session (if any) - only if no password change required
+        // ─── 10. Full login ───
         if (!$this->destroyExistingSession($userId)) {
             $this->log("Warning: Failed to destroy existing session for user: {$userId}");
         }
 
-        // Step 8: Create new session
         if (!$this->createNewSession($user)) {
             logActivity("Session creation failed for user: {$userId}");
             return [false, "Session creation failed", 500, null];
         }
 
-        // Step 9: Update clients table (last login time)
         list($updated, , ) = $this->updateClientRecord($userId);
         if (!$updated) {
             $this->log("Warning: Failed to update last login time for user: {$userId}");
@@ -514,20 +559,87 @@ class LoginSecurity
 
         $this->log("Login successful for user: {$userId}");
 
-        // Build response data
-        $responseData = [
-            'user_id' => $userId,
-            'firstname' => $user['firstname'],
-            'lastname' => $user['lastname'],
-            'needs_password_change' => false,
-            'requires_action' => false
-        ];
-
         return [
             true,
             "Login successful",
             200,
-            $responseData
+            [
+                'user_id'          => $userId,
+                'firstname'        => $user['firstname'],
+                'lastname'         => $user['lastname'],
+                'requires_action'  => false,
+                'client_status'    => $user['client_status'],
+                'status'           => $user['status'],
+            ],
+        ];
+    }
+
+    /**
+     * Issue a temporary setup token for first-login / post-reset flows.
+     */
+    private function issueSetupToken($user, $needsPasswordChange, $needsSecretChange)
+    {
+        $userId = $user['client_code'];
+        $this->log("Issuing setup token for {$userId}");
+
+        // Clean up stale tokens for this user
+        $del = $this->conn->prepare(
+            "DELETE FROM temp_auth_tokens WHERE user_id = ? AND user_type = 'client'"
+        );
+        if ($del) {
+            $del->bind_param("s", $userId);
+            if (!$del->execute()) {
+                $this->log("WARNING: Failed to clear old setup tokens for {$userId}: " . $del->error);
+            }
+            $del->close();
+        }
+
+        $tempToken = bin2hex(random_bytes(32));
+        $expiresAt = date('Y-m-d H:i:s', strtotime('+15 minutes'));
+
+        $stmt = $this->conn->prepare("
+            INSERT INTO temp_auth_tokens (user_id, user_type, token, expires_at)
+            VALUES (?, 'client', ?, ?)
+        ");
+        if (!$stmt) {
+            $this->log("ERROR: Failed to prepare token insert for {$userId}: " . $this->conn->error);
+            return [false, "Failed to generate setup token. Please try again.", 500, null];
+        }
+
+        $stmt->bind_param("sss", $userId, $tempToken, $expiresAt);
+
+        if (!$stmt->execute()) {
+            $errMsg = $stmt->error;
+            $stmt->close();
+            $this->log("ERROR: Failed to insert setup token for {$userId}: " . $errMsg);
+            return [false, "Failed to generate setup token. Please try again.", 500, null];
+        }
+        $stmt->close();
+
+        $_SESSION['temp_auth_token'][$userId] = [
+            'token'     => $tempToken,
+            'expires'   => strtotime($expiresAt),
+            'user_data' => [
+                'client_code' => $user['client_code'],
+                'firstname'   => $user['firstname'],
+                'lastname'    => $user['lastname'],
+                'email'       => $user['email'],
+            ],
+        ];
+
+        return [
+            true,
+            "Login successful. Please complete your account setup.",
+            200,
+            [
+                'user_id'               => $userId,
+                'firstname'             => $user['firstname'],
+                'lastname'              => $user['lastname'],
+                'requires_action'       => true,
+                'needs_password_change' => (bool) $needsPasswordChange,
+                'needs_secret_change'   => (bool) $needsSecretChange,
+                'temp_token'            => $tempToken,
+            ],
         ];
     }
 
@@ -567,7 +679,8 @@ class LoginSecurity
             $stmt->close();
 
             return true;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            $this->log("Session destroy failed for {$userId}: " . $e->getMessage());
             return false;
         }
     }
@@ -584,37 +697,38 @@ class LoginSecurity
         ini_set('session.gc_maxlifetime', SESSION_DURATION);
         session_set_cookie_params([
             'lifetime' => SESSION_DURATION,
-            'path' => '/',
-            'secure' => isset($_SERVER['HTTPS']),
+            'path'     => '/',
+            'secure'   => isset($_SERVER['HTTPS']),
             'httponly' => true,
-            'samesite' => 'Strict'
+            'samesite' => 'Strict',
         ]);
 
         session_start();
         session_regenerate_id(true);
 
         $_SESSION = [
-            'client_code' => $user['client_code'],
+            'client_code'      => $user['client_code'],
             'client_logged_in' => true,
-            'firstname' => $user['firstname'],
-            'lastname' => $user['lastname'],
-            'role' => "Client",
-            'ip_address' => $_SERVER['REMOTE_ADDR'],
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-            'created_at' => time(),
-            'last_activity' => time()
+            'firstname'        => $user['firstname'],
+            'lastname'         => $user['lastname'],
+            'role'             => 'Client',
+            'ip_address'       => $_SERVER['REMOTE_ADDR'],
+            'user_agent'       => $_SERVER['HTTP_USER_AGENT'] ?? '',
+            'created_at'       => time(),
+            'last_activity'    => time(),
         ];
 
         $sessionId = session_id();
         $loginTime = date('Y-m-d H:i:s');
 
         $stmt = $this->conn->prepare("
-            INSERT INTO client_active_sessions 
-            (client_code, session_id, login_time, ip_address, user_agent, status) 
+            INSERT INTO client_active_sessions
+            (client_code, session_id, login_time, ip_address, user_agent, status)
             VALUES (?, ?, ?, ?, ?, 'Active')
         ");
 
         if (!$stmt) {
+            $this->log("ERROR: Failed to prepare session insert for {$userId}: " . $this->conn->error);
             return false;
         }
 
@@ -622,7 +736,13 @@ class LoginSecurity
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
         $stmt->bind_param("sssss", $userId, $sessionId, $loginTime, $ipAddress, $userAgent);
-        $stmt->execute();
+
+        if (!$stmt->execute()) {
+            $errMsg = $stmt->error;
+            $stmt->close();
+            $this->log("ERROR: Failed to insert session for {$userId}: " . $errMsg);
+            return false;
+        }
         $stmt->close();
 
         $this->resetLoginAttempts($userId);
@@ -639,20 +759,30 @@ class LoginSecurity
         );
 
         if (!$stmt) {
+            $this->log("ERROR: updateClientRecord prepare failed: " . $this->conn->error);
             return [false, "Database error", 500];
         }
 
         $currentTime = (new DateTime())->format('Y-m-d H:i:s');
-        $loginAttempts = 0; // Reset attempts on successful login
+        $loginAttempts = 0;
 
         $stmt->bind_param("sis", $currentTime, $loginAttempts, $username);
 
         if (!$stmt->execute()) {
+            $errMsg = $stmt->error;
             $stmt->close();
+            $this->log("ERROR: updateClientRecord execute failed for {$username}: " . $errMsg);
             return [false, "Database error", 500];
         }
 
+        $affected = $stmt->affected_rows;
         $stmt->close();
+
+        // affected_rows === 0 means no change (row already current). Not an error.
+        if ($affected === 0) {
+            $this->log("INFO: updateClientRecord made no change for {$username} (already current)");
+        }
+
         return [true, "Update successful", 200];
     }
 }
@@ -667,7 +797,7 @@ try {
         http_response_code(405);
         echo json_encode([
             "success" => false,
-            "message" => "Method not allowed"
+            "message" => "Method not allowed",
         ]);
         exit;
     }
@@ -688,14 +818,13 @@ try {
 
     $security = new LoginSecurity($conn);
 
-    // Process login
     list($success, $message, $code, $additionalData) = $security->processLogin($data);
 
     http_response_code($code);
 
     $response = [
         "success" => $success,
-        "message" => $message
+        "message" => $message,
     ];
 
     if ($success && isset($additionalData)) {
@@ -703,18 +832,16 @@ try {
     }
 
     echo json_encode($response);
-
-} catch (Exception $e) {
-    logActivity("Login error: " . $e->getMessage());
+} catch (Throwable $e) {
+    logActivity("Login error: " . $e->getMessage(), 'ERROR');
     http_response_code(500);
     echo json_encode([
         "success" => false,
         "message" => "An unexpected error occurred",
-        "error" => $e->getMessage()
+        "error"   => $e->getMessage(),
     ]);
 } finally {
     if (isset($conn) && $conn instanceof mysqli) {
         $conn->close();
     }
 }
-?>

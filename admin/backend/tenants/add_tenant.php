@@ -493,12 +493,21 @@ try {
     logActivity("Step 3.7: Updating apartment occupancy status");
     $occupancy_status = 'OCCUPIED';
     $update_apt = $conn->prepare("UPDATE apartments SET occupied_by = ?, occupancy_status = ? WHERE apartment_code = ?");
-    $update_apt->bind_param("sss", $tenant_code, $occupancy_status, $inputs['apartment_code']);
-
-    if (!$update_apt->execute()) {
-        throw new Exception('Failed to update apartment status: ' . $update_apt->error);
+    if (!$update_apt) {
+        throw new Exception("Prepare failed for apartment update: " . $conn->error);
     }
-
+    $update_apt->bind_param("sss", $tenant_code, $occupancy_status, $inputs['apartment_code']);
+    if (!$update_apt->execute()) {
+        $errMsg = $update_apt->error;
+        $update_apt->close();
+        throw new Exception("Failed to update apartment status: " . $errMsg);
+    }
+    if ($update_apt->affected_rows === 0) {
+        $update_apt->close();
+        throw new Exception(
+            "Failed to update apartment {$inputs['apartment_code']} to OCCUPIED — apartment not found or already occupied"
+        );
+    }
     $update_apt->close();
     logActivity("Apartment occupancy status updated to OCCUPIED");
 
@@ -508,6 +517,9 @@ try {
         SET occupied_apartments = occupied_apartments + 1
         WHERE property_code = ?
     ");
+    if (!$updatePropertyStmt) {
+        throw new Exception("Prepare failed for property occupied_apartments update: " . $conn->error);
+    }
     $updatePropertyStmt->bind_param("s", $inputs['property_code']);
     $updatePropertyStmt->execute();
     $updatePropertyStmt->close();
@@ -727,11 +739,20 @@ try {
         );
 
         if (!$insert_tracker->execute()) {
-            logActivity("Warning: Failed to insert tracker record for period {$period_number}: " . $insert_tracker->error);
-        } else {
-            logActivity("Tracker record #{$period_number} created successfully with payment_id: {$tracker_payment_id}");
-            $tracker_count++;
+            $errMsg = $insert_tracker->error;
+            $errNo = $insert_tracker->errno;
+            $insert_tracker->close();
+            logActivity(
+                "FATAL: Failed to insert tracker record for period {$period_number}: {$errMsg} (errno={$errNo})",
+                'ERROR'
+            );
+            throw new Exception(
+                "Failed to create payment tracker for period {$period_number}. "
+                . "Onboarding aborted. Please retry."
+            );
         }
+        logActivity("Tracker record #{$period_number} created successfully with payment_id: {$tracker_payment_id}");
+        $tracker_count++;
 
         // Update remaining balance for next period
         $remaining_balance -= $payment_amount_per_period;
@@ -758,606 +779,552 @@ try {
         FROM rent_payment_tracker 
         WHERE rent_payment_id = ? AND period_number = 1
     ");
+    if (!$get_first_tracker) {
+        throw new Exception('Prepare failed for first tracker lookup: ' . $conn->error);
+    }
     $get_first_tracker->bind_param("s", $rent_payment_id);
     $get_first_tracker->execute();
     $first_result = $get_first_tracker->get_result();
     $first_tracker = $first_result->fetch_assoc();
     $get_first_tracker->close();
 
-    if ($first_tracker) {
-        $tracker_id = $first_tracker['tracker_id'];
-        $first_payment_id = $first_tracker['payment_id'];
-
-        logActivity("Found first tracker - tracker_id: {$tracker_id}, payment_id: {$first_payment_id}");
-
-        $action = "APPROVED FIRST RENT PAYMENT";
-        $notes = "New Tenant First Rent Payment at Onboarding";
-
-        $update_first_tracker = $conn->prepare("
-            UPDATE rent_payment_tracker 
-            SET status = 'paid', 
-                payment_date = NOW(),
-                verified_by = ?,
-                verified_at = NOW(),
-                admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[" . strtoupper($action) . "] ', NOW(), ' by Admin ID: {$userId}\nNotes: {$notes}'),
-                amount_paid = ?,
-                payment_method = 'cash',
-                payment_reference = ?
-            WHERE rent_payment_id = ? 
-            AND period_number = 1
-            LIMIT 1
-        ");
-
-        if (!$update_first_tracker) {
-            throw new Exception('Prepare failed for first period update: ' . $conn->error);
-        }
-
-        $update_first_tracker->bind_param("sdss", $userId, $payment_amount_per_period, $reference_number, $rent_payment_id);
-
-        // Check if update executed successfully
-        if (!$update_first_tracker->execute()) {
-            throw new Exception('Failed to update first period: ' . $update_first_tracker->error);
-        }
-
-        if ($update_first_tracker->affected_rows > 0) {
-            logActivity("First payment period (#1) marked as 'paid' with payment_id: {$first_payment_id}");
-            logActivity("Amount paid: ₦{$payment_amount_per_period}, Reference: {$reference_number}");
-
-            // ==================== INSERT INTO RENT PAYMENT HISTORY ====================
-            logActivity("Step 3.8d: Inserting into rent_payment_history table");
-
-            // Verify tracker_id is valid before inserting
-            if (empty($tracker_id) || $tracker_id <= 0) {
-                logActivity("ERROR: Invalid tracker_id: {$tracker_id}");
-                throw new Exception("Tracker ID is invalid for rent_payment_history insert");
-            }
-
-            logActivity("Preparing rent_payment_history insert with tracker_id: {$tracker_id}");
-
-            $insert_history = $conn->prepare("
-    INSERT INTO rent_payment_history (
-        tracker_id,
-        tenant_code,
-        apartment_code,
-        period_number,
-        amount,
-        attempt_number,
-        payment_method,
-        reference_number,
-        receipt_number,
-        transaction_id,
-        status,
-        initiated_by,
-        initiated_by_type,
-        initiated_at,
-        verified_by,
-        verified_at,
-        verification_notes,
-        notes,
-        ip_address,
-        user_agent
-    ) VALUES (
-        ?, ?, ?, ?, ?, 
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, NOW(),
-        ?, NOW(),
-        ?, ?,
-        ?, ?
-    )
-");
-
-            if (!$insert_history) {
-                $error = 'Prepare failed for rent_payment_history insert: ' . $conn->error;
-                logActivity("ERROR: " . $error);
-                throw new Exception($error);
-            }
-
-            logActivity("rent_payment_history insert statement prepared successfully");
-
-            // Use existing reference_number and receipt_number (no new generation)
-            $transaction_id = 'TXN-' . date('Ymd') . '-' . time() . '-' . rand(1000, 9999);
-            $period = 1;
-            $attempt_number = 1;
-            $payment_method = 'cash';
-            $status = 'paid';
-            $initiated_by = (string) $userId;
-            $initiated_by_type = 'admin';
-            $verification_note = "First rent payment approved during tenant onboarding";
-            $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-            $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
-
-            // ==================== LOG ALL VALUES BEFORE BINDING ====================
-            logActivity("========== RENT PAYMENT HISTORY VALUES ==========");
-            logActivity("tracker_id: " . var_export($tracker_id, true) . " (type: " . gettype($tracker_id) . ")");
-            logActivity("tenant_code: " . var_export($tenant_code, true) . " (type: " . gettype($tenant_code) . ")");
-            logActivity("apartment_code: " . var_export($inputs['apartment_code'], true) . " (type: " . gettype($inputs['apartment_code']) . ")");
-            logActivity("period: " . var_export($period, true) . " (type: " . gettype($period) . ")");
-            logActivity("payment_amount_per_period: " . var_export($payment_amount_per_period, true) . " (type: " . gettype($payment_amount_per_period) . ")");
-            logActivity("attempt_number: " . var_export($attempt_number, true) . " (type: " . gettype($attempt_number) . ")");
-            logActivity("payment_method: " . var_export($payment_method, true) . " (type: " . gettype($payment_method) . ")");
-            logActivity("reference_number: " . var_export($reference_number, true) . " (type: " . gettype($reference_number) . ")");
-            logActivity("receipt_number: " . var_export($receipt_number, true) . " (type: " . gettype($receipt_number) . ")");
-            logActivity("transaction_id: " . var_export($transaction_id, true) . " (type: " . gettype($transaction_id) . ")");
-            logActivity("status: " . var_export($status, true) . " (type: " . gettype($status) . ")");
-            logActivity("initiated_by: " . var_export($initiated_by, true) . " (type: " . gettype($initiated_by) . ")");
-            logActivity("initiated_by_type: " . var_export($initiated_by_type, true) . " (type: " . gettype($initiated_by_type) . ")");
-            logActivity("userId (verified_by): " . var_export($userId, true) . " (type: " . gettype($userId) . ")");
-            logActivity("verification_note: " . var_export($verification_note, true) . " (type: " . gettype($verification_note) . ")");
-            logActivity("notes: " . var_export($notes, true) . " (type: " . gettype($notes) . ")");
-            logActivity("ip_address: " . var_export($ip_address, true) . " (type: " . gettype($ip_address) . ")");
-            logActivity("user_agent: " . var_export($user_agent, true) . " (type: " . gettype($user_agent) . ")");
-            logActivity("========== END VALUES ==========");
-
-            // ==================== LOG THE QUERY AND BIND TYPES ====================
-            logActivity("bind_param type string: 'issidissssssiissss' (18 characters)");
-            logActivity("Number of bind variables: 18");
-
-            // ==================== EXECUTE BIND AND INSERT ====================
-            $bind_result = $insert_history->bind_param(
-                "issidissssssiissss",
-                $tracker_id,                 // i - tracker_id
-                $tenant_code,                // s - tenant_code
-                $inputs['apartment_code'],   // s - apartment_code
-                $period,                     // i - period_number (1)
-                $payment_amount_per_period,  // d - amount
-                $attempt_number,             // i - attempt_number (1)
-                $payment_method,             // s - payment_method ('cash')
-                $reference_number,           // s - reference_number (existing)
-                $receipt_number,             // s - receipt_number (existing)
-                $transaction_id,             // s - transaction_id
-                $status,                     // s - status ('paid')
-                $initiated_by,               // s - initiated_by (user ID as string)
-                $initiated_by_type,          // s - initiated_by_type ('admin')
-                $userId,                     // i - verified_by
-                $verification_note,          // s - verification_notes
-                $notes,                      // s - notes
-                $ip_address,                 // s - ip_address
-                $user_agent                  // s - user_agent
-            );
-
-            if ($bind_result === false) {
-                logActivity("ERROR: bind_param failed");
-                throw new Exception('bind_param failed for rent_payment_history insert');
-            }
-
-            logActivity("bind_param executed successfully");
-
-            // ==================== EXECUTE THE INSERT ====================
-            logActivity("Executing rent_payment_history insert...");
-
-            if (!$insert_history->execute()) {
-                $error = "Failed to insert rent_payment_history record: " . $insert_history->error;
-                logActivity("ERROR: " . $error);
-                logActivity("Error Code: " . $insert_history->errno);
-                throw new Exception('Failed to insert rent_payment_history: ' . $insert_history->error);
-            }
-
-            $history_id = $insert_history->insert_id;
-            $insert_history->close();
-
-            logActivity("rent_payment_history insert executed successfully. History ID: {$history_id}");
-
-            // ==================== VERIFY THE INSERTED DATA ====================
-            logActivity("========== VERIFYING INSERTED DATA ==========");
-
-            $verify_query = "
-    SELECT 
-        id,
-        tracker_id,
-        tenant_code,
-        apartment_code,
-        period_number,
-        amount,
-        attempt_number,
-        payment_method,
-        reference_number,
-        receipt_number,
-        transaction_id,
-        status,
-        initiated_by,
-        initiated_by_type,
-        initiated_at,
-        verified_by,
-        verified_at,
-        verification_notes,
-        notes,
-        ip_address,
-        user_agent
-    FROM rent_payment_history 
-    WHERE id = ?
-";
-
-            $verify_stmt = $conn->prepare($verify_query);
-            if (!$verify_stmt) {
-                logActivity("WARNING: Could not prepare verification query: " . $conn->error);
-            } else {
-                $verify_stmt->bind_param("i", $history_id);
-                $verify_stmt->execute();
-                $verify_result = $verify_stmt->get_result();
-                $verify_row = $verify_result->fetch_assoc();
-                $verify_stmt->close();
-
-                if ($verify_row) {
-                    logActivity("========== VERIFIED RECORD DATA ==========");
-                    logActivity("id: " . var_export($verify_row['id'], true));
-                    logActivity("tracker_id: " . var_export($verify_row['tracker_id'], true));
-                    logActivity("tenant_code: " . var_export($verify_row['tenant_code'], true));
-                    logActivity("apartment_code: " . var_export($verify_row['apartment_code'], true));
-                    logActivity("period_number: " . var_export($verify_row['period_number'], true));
-                    logActivity("amount: " . var_export($verify_row['amount'], true));
-                    logActivity("attempt_number: " . var_export($verify_row['attempt_number'], true));
-                    logActivity("payment_method: " . var_export($verify_row['payment_method'], true));
-                    logActivity("reference_number: " . var_export($verify_row['reference_number'], true));
-                    logActivity("receipt_number: " . var_export($verify_row['receipt_number'], true));
-                    logActivity("transaction_id: " . var_export($verify_row['transaction_id'], true));
-                    logActivity("status: " . var_export($verify_row['status'], true));
-                    logActivity("initiated_by: " . var_export($verify_row['initiated_by'], true));
-                    logActivity("initiated_by_type: " . var_export($verify_row['initiated_by_type'], true) . " <<<<< CHECK THIS VALUE");
-                    logActivity("initiated_at: " . var_export($verify_row['initiated_at'], true));
-                    logActivity("verified_by: " . var_export($verify_row['verified_by'], true));
-                    logActivity("verified_at: " . var_export($verify_row['verified_at'], true));
-                    logActivity("verification_notes: " . var_export($verify_row['verification_notes'], true));
-                    logActivity("notes: " . var_export($verify_row['notes'], true));
-                    logActivity("ip_address: " . var_export($verify_row['ip_address'], true));
-                    logActivity("user_agent: " . var_export($verify_row['user_agent'], true));
-                    logActivity("========== END VERIFIED RECORD ==========");
-
-                    // Check specifically if initiated_by_type was inserted correctly
-                    if (empty($verify_row['initiated_by_type'])) {
-                        logActivity("!!! WARNING: initiated_by_type is empty in the database!");
-
-                        // Try to update it directly as a test
-                        $fix_query = "UPDATE rent_payment_history SET initiated_by_type = 'admin' WHERE id = ?";
-                        $fix_stmt = $conn->prepare($fix_query);
-                        if ($fix_stmt) {
-                            $fix_stmt->bind_param("i", $history_id);
-                            $fix_stmt->execute();
-                            $fix_affected = $fix_stmt->affected_rows;
-                            $fix_stmt->close();
-                            logActivity("Attempted to fix initiated_by_type directly. Affected rows: {$fix_affected}");
-
-                            // Re-verify after fix
-                            $reverify_stmt = $conn->prepare("SELECT initiated_by_type FROM rent_payment_history WHERE id = ?");
-                            $reverify_stmt->bind_param("i", $history_id);
-                            $reverify_stmt->execute();
-                            $reverify_result = $reverify_stmt->get_result();
-                            $reverify_row = $reverify_result->fetch_assoc();
-                            $reverify_stmt->close();
-                            logActivity("After direct fix - initiated_by_type: " . var_export($reverify_row['initiated_by_type'], true));
-                        }
-                    } else {
-                        logActivity("SUCCESS: initiated_by_type is correctly set to: " . $verify_row['initiated_by_type']);
-                    }
-                } else {
-                    logActivity("ERROR: Could not retrieve inserted record with ID: {$history_id}");
-                }
-            }
-
-            logActivity("Rent payment history record inserted - History ID: {$history_id}, Tracker ID: {$tracker_id}");
-
-            // ==================== SETTLEMENT PROCESSING FOR FIRST PAYMENT ====================
-            logActivity("Step 3.8e: Processing settlement for first rent payment");
-
-            try {
-                // ------------------------------------------------------------------
-                // 1) Get property details and settlement formula
-                // ------------------------------------------------------------------
-                $propertyQuery = "
-        SELECT 
-            p.id AS property_id,
-            p.property_code,
-            p.client_code,
-            NULLIF(p.agent_code, '') AS agent_code,
-            COALESCE(s.admin_percentage, 10.00) AS admin_percentage,
-            COALESCE(s.agent_percentage, 5.00)  AS agent_percentage,
-            COALESCE(s.client_percentage, 85.00) AS client_percentage
-        FROM properties p
-        LEFT JOIN property_settlement s ON p.id = s.property_id
-        WHERE p.property_code = ? AND p.status = '1'
-        LIMIT 1
-    ";
-                $propertyStmt = $conn->prepare($propertyQuery);
-                if (!$propertyStmt) {
-                    logActivity("Failed to prepare property query: " . $conn->error);
-                    throw new Exception("Database error occurred");
-                }
-                $propertyStmt->bind_param("s", $inputs['property_code']);
-                $propertyStmt->execute();
-                $property = $propertyStmt->get_result()->fetch_assoc();
-                $propertyStmt->close();
-
-                if (!$property) {
-                    logActivity("Property not found for settlement: {$inputs['property_code']}");
-                    throw new Exception("Property not found for settlement");
-                }
-
-                logActivity("Property found for settlement: " . json_encode([
-                    'property_id' => $property['property_id'],
-                    'property_code' => $property['property_code'],
-                    'admin_pct' => $property['admin_percentage'],
-                    'agent_pct' => $property['agent_percentage'],
-                    'client_pct' => $property['client_percentage']
-                ]));
-
-                // ------------------------------------------------------------------
-                // 2) Calculate shares
-                // ------------------------------------------------------------------
-                $periodAmount = $payment_amount_per_period;
-                $adminShare = round($periodAmount * ($property['admin_percentage'] / 100), 2);
-                $agentShare = round($periodAmount * ($property['agent_percentage'] / 100), 2);
-                $clientShare = round($periodAmount * ($property['client_percentage'] / 100), 2);
-
-                $totalShares = $adminShare + $agentShare + $clientShare;
-                if (abs($totalShares - $periodAmount) > 0.01) {
-                    $difference = round($periodAmount - $totalShares, 2);
-                    $clientShare += $difference;
-                    logActivity("Rounding adjustment: {$difference} added to client share");
-                }
-
-                logActivity("Settlement shares calculated: " . json_encode([
-                    'period_amount' => $periodAmount,
-                    'admin_share' => $adminShare,
-                    'agent_share' => $agentShare,
-                    'client_share' => $clientShare
-                ]));
-
-                // ------------------------------------------------------------------
-                // 3) Resolve numeric payment_id and admin unique_id
-                // ------------------------------------------------------------------
-                $paymentId = 0;
-                $paymentIdStmt = $conn->prepare("SELECT payment_id FROM rent_payments WHERE rent_payment_id = ? LIMIT 1");
-                if ($paymentIdStmt) {
-                    $paymentIdStmt->bind_param("s", $rent_payment_id);
-                    $paymentIdStmt->execute();
-                    $paymentIdRow = $paymentIdStmt->get_result()->fetch_assoc();
-                    $paymentIdStmt->close();
-                    if ($paymentIdRow) {
-                        $paymentId = (int) $paymentIdRow['payment_id'];
-                    }
-                }
-                if ($paymentId <= 0) {
-                    logActivity("Invalid payment_id for settlement");
-                    throw new Exception("Unable to find valid payment record");
-                }
-
-                // admin_tbl.unique_id is INT(11) per your schema — cast explicitly.
-                $adminUniqueId = is_numeric($userId) ? (int) $userId : 0;
-                if ($adminUniqueId <= 0) {
-                    // If $userId is something like 'SYS-1', admin wallet crediting will fail
-                    // because there's no matching row. Fail loudly rather than silently credit 0.
-                    throw new Exception("Cannot resolve admin numeric unique_id from session (userId={$userId})");
-                }
-
-                // ------------------------------------------------------------------
-                // 4) Insert settlement_transactions
-                // ------------------------------------------------------------------
-                $settlementQuery = "
-        INSERT INTO settlement_transactions 
-        (
-            payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
-            agent_code, client_code, total_rent_amount, admin_share, agent_share,
-            client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
-            settlement_status, rent_payment_date, settlement_date, processed_by, notes,
-            admin_paid, admin_payment_date,
-            agent_paid, agent_payment_date,
-            client_paid, client_payment_date,
-            created_at, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?,
-                1, NOW(),
-                ?, ?,
-                1, NOW(),
-                NOW(), NOW())
-    ";
-                $settlementStmt = $conn->prepare($settlementQuery);
-                if (!$settlementStmt) {
-                    throw new Exception("Prepare failed for settlement insert: " . $conn->error);
-                }
-
-                $settlementStatus = 'completed';
-                $rentPaymentDate = date('Y-m-d H:i:s');
-                $settlementNotes = "Auto-created from first payment during tenant onboarding";
-                $tenantId = (int) $new_tenant_id;
-                $propertyId = (int) $property['property_id'];
-                $agentCode = $property['agent_code'] ?: null;
-                $processedBy = (string) $userId;
-                $agentPaid = !empty($agentCode) ? 1 : 0;
-
-                $settlementStmt->bind_param(
-                    "iisiissdddddddssssis",
-                    $paymentId,
-                    $tracker_id,
-                    $rent_payment_id,
-                    $propertyId,
-                    $tenantId,
-                    $agentCode,
-                    $property['client_code'],
-                    $periodAmount,
-                    $adminShare,
-                    $agentShare,
-                    $clientShare,
-                    $property['admin_percentage'],
-                    $property['agent_percentage'],
-                    $property['client_percentage'],
-                    $settlementStatus,
-                    $rentPaymentDate,
-                    $processedBy,
-                    $settlementNotes,
-                    $agentPaid,
-                    $rentPaymentDate
-                );
-
-                if (!$settlementStmt->execute()) {
-                    throw new Exception("Settlement insert failed: " . $settlementStmt->error);
-                }
-                $settlementId = $settlementStmt->insert_id;
-                $settlementStmt->close();
-                logActivity("Settlement created - ID: {$settlementId}, Tracker: {$tracker_id}");
-
-                // ------------------------------------------------------------------
-                // 5) Credit wallets + write ledger rows (atomic per wallet)
-                // ------------------------------------------------------------------
-                $walletRequestId = 'SETTLE-' . $settlementId;
-                $walletNotes = "First rent payment settlement during onboarding (tenant {$tenant_code}, apt {$inputs['apartment_code']})";
-                $createdByInt = $adminUniqueId;
-
-                // ---------- ADMIN ----------
-                if ($adminShare > 0) {
-                    $upd = $conn->prepare("
-            UPDATE admin_tbl 
-            SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
-                settlement_balance      = COALESCE(settlement_balance, 0) + ?,
-                total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
-                last_settlement_date    = NOW()
-            WHERE unique_id = ?
-        ");
-                    if (!$upd)
-                        throw new Exception("Prepare failed for admin wallet update: " . $conn->error);
-                    $upd->bind_param("dddi", $adminShare, $adminShare, $adminShare, $adminUniqueId);
-                    if (!$upd->execute())
-                        throw new Exception("Admin wallet update failed: " . $upd->error);
-                    if ($upd->affected_rows === 0) {
-                        throw new Exception("Admin wallet update affected 0 rows — admin_tbl.unique_id={$adminUniqueId} not found");
-                    }
-                    $upd->close();
-
-                    $balStmt = $conn->prepare("SELECT wallet_balance FROM admin_tbl WHERE unique_id = ? LIMIT 1 FOR UPDATE");
-                    if (!$balStmt)
-                        throw new Exception("Prepare failed for admin balance read: " . $conn->error);
-                    $balStmt->bind_param("i", $adminUniqueId);
-                    $balStmt->execute();
-                    $balRow = $balStmt->get_result()->fetch_assoc();
-                    $balStmt->close();
-                    $adminRunningBalance = (float) ($balRow['wallet_balance'] ?? $adminShare);
-
-                    $ledger = $conn->prepare("
-            INSERT INTO admin_wallet_transactions
-                (unique_id, transaction_type, amount, running_balance,
-                 request_id, notes, created_at, created_by)
-            VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?)
-        ");
-                    if (!$ledger)
-                        throw new Exception("Prepare failed for admin wallet ledger insert: " . $conn->error);
-                    $ledger->bind_param("iddssi", $adminUniqueId, $adminShare, $adminRunningBalance, $walletRequestId, $walletNotes, $createdByInt);
-                    if (!$ledger->execute())
-                        throw new Exception("Admin wallet ledger insert failed: " . $ledger->error);
-                    logActivity("Admin wallet ledger inserted id={$ledger->insert_id}, running_balance={$adminRunningBalance}");
-                    $ledger->close();
-                }
-
-                // ---------- CLIENT ----------
-                if ($clientShare > 0) {
-                    $upd = $conn->prepare("
-            UPDATE clients 
-            SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
-                settlement_balance      = COALESCE(settlement_balance, 0) + ?,
-                total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
-                last_settlement_date    = NOW()
-            WHERE client_code = ?
-        ");
-                    if (!$upd)
-                        throw new Exception("Prepare failed for client wallet update: " . $conn->error);
-                    $upd->bind_param("ddds", $clientShare, $clientShare, $clientShare, $property['client_code']);
-                    if (!$upd->execute())
-                        throw new Exception("Client wallet update failed: " . $upd->error);
-                    if ($upd->affected_rows === 0) {
-                        throw new Exception("Client wallet update affected 0 rows — clients.client_code={$property['client_code']} not found");
-                    }
-                    $upd->close();
-
-                    $balStmt = $conn->prepare("SELECT wallet_balance FROM clients WHERE client_code = ? LIMIT 1 FOR UPDATE");
-                    if (!$balStmt)
-                        throw new Exception("Prepare failed for client balance read: " . $conn->error);
-                    $balStmt->bind_param("s", $property['client_code']);
-                    $balStmt->execute();
-                    $balRow = $balStmt->get_result()->fetch_assoc();
-                    $balStmt->close();
-                    $clientRunningBalance = (float) ($balRow['wallet_balance'] ?? $clientShare);
-
-                    $ledger = $conn->prepare("
-            INSERT INTO client_wallet_transactions
-                (client_code, transaction_type, amount, running_balance,
-                 request_id, notes, created_at, created_by)
-            VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?)
-        ");
-                    if (!$ledger)
-                        throw new Exception("Prepare failed for client wallet ledger insert: " . $conn->error);
-                    $ledger->bind_param("sddssi", $property['client_code'], $clientShare, $clientRunningBalance, $walletRequestId, $walletNotes, $createdByInt);
-                    if (!$ledger->execute())
-                        throw new Exception("Client wallet ledger insert failed: " . $ledger->error);
-                    logActivity("Client wallet ledger inserted id={$ledger->insert_id}, running_balance={$clientRunningBalance}");
-                    $ledger->close();
-                }
-
-                // ---------- AGENT ----------
-                if (!empty($property['agent_code']) && $agentShare > 0) {
-                    $upd = $conn->prepare("
-            UPDATE agents 
-            SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
-                settlement_balance      = COALESCE(settlement_balance, 0) + ?,
-                total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
-                last_settlement_date    = NOW()
-            WHERE agent_code = ?
-        ");
-                    if (!$upd)
-                        throw new Exception("Prepare failed for agent wallet update: " . $conn->error);
-                    $upd->bind_param("ddds", $agentShare, $agentShare, $agentShare, $property['agent_code']);
-                    if (!$upd->execute())
-                        throw new Exception("Agent wallet update failed: " . $upd->error);
-                    if ($upd->affected_rows === 0) {
-                        throw new Exception("Agent wallet update affected 0 rows — agents.agent_code={$property['agent_code']} not found");
-                    }
-                    $upd->close();
-
-                    $balStmt = $conn->prepare("SELECT wallet_balance FROM agents WHERE agent_code = ? LIMIT 1 FOR UPDATE");
-                    if (!$balStmt)
-                        throw new Exception("Prepare failed for agent balance read: " . $conn->error);
-                    $balStmt->bind_param("s", $property['agent_code']);
-                    $balStmt->execute();
-                    $balRow = $balStmt->get_result()->fetch_assoc();
-                    $balStmt->close();
-                    $agentRunningBalance = (float) ($balRow['wallet_balance'] ?? $agentShare);
-
-                    $ledger = $conn->prepare("
-            INSERT INTO agent_wallet_transactions
-                (agent_code, transaction_type, amount, running_balance,
-                 request_id, notes, created_at, created_by)
-            VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?)
-        ");
-                    if (!$ledger)
-                        throw new Exception("Prepare failed for agent wallet ledger insert: " . $conn->error);
-                    $ledger->bind_param("sddssi", $property['agent_code'], $agentShare, $agentRunningBalance, $walletRequestId, $walletNotes, $createdByInt);
-                    if (!$ledger->execute())
-                        throw new Exception("Agent wallet ledger insert failed: " . $ledger->error);
-                    logActivity("Agent wallet ledger inserted id={$ledger->insert_id}, running_balance={$agentRunningBalance}");
-                    $ledger->close();
-                }
-
-                logActivity("Settlement + wallet ledger completed. Settlement ID={$settlementId}, request_id={$walletRequestId}");
-
-            } catch (Exception $settlementError) {
-                logActivity("SETTLEMENT/WALLET ERROR (First Payment): " . $settlementError->getMessage());
-                logActivity("Rethrowing to roll back the entire tenant onboarding.");
-                // Force rollback of everything: tenant insert, apartment status update,
-                // rent_payments, rent_payment_tracker, rent_payment_history, security
-                // deposit, settlement_transactions, and all three wallet credit updates
-                // + wallet ledger inserts. Outer catch will $conn->rollback() and unlink
-                // the uploaded photo. Admin can safely retry.
-                //
-                // Why re-throw? A settlement row without matching wallet ledger rows is
-                // a corrupted ledger state (money credited, no audit trail). Better to
-                // fail the request than to persist partial money-movement.
-                throw $settlementError;
-            }
-            // ==================== END SETTLEMENT PROCESSING ====================
-
-        } else {
-            logActivity("WARNING: Could not update first period - it may not exist or already paid");
-        }
-        $update_first_tracker->close();
-    } else {
-        logActivity("ERROR: Could not find first period tracker record");
+    if (!$first_tracker) {
+        logActivity("FATAL: Could not find first period tracker for rent_payment_id={$rent_payment_id}", 'ERROR');
+        throw new Exception(
+            "Internal error: first payment period was not created. Please try again."
+        );
     }
+
+    $tracker_id = $first_tracker['tracker_id'];
+    $first_payment_id = $first_tracker['payment_id'];
+
+    logActivity("Found first tracker - tracker_id: {$tracker_id}, payment_id: {$first_payment_id}");
+
+    $action = "APPROVED FIRST RENT PAYMENT";
+    $notes = "New Tenant First Rent Payment at Onboarding";
+
+    $update_first_tracker = $conn->prepare("
+        UPDATE rent_payment_tracker 
+        SET status = 'paid', 
+            payment_date = NOW(),
+            verified_by = ?,
+            verified_at = NOW(),
+            admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[" . strtoupper($action) . "] ', NOW(), ' by Admin ID: {$userId}\nNotes: {$notes}'),
+            amount_paid = ?,
+            payment_method = 'cash',
+            payment_reference = ?
+        WHERE rent_payment_id = ? 
+        AND period_number = 1
+        AND status = 'available'
+        LIMIT 1
+    ");
+
+    if (!$update_first_tracker) {
+        throw new Exception('Prepare failed for first period update: ' . $conn->error);
+    }
+
+    $update_first_tracker->bind_param("sdss", $userId, $payment_amount_per_period, $reference_number, $rent_payment_id);
+
+    if (!$update_first_tracker->execute()) {
+        $errMsg = $update_first_tracker->error;
+        $update_first_tracker->close();
+        throw new Exception('Failed to update first period: ' . $errMsg);
+    }
+
+    if ($update_first_tracker->affected_rows === 0) {
+        $update_first_tracker->close();
+        logActivity(
+            "FATAL: First tracker update affected 0 rows. "
+            . "tracker_id={$tracker_id}, rent_payment_id={$rent_payment_id}, period_number=1, "
+            . "expected status='available'. Data inconsistency — aborting.",
+            'ERROR'
+        );
+        throw new Exception(
+            "Fatal: could not mark first payment period as paid (data inconsistency). "
+            . "Onboarding aborted. Please retry, or contact support if it persists."
+        );
+    }
+
+    $update_first_tracker->close();
+
+    logActivity("First payment period (#1) marked as 'paid' with payment_id: {$first_payment_id}");
+    logActivity("Amount paid: ₦{$payment_amount_per_period}, Reference: {$reference_number}");
+
+    // ==================== INSERT INTO RENT PAYMENT HISTORY ====================
+    logActivity("Step 3.8d: Inserting into rent_payment_history table");
+
+    if (empty($tracker_id) || $tracker_id <= 0) {
+        logActivity("ERROR: Invalid tracker_id: {$tracker_id}", 'ERROR');
+        throw new Exception("Tracker ID is invalid for rent_payment_history insert");
+    }
+
+    $insert_history = $conn->prepare("
+        INSERT INTO rent_payment_history (
+            tracker_id,
+            tenant_code,
+            apartment_code,
+            period_number,
+            amount,
+            attempt_number,
+            payment_method,
+            reference_number,
+            receipt_number,
+            transaction_id,
+            status,
+            initiated_by,
+            initiated_by_type,
+            initiated_at,
+            verified_by,
+            verified_at,
+            verification_notes,
+            notes,
+            ip_address,
+            user_agent
+        ) VALUES (
+            ?, ?, ?, ?, ?, 
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, NOW(),
+            ?, NOW(),
+            ?, ?,
+            ?, ?
+        )
+    ");
+
+    if (!$insert_history) {
+        throw new Exception('Prepare failed for rent_payment_history insert: ' . $conn->error);
+    }
+
+    // Reuse the existing reference_number and receipt_number (no new generation)
+    $transaction_id = 'TXN-' . date('Ymd') . '-' . time() . '-' . rand(1000, 9999);
+    $period = 1;
+    $attempt_number = 1;
+    $payment_method = 'cash';
+    $status = 'paid';
+    $initiated_by = (string) $userId;
+    $initiated_by_type = 'admin';
+    $verification_note = "First rent payment approved during tenant onboarding";
+    $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+
+    $bind_result = $insert_history->bind_param(
+        "issidissssssiissss",
+        $tracker_id,
+        $tenant_code,
+        $inputs['apartment_code'],
+        $period,
+        $payment_amount_per_period,
+        $attempt_number,
+        $payment_method,
+        $reference_number,
+        $receipt_number,
+        $transaction_id,
+        $status,
+        $initiated_by,
+        $initiated_by_type,
+        $userId,
+        $verification_note,
+        $notes,
+        $ip_address,
+        $user_agent
+    );
+
+    if ($bind_result === false) {
+        $insert_history->close();
+        throw new Exception('bind_param failed for rent_payment_history insert');
+    }
+
+    if (!$insert_history->execute()) {
+        $errMsg = $insert_history->error;
+        $errNo = $insert_history->errno;
+        $insert_history->close();
+        logActivity("ERROR: rent_payment_history insert failed: {$errMsg} (errno={$errNo})", 'ERROR');
+        throw new Exception('Failed to insert rent_payment_history: ' . $errMsg);
+    }
+
+    $history_id = $insert_history->insert_id;
+    $insert_history->close();
+
+    logActivity("rent_payment_history record inserted. History ID: {$history_id}, Tracker ID: {$tracker_id}");
+
+    // ==================== SETTLEMENT PROCESSING FOR FIRST PAYMENT ====================
+    logActivity("Step 3.8e: Processing settlement for first rent payment");
+
+    try {
+        // ------------------------------------------------------------------
+        // 1) Get property details and settlement formula
+        // ------------------------------------------------------------------
+        $propertyQuery = "
+            SELECT 
+                p.id AS property_id,
+                p.property_code,
+                p.client_code,
+                NULLIF(p.agent_code, '') AS agent_code,
+                COALESCE(s.admin_percentage, 10.00)  AS admin_percentage,
+                COALESCE(s.agent_percentage, 5.00)   AS agent_percentage,
+                COALESCE(s.client_percentage, 85.00) AS client_percentage
+            FROM properties p
+            LEFT JOIN property_settlement s ON p.id = s.property_id
+            WHERE p.property_code = ? AND p.status = '1'
+            LIMIT 1
+        ";
+        $propertyStmt = $conn->prepare($propertyQuery);
+        if (!$propertyStmt) {
+            throw new Exception("Database error occurred (property): " . $conn->error);
+        }
+        $propertyStmt->bind_param("s", $inputs['property_code']);
+        $propertyStmt->execute();
+        $property = $propertyStmt->get_result()->fetch_assoc();
+        $propertyStmt->close();
+
+        if (!$property) {
+            logActivity("Property not found for settlement: {$inputs['property_code']}", 'ERROR');
+            throw new Exception("Property not found for settlement");
+        }
+
+        logActivity("Property found for settlement: " . json_encode([
+            'property_id' => $property['property_id'],
+            'property_code' => $property['property_code'],
+            'admin_pct' => $property['admin_percentage'],
+            'agent_pct' => $property['agent_percentage'],
+            'client_pct' => $property['client_percentage'],
+        ]));
+
+        // ------------------------------------------------------------------
+        // 2) Calculate shares
+        // ------------------------------------------------------------------
+        $periodAmount = $payment_amount_per_period;
+        $adminShare = round($periodAmount * ($property['admin_percentage'] / 100), 2);
+        $agentShare = round($periodAmount * ($property['agent_percentage'] / 100), 2);
+        $clientShare = round($periodAmount * ($property['client_percentage'] / 100), 2);
+
+        $totalShares = $adminShare + $agentShare + $clientShare;
+        if (abs($totalShares - $periodAmount) > 0.01) {
+            $difference = round($periodAmount - $totalShares, 2);
+            $clientShare += $difference;
+            logActivity("Rounding adjustment: {$difference} added to client share");
+        }
+
+        logActivity("Settlement shares calculated: " . json_encode([
+            'period_amount' => $periodAmount,
+            'admin_share' => $adminShare,
+            'agent_share' => $agentShare,
+            'client_share' => $clientShare,
+        ]));
+
+        // ------------------------------------------------------------------
+        // 3) Resolve numeric payment_id and admin unique_id
+        // ------------------------------------------------------------------
+        $paymentId = 0;
+        $paymentIdStmt = $conn->prepare("SELECT payment_id FROM rent_payments WHERE rent_payment_id = ? LIMIT 1");
+        if ($paymentIdStmt) {
+            $paymentIdStmt->bind_param("s", $rent_payment_id);
+            $paymentIdStmt->execute();
+            $paymentIdRow = $paymentIdStmt->get_result()->fetch_assoc();
+            $paymentIdStmt->close();
+            if ($paymentIdRow) {
+                $paymentId = (int) $paymentIdRow['payment_id'];
+            }
+        }
+        if ($paymentId <= 0) {
+            throw new Exception("Unable to find valid payment record for settlement");
+        }
+
+        $adminUniqueId = is_numeric($userId) ? (int) $userId : 0;
+        if ($adminUniqueId <= 0) {
+            throw new Exception("Cannot resolve admin numeric unique_id from session (userId={$userId})");
+        }
+
+        // ------------------------------------------------------------------
+        // 4) Insert settlement_transactions
+        // ------------------------------------------------------------------
+        $settlementQuery = "
+            INSERT INTO settlement_transactions 
+            (
+                payment_id, tracker_id, rent_payment_id, property_id, tenant_id,
+                agent_code, client_code, total_rent_amount, admin_share, agent_share,
+                client_share, admin_percentage_used, agent_percentage_used, client_percentage_used,
+                settlement_status, rent_payment_date, settlement_date, processed_by, notes,
+                admin_paid, admin_payment_date,
+                agent_paid, agent_payment_date,
+                client_paid, client_payment_date,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?,
+                    1, NOW(),
+                    ?, NOW(),
+                    1, NOW(),
+                    NOW(), NOW())
+        ";
+        $settlementStmt = $conn->prepare($settlementQuery);
+        if (!$settlementStmt) {
+            throw new Exception("Prepare failed for settlement insert: " . $conn->error);
+        }
+
+        $settlementStatus = 'completed';
+        $rentPaymentDate = date('Y-m-d H:i:s');
+        $settlementNotes = "Auto-created from first payment during tenant onboarding";
+        $tenantId = (int) $new_tenant_id;
+        $propertyId = (int) $property['property_id'];
+        $agentCode = $property['agent_code'] ?: null;
+        $processedBy = (string) $userId;
+        $agentPaid = !empty($agentCode) ? 1 : 0;
+
+        $settlementStmt->bind_param(
+            "iisiissdddddddssssi",
+            $paymentId,
+            $tracker_id,
+            $rent_payment_id,
+            $propertyId,
+            $tenantId,
+            $agentCode,
+            $property['client_code'],
+            $periodAmount,
+            $adminShare,
+            $agentShare,
+            $clientShare,
+            $property['admin_percentage'],
+            $property['agent_percentage'],
+            $property['client_percentage'],
+            $settlementStatus,
+            $rentPaymentDate,
+            $processedBy,
+            $settlementNotes,
+            $agentPaid
+        );
+
+        if (!$settlementStmt->execute()) {
+            $errno = $settlementStmt->errno;
+            $errMsg = $settlementStmt->error;
+            $settlementStmt->close();
+            if ($errno === 1062) {
+                throw new Exception("Settlement already exists for tracker {$tracker_id}", 409);
+            }
+            throw new Exception("Settlement insert failed: {$errMsg}");
+        }
+        $settlementId = $settlementStmt->insert_id;
+        $settlementStmt->close();
+        logActivity("Settlement created - ID: {$settlementId}, Tracker: {$tracker_id}");
+
+        // ------------------------------------------------------------------
+        // 5) Credit wallets + write ledger rows (admin, client, agent)
+        // ------------------------------------------------------------------
+        $walletRequestId = 'SETTLE-' . $settlementId;
+        $walletNotes = "First rent payment settlement during onboarding (tenant {$tenant_code}, apt {$inputs['apartment_code']})";
+        $createdByInt = $adminUniqueId;
+
+        // ---------- ADMIN ----------
+        if ($adminShare > 0) {
+            $upd = $conn->prepare("
+                UPDATE admin_tbl 
+                SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
+                    settlement_balance      = COALESCE(settlement_balance, 0) + ?,
+                    total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                    last_settlement_date    = NOW()
+                WHERE unique_id = ?
+            ");
+            if (!$upd) {
+                throw new Exception("Prepare failed for admin wallet update: " . $conn->error);
+            }
+            $upd->bind_param("dddi", $adminShare, $adminShare, $adminShare, $adminUniqueId);
+            if (!$upd->execute()) {
+                throw new Exception("Admin wallet update failed: " . $upd->error);
+            }
+            if ($upd->affected_rows === 0) {
+                $upd->close();
+                throw new Exception("Admin wallet update affected 0 rows — admin_tbl.unique_id={$adminUniqueId} not found");
+            }
+            $upd->close();
+
+            $balStmt = $conn->prepare("SELECT wallet_balance FROM admin_tbl WHERE unique_id = ? LIMIT 1 FOR UPDATE");
+            if (!$balStmt) {
+                throw new Exception("Prepare failed for admin balance read: " . $conn->error);
+            }
+            $balStmt->bind_param("i", $adminUniqueId);
+            $balStmt->execute();
+            $balRow = $balStmt->get_result()->fetch_assoc();
+            $balStmt->close();
+            $adminRunningBalance = (float) ($balRow['wallet_balance'] ?? $adminShare);
+
+            $occurrenceKey = "{$walletRequestId}:admin:rent_credit";
+            $ledger = $conn->prepare("
+                INSERT INTO admin_wallet_transactions
+                    (unique_id, transaction_type, amount, running_balance,
+                     request_id, notes, created_at, created_by, single_occurrence_key)
+                VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?, ?)
+            ");
+            if (!$ledger) {
+                throw new Exception("Prepare failed for admin wallet ledger insert: " . $conn->error);
+            }
+            $ledger->bind_param(
+                "iddssis",
+                $adminUniqueId,
+                $adminShare,
+                $adminRunningBalance,
+                $walletRequestId,
+                $walletNotes,
+                $createdByInt,
+                $occurrenceKey
+            );
+            if (!$ledger->execute()) {
+                $errno = $ledger->errno;
+                $errMsg = $ledger->error;
+                $ledger->close();
+                if ($errno === 1062) {
+                    throw new Exception("Admin wallet already credited for settlement {$settlementId}", 409);
+                }
+                throw new Exception("Admin wallet ledger insert failed: {$errMsg}");
+            }
+            $ledgerId = $ledger->insert_id;
+            $ledger->close();
+            logActivity("Admin wallet ledger inserted id={$ledgerId}, running_balance={$adminRunningBalance}, key={$occurrenceKey}");
+        }
+
+        // ---------- CLIENT ----------
+        if ($clientShare > 0) {
+            $upd = $conn->prepare("
+                UPDATE clients 
+                SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
+                    settlement_balance      = COALESCE(settlement_balance, 0) + ?,
+                    total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                    last_settlement_date    = NOW()
+                WHERE client_code = ?
+            ");
+            if (!$upd) {
+                throw new Exception("Prepare failed for client wallet update: " . $conn->error);
+            }
+            $upd->bind_param("ddds", $clientShare, $clientShare, $clientShare, $property['client_code']);
+            if (!$upd->execute()) {
+                throw new Exception("Client wallet update failed: " . $upd->error);
+            }
+            if ($upd->affected_rows === 0) {
+                $upd->close();
+                throw new Exception("Client wallet update affected 0 rows — clients.client_code={$property['client_code']} not found");
+            }
+            $upd->close();
+
+            $balStmt = $conn->prepare("SELECT wallet_balance FROM clients WHERE client_code = ? LIMIT 1 FOR UPDATE");
+            if (!$balStmt) {
+                throw new Exception("Prepare failed for client balance read: " . $conn->error);
+            }
+            $balStmt->bind_param("s", $property['client_code']);
+            $balStmt->execute();
+            $balRow = $balStmt->get_result()->fetch_assoc();
+            $balStmt->close();
+            $clientRunningBalance = (float) ($balRow['wallet_balance'] ?? $clientShare);
+
+            $occurrenceKey = "{$walletRequestId}:client:rent_credit";
+            $ledger = $conn->prepare("
+                INSERT INTO client_wallet_transactions
+                    (client_code, transaction_type, amount, running_balance,
+                     request_id, notes, created_at, created_by, single_occurrence_key)
+                VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?, ?)
+            ");
+            if (!$ledger) {
+                throw new Exception("Prepare failed for client wallet ledger insert: " . $conn->error);
+            }
+            $ledger->bind_param(
+                "sddssis",
+                $property['client_code'],
+                $clientShare,
+                $clientRunningBalance,
+                $walletRequestId,
+                $walletNotes,
+                $createdByInt,
+                $occurrenceKey
+            );
+            if (!$ledger->execute()) {
+                $errno = $ledger->errno;
+                $errMsg = $ledger->error;
+                $ledger->close();
+                if ($errno === 1062) {
+                    throw new Exception("Client wallet already credited for settlement {$settlementId}", 409);
+                }
+                throw new Exception("Client wallet ledger insert failed: {$errMsg}");
+            }
+            $ledgerId = $ledger->insert_id;
+            $ledger->close();
+            logActivity("Client wallet ledger inserted id={$ledgerId}, running_balance={$clientRunningBalance}, key={$occurrenceKey}");
+        }
+
+        // ---------- AGENT ----------
+        if (!empty($property['agent_code']) && $agentShare > 0) {
+            $upd = $conn->prepare("
+                UPDATE agents 
+                SET wallet_balance          = COALESCE(wallet_balance, 0) + ?,
+                    settlement_balance      = COALESCE(settlement_balance, 0) + ?,
+                    total_settlement_earned = COALESCE(total_settlement_earned, 0) + ?,
+                    last_settlement_date    = NOW()
+                WHERE agent_code = ?
+            ");
+            if (!$upd) {
+                throw new Exception("Prepare failed for agent wallet update: " . $conn->error);
+            }
+            $upd->bind_param("ddds", $agentShare, $agentShare, $agentShare, $property['agent_code']);
+            if (!$upd->execute()) {
+                throw new Exception("Agent wallet update failed: " . $upd->error);
+            }
+            if ($upd->affected_rows === 0) {
+                $upd->close();
+                throw new Exception("Agent wallet update affected 0 rows — agents.agent_code={$property['agent_code']} not found");
+            }
+            $upd->close();
+
+            $balStmt = $conn->prepare("SELECT wallet_balance FROM agents WHERE agent_code = ? LIMIT 1 FOR UPDATE");
+            if (!$balStmt) {
+                throw new Exception("Prepare failed for agent balance read: " . $conn->error);
+            }
+            $balStmt->bind_param("s", $property['agent_code']);
+            $balStmt->execute();
+            $balRow = $balStmt->get_result()->fetch_assoc();
+            $balStmt->close();
+            $agentRunningBalance = (float) ($balRow['wallet_balance'] ?? $agentShare);
+
+            $occurrenceKey = "{$walletRequestId}:agent:rent_credit";
+            $ledger = $conn->prepare("
+                INSERT INTO agent_wallet_transactions
+                    (agent_code, transaction_type, amount, running_balance,
+                     request_id, notes, created_at, created_by, single_occurrence_key)
+                VALUES (?, 'rent_credit', ?, ?, ?, ?, NOW(), ?, ?)
+            ");
+            if (!$ledger) {
+                throw new Exception("Prepare failed for agent wallet ledger insert: " . $conn->error);
+            }
+            $ledger->bind_param(
+                "sddssis",
+                $property['agent_code'],
+                $agentShare,
+                $agentRunningBalance,
+                $walletRequestId,
+                $walletNotes,
+                $createdByInt,
+                $occurrenceKey
+            );
+            if (!$ledger->execute()) {
+                $errno = $ledger->errno;
+                $errMsg = $ledger->error;
+                $ledger->close();
+                if ($errno === 1062) {
+                    throw new Exception("Agent wallet already credited for settlement {$settlementId}", 409);
+                }
+                throw new Exception("Agent wallet ledger insert failed: {$errMsg}");
+            }
+            $ledgerId = $ledger->insert_id;
+            $ledger->close();
+            logActivity("Agent wallet ledger inserted id={$ledgerId}, running_balance={$agentRunningBalance}, key={$occurrenceKey}");
+        }
+
+        logActivity("Settlement + wallet ledger completed. Settlement ID={$settlementId}, request_id={$walletRequestId}");
+
+    } catch (Throwable $settlementError) {
+        logActivity("SETTLEMENT/WALLET ERROR (First Payment): " . $settlementError->getMessage(), 'ERROR');
+        logActivity("Rethrowing to roll back the entire tenant onboarding.");
+        throw new Exception(
+            "Payment approval failed: " . $settlementError->getMessage(),
+            $settlementError->getCode() ?: 0
+        );
+    }
+    // ==================== END SETTLEMENT PROCESSING ====================
+
 
     // ==================== VERIFY TRACKER RECORDS ====================
     $verify_tracker = $conn->prepare("
@@ -1449,6 +1416,10 @@ try {
 
     $update_tenant->bind_param("dddss", $annual_rent, $payment_amount_per_period, $balance, $inputs['payment_frequency'], $tenant_code);
     $update_tenant->execute();
+    if ($update_tenant->affected_rows === 0) {
+        $update_tenant->close();
+        throw new Exception("Failed to update tenant {$tenant_code} with rent terms — tenant not found");
+    }
     $update_tenant->close();
 
     logActivity("Tenant updated with agreed rent - Annual: {$annual_rent}, Per Period: {$payment_amount_per_period}, Balance: {$balance}, Frequency: {$inputs['payment_frequency']}");
@@ -1457,8 +1428,17 @@ try {
     logActivity("Step 3.9: Committing transaction");
     $conn->commit();
 
-    // create notification
-    createApartmentNotification($conn, $tenant_code, $inputs['apartment_code'], 'assigned');
+    // Post-commit side-effect (best-effort — must not fail the onboarding)
+    try {
+        createApartmentNotification($conn, $tenant_code, $inputs['apartment_code'], 'assigned');
+        logActivity("Apartment assignment notification sent");
+    } catch (Throwable $notifErr) {
+        logActivity(
+            "WARNING: Apartment notification failed after commit (onboarding succeeded): "
+            . $notifErr->getMessage(),
+            'WARN'
+        );
+    }
 
     logActivity("Transaction committed successfully");
 
@@ -1502,9 +1482,8 @@ try {
             logActivity("WARNING: Invoice generation returned false - check [INVOICE] logs above");
         }
 
-    } catch (Exception $invoiceError) {
-        // Don't fail onboarding — just log
-        logActivity("WARNING: Invoice generation failed (onboarding still succeeded): " . $invoiceError->getMessage());
+    } catch (Throwable $invoiceError) {
+        logActivity("WARNING: Invoice generation failed (onboarding still succeeded): " . $invoiceError->getMessage(), 'WARN');
     }
     // ==================== END INVOICE GENERATION ====================
 
@@ -1542,12 +1521,12 @@ try {
     echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     logActivity("========== TENANT ONBOARDING COMPLETED SUCCESSFULLY ==========");
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     // Rollback transaction on any error
-    logActivity("Step ERROR: Exception caught. Rolling back transaction.");
+    logActivity("Step ERROR: Exception caught. Rolling back transaction.", 'ERROR');
     $conn->rollback();
-    logActivity("Transaction rolled back due to error: " . $e->getMessage());
-    logActivity("Exception trace: " . $e->getTraceAsString());
+    logActivity("Transaction rolled back due to error: " . $e->getMessage(), 'ERROR');
+    logActivity("Exception trace: " . $e->getTraceAsString(), 'ERROR');
 
     // Clean up uploaded file if it was created
     if (isset($upload_path) && file_exists($upload_path)) {
@@ -1556,17 +1535,40 @@ try {
     }
 
     // Determine HTTP status code
-    $status_code = $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 500;
+    $status_code = (int) $e->getCode();
+    if ($status_code < 400 || $status_code >= 600) {
+        $status_code = 500;
+    }
 
-    // Check if error message is JSON (for duplicate errors)
-    $error_data = json_decode($e->getMessage(), true);
-    if (json_last_error() === JSON_ERROR_NONE) {
+    // Sanitize the user-facing message
+    $rawMessage = $e->getMessage();
+    $userMessage = $rawMessage;
+
+    if (strpos($rawMessage, 'Payment approval failed') !== false) {
+        $userMessage = "Tenant onboarding failed during settlement processing. "
+            . "No changes were made. Please contact support.";
+        $status_code = 500;
+    } elseif (
+        strpos($rawMessage, 'Database error') !== false
+        || strpos($rawMessage, 'Prepare failed') !== false
+        || strpos($rawMessage, 'insert failed') !== false
+        || strpos($rawMessage, 'Fatal:') !== false
+    ) {
+        $userMessage = "A server error occurred during onboarding. "
+            . "No changes were made. Please try again or contact support.";
+        $status_code = 500;
+    }
+
+    // Preserve structured JSON errors (duplicate email/phone, overlap 409, etc.)
+    $error_data = json_decode($rawMessage, true);
+    if (json_last_error() === JSON_ERROR_NONE && is_array($error_data)) {
         json_error($error_data, $status_code);
     } else {
-        json_error($e->getMessage(), $status_code);
+        json_error($userMessage, $status_code, null, null, [
+            'error_code' => $status_code,
+        ]);
     }
 }
-
 /**
  * Generate a unique receipt number
  */

@@ -170,6 +170,29 @@ function renderDashboard() {
   // Currency helper (matches the ₦ + formatNumber pattern used everywhere)
   const naira = (n) => `₦${formatNumber(Number(n) || 0)}`;
 
+  // Conditional chheck for payment button display
+  const isPendingVerification =
+    dashboardData.has_pending_payment === true ||
+    Number(dashboardData.pending_verification_count || 0) > 0;
+
+  let payButtonLabel;
+  let payButtonDisabled;
+  let payButtonIcon;
+
+  if (dashboardData.is_lease_fully_paid) {
+    payButtonLabel = "Lease Fully Paid";
+    payButtonDisabled = true;
+    payButtonIcon = "fa-check-circle";
+  } else if (isPendingVerification) {
+    payButtonLabel = "Your recent Payment is Pending Verification";
+    payButtonDisabled = true;
+    payButtonIcon = "fa-hourglass-half";
+  } else {
+    payButtonLabel = "Make Payment";
+    payButtonDisabled = false;
+    payButtonIcon = "fa-credit-card";
+  }
+
   const html = `
         <div class="dashboard-container">
             <!-- Welcome Section -->
@@ -179,10 +202,13 @@ function renderDashboard() {
                     <h1>Welcome back, ${escapeHtml(tenantName)}!</h1>
                     <p>${escapeHtml(dashboardData.property_name || "Your property")} · Apartment ${escapeHtml(dashboardData.apartment_number || "N/A")}</p>
                     <div class="hero-actions">
-                        <button class="btn-primary" onclick="makePayment()" ${dashboardData.is_lease_fully_paid ? "disabled" : ""}>
-                            <i class="fas fa-credit-card"></i>
-                            ${dashboardData.is_lease_fully_paid ? "Lease Fully Paid" : "Make Payment"}
-                        </button>
+                        <button class="btn-primary"
+        onclick="makePayment()"
+        ${payButtonDisabled ? "disabled" : ""}
+        ${isPendingVerification && !dashboardData.is_lease_fully_paid ? 'data-state="pending"' : ""}>
+  <i class="fas ${payButtonIcon}"></i>
+  ${payButtonLabel}
+</button>
                         <button class="btn-secondary" onclick="openMaintenanceModal()">
                             <i class="fas fa-tools"></i>
                             Report Issue
@@ -203,26 +229,23 @@ function renderDashboard() {
              ${
                isPreleaseTenant()
                  ? `
-<div class="prelease-banner">
-    <i class="fas fa-info-circle"></i>
-    <div>
-        <strong>Your tenancy starts on ${formatDate(
-          dashboardData.current_cycle?.cycle_start_date ||
-            dashboardData.lease_start_date,
-        )}</strong>
-        <p>
-            You have ${daysUntilLeaseStart()} day${daysUntilLeaseStart() === 1 ? "" : "s"} until move-in.
-            If you need to cancel this booking, you can do so before the lease starts.
-        </p>
-    </div>
-</div>
-`
+                    <div class="prelease-banner">
+                        <i class="fas fa-info-circle"></i>
+                        <div>
+                            <strong>Your tenancy starts on ${formatDate(dashboardData.current_cycle?.cycle_start_date || dashboardData.lease_start_date,)}</strong>
+                            <p>
+                                You have ${daysUntilLeaseStart()} day${daysUntilLeaseStart() === 1 ? "" : "s"} until move-in.
+                                If you need to cancel this booking, you can do so before the lease starts.
+                            </p>
+                        </div>
+                    </div>
+                  `
                  : ""
              }
 
                          ${
-              isEvacuated && alumni
-                ? `
+                           isEvacuated && alumni
+                             ? `
             <!-- Evacuation / Alumni Summary -->
             <div class="payment-section">
                 <div class="section-header">
@@ -292,8 +315,8 @@ function renderDashboard() {
                 </div>
             </div>
             `
-                : ""
-            }
+                             : ""
+                         }
 
             <!-- Stats Grid -->
             <div class="stats-grid">
