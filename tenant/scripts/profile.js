@@ -682,7 +682,7 @@ function renderResetSecretTab() {
 function renderSecretTab() {
     return `
         <div id="secretTab" class="tab-content">
-            <form class="profile-form" id="secretForm">
+            <form class="profile-form" id="secretForm" name = "set_secret_answer">
                 <div class="form-group">
                     <label>Secret Question *</label>
                     <select id="secretQuestion" required>

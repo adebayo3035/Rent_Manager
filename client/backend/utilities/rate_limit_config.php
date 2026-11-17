@@ -151,7 +151,7 @@ return [
             'seconds' => 60
         ],
         'settlement_api' => [
-            'limit' => 5,          // ⚠️ financial — strict
+            'limit' => 20,          // ⚠️ financial — strict
             'seconds' => 60
         ],
 

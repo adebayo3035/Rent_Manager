@@ -35,6 +35,11 @@ $allowedForms = [
     'tenant_bank_setup_form',
     'maintenance_request_form',
     'profile_update_form',
+    'tenant_profile_form',
+    'reset_secret_form',
+    'tenant_change_password',
+    'maintenance_cancel_form',         // ← ADD (for cancel)
+    'maintenance_confirm_form', 
     // add as needed
 ];
 if (!in_array($formName, $allowedForms, true)) {

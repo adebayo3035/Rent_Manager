@@ -58,6 +58,10 @@
                     <i class="fas fa-user"></i>
                     <span>My Tenants</span>
                 </a>
+                <a href="evacuations.php" class="nav-item" data-page="evacuation">
+                    <i class="fas fa-door-open"></i>
+                    <span>Evacuation Requests</span>
+                </a>
                 <a href="maintenance.php" class="nav-item" data-page="maintenance">
                     <i class="fas fa-tools"></i>
                     <span>Maintenance</span>
