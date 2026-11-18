@@ -1,5 +1,5 @@
 <?php
-
+//mailer.php
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use PHPMailer\PHPMailer\SMTP;
@@ -7,23 +7,20 @@ use PHPMailer\PHPMailer\SMTP;
 // Correct path (vendor is in the same directory level)
 require_once __DIR__ . '/vendor/autoload.php';
 
-function sendEmailWithGmailSMTP($to, $body, $subject, $attachments = [])
-{
+function sendEmailWithGmailSMTP(
+    string $to,
+    string $body,
+    string $subject,
+    array $attachments = [],
+    string $toName = '',
+    string $fromName = 'RentFlow Pro'
+): bool {
     $mail = new PHPMailer(true);
-    $config = include __DIR__ . '/secrets.php';
 
     try {
-        // Enable debug but capture output
-        $mail->SMTPDebug = SMTP::DEBUG_SERVER;
-        
-        // Create a custom debug output handler
-        $debugOutput = '';
-        $mail->Debugoutput = function($str, $level) use (&$debugOutput) {
-            $debugOutput .= $str . "\n";
-            // Also log it
-            logActivity("SMTP Debug: " . trim($str));
-        };
-        
+        $config = include __DIR__ . '/secrets.php';
+
+        // ---- SMTP ----
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
@@ -31,31 +28,49 @@ function sendEmailWithGmailSMTP($to, $body, $subject, $attachments = [])
         $mail->Password   = $config['gmail_password'];
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
         $mail->Port       = 465;
-        $mail->Timeout    = 30;
+        $mail->CharSet    = 'UTF-8';
+        $mail->Timeout    = 20;
 
-        $mail->setFrom('no-reply@rentmanager.com', 'Rent Manager');
-        $mail->addAddress($to);
+        // ---- Sender ----
+        $mail->setFrom(
+            $config['gmail_username'],
+            $config['from_name'] ?? $fromName
+        );
+        $mail->addReplyTo($config['gmail_username'], $config['from_name'] ?? $fromName);
+
+        // ---- Recipient ----
+        if ($toName !== '') {
+            $mail->addAddress($to, $toName);
+        } else {
+            $mail->addAddress($to);
+        }
+
+        // ---- Body ----
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body    = $body;
 
-        foreach ($attachments as $attachment) {
-            if (file_exists($attachment)) {
-                $mail->addAttachment($attachment);
+        // Plain-text fallback (strip HTML, decode entities, normalize newlines)
+        $plainText = html_entity_decode(strip_tags(
+            preg_replace('/<br\s*\/?>/i', "\n", $body)
+        ), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $mail->AltBody = trim(preg_replace("/\n{3,}/", "\n\n", $plainText));
+
+        // ---- Attachments ----
+        foreach ($attachments as $path) {
+            if (is_string($path) && $path !== '' && file_exists($path)) {
+                $mail->addAttachment($path);
             }
         }
 
-        $result = $mail->send();
-        
-        // Log the full debug output
-        logActivity("Email sending " . ($result ? "succeeded" : "failed") . " for: $to");
-        logActivity("SMTP Debug Output:\n" . $debugOutput);
-        
-        return $result;
+        $mail->send();
+        return true;
 
     } catch (Exception $e) {
-        error_log("Mailer Error: " . $mail->ErrorInfo);
-        logActivity("Mailer Error: " . $mail->ErrorInfo);
+        // Log but do NOT echo — this must never corrupt a JSON response
+        $errInfo = $mail->ErrorInfo ?: $e->getMessage();
+        error_log("[EMAIL] PHPMailer error to {$to}: {$errInfo}");
+        logActivity("[EMAIL] Failed to send to {$to}: {$errInfo}", 'ERROR');
         return false;
     }
 }

@@ -26,6 +26,7 @@ require_once __DIR__ . '/../utilities/utils.php';
 require_once __DIR__ . '/../utilities/auth_guard.php';
 require_once __DIR__ . '/../utilities/notification_helper.php';
 require_once __DIR__ . '/../utilities/rate_limit.php';
+
 if (!isset($_SESSION))
     session_start();
 rateLimiter();
@@ -424,7 +425,12 @@ try {
     // 5. Generate tenant code
     logActivity("Step 3.5: Generating tenant code");
     $tenant_code = "TNT" . random_unique_id();
-    $encrypt_pass = password_hash($tenant_code, PASSWORD_ARGON2ID);
+    // $encrypt_pass = password_hash($tenant_code, PASSWORD_ARGON2ID);
+
+    // Random 32-char password that nobody sees.
+// The user can only access this account through the setup-link + OTP flow.
+    $initialPassword = bin2hex(random_bytes(16));   // 32 hex chars = 128 bits entropy
+    $encrypt_pass = password_hash($initialPassword, PASSWORD_ARGON2ID);
     logActivity("Generated unique Tenant code: {$tenant_code}");
 
     // 6. Insert tenant
@@ -1441,6 +1447,59 @@ try {
     }
 
     logActivity("Transaction committed successfully");
+    // ---- Welcome email (best-effort, after DB writes but before HTTP response) ----
+    try {
+        // require_once __DIR__ . '/../../utilities/email_sender.php';
+        require_once __DIR__ . '/../utilities/sendOTPGmail.php';
+
+        $setupLink = 'http://localhost/rent_manager/tenant/pages/account_setup.php';
+        $firstName = $inputs['firstname'];
+        // $email = $inputs['email'];
+        $email = "adebayoabdulrahmon@gmail.com";
+
+        $htmlBody = "
+        <div style='font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;'>
+            <div style='background:#1e3c72;color:#fff;padding:24px;border-radius:10px 10px 0 0;text-align:center;'>
+                <h1 style='margin:0;font-size:22px;'>Welcome to RentFlow Pro</h1>
+                <p style='margin:6px 0 0;opacity:0.8;font-size:13px;'>Your tenant account is ready to activate</p>
+            </div>
+            <div style='background:#fff;padding:28px;border:1px solid #e2e8f0;border-radius:0 0 10px 10px;'>
+                <p style='margin:0 0 16px;color:#0f172a;'>Hi {$firstName},</p>
+                <p style='margin:0 0 16px;color:#334155;line-height:1.7;'>
+                    Your tenant account has been created on RentFlow Pro. To start using it, you'll need to set up your password.
+                </p>
+                <p style='text-align:center;margin:24px 0;'>
+                    <a href='{$setupLink}' style='background:#1e3c72;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;'>
+                        Set up my account
+                    </a>
+                </p>
+                <p style='margin:0 0 16px;color:#64748b;font-size:13px;line-height:1.6;'>
+                    On the setup page, enter <strong>{$email}</strong>, click <strong>Send code</strong>,
+                    then enter the 6-digit code you'll receive. After that, you'll set your password and security question.
+                </p>
+                <p style='margin:0;color:#64748b;font-size:12px;'>
+                    If you didn't expect this email, you can safely ignore it.
+                </p>
+            </div>
+        </div>
+    ";
+
+        $sent = sendEmailWithGmailSMTP(
+            $email,
+            $htmlBody,
+            'Welcome to RentFlow Pro — Set up your account',
+            [],
+            "{$firstName} {$inputs['lastname']}"
+        );
+
+        if ($sent) {
+            logActivity("[ONBOARD] Welcome email sent to {$email}");
+        } else {
+            logActivity("[ONBOARD] Welcome email FAILED for {$email} (see email log)", 'WARN');
+        }
+    } catch (Throwable $mailErr) {
+        logActivity("[ONBOARD] Welcome email threw: " . $mailErr->getMessage(), 'WARN');
+    }
 
 
     // ==================== GENERATE ONBOARDING INVOICE (OUTSIDE TRANSACTION) ====================
