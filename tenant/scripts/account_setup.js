@@ -517,5 +517,18 @@
     if (otpForm) {
       otpForm.addEventListener("submit", () => {});
     }
+
+    try {
+        const prefillEmail = sessionStorage.getItem('setup_prefill_email');
+        if (prefillEmail) {
+            const emailInput = document.getElementById('setupEmail');
+            if (emailInput && !emailInput.value) {
+                emailInput.value = prefillEmail;
+                // Optionally auto-focus the send button so they can hit Enter
+                emailInput.focus();
+            }
+            sessionStorage.removeItem('setup_prefill_email');
+        }
+    } catch (_) { /* sessionStorage may be blocked — ignore */ }
   });
 })();

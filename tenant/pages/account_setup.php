@@ -90,7 +90,7 @@ if (session_status() === PHP_SESSION_NONE)
 
                     <p class="step-footnote">
                         Already have a password?
-                        <a href="login.php">Log in instead</a>
+                        <a href="index.php">Log in instead</a>
                     </p>
                 </div>
             </section>

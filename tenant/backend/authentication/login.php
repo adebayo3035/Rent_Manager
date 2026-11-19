@@ -502,7 +502,7 @@ class LoginSecurity
 
         $userId = $user['tenant_code'];
 
-        // ─── 1. LOCKOUT CHECK (highest priority) ───
+        // ─── 1. LOCKOUT CHECK ───
         list($unlocked, $message, $code, $lockoutInfo) = $this->checkLockoutStatus($userId);
         if (!$unlocked) {
             return [$unlocked, $message, $code, $lockoutInfo ?? null];
@@ -514,47 +514,44 @@ class LoginSecurity
             return [$active, $message, $code, null];
         }
 
-        // ─── 3. COMPUTE SETUP REQUIREMENTS ───
+        // ─── 3. FIRST-LOGIN CHECK (before any password verification) ───
+        // A fresh account has password_changed = 0 AND has_secret_set = 0.
+        // They cannot log in until they complete the setup flow.
+        // Send them to the setup page — no session, no attempt counter.
         $needsPasswordChange = $this->checkPasswordChangeRequired($user);
         $needsSecretChange = $this->checkSecretChangeRequired($user);
 
-        // First-login = password has never been set
-        $isFirstLogin = $needsPasswordChange;
+        if ($needsPasswordChange || $needsSecretChange) {
+            $this->log("First-login redirect for {$userId} "
+                . "(password_changed=" . (int) $needsPasswordChange
+                . ", has_secret_set=" . (int) $needsSecretChange . ")");
 
-        // ─── 4. FIRST-LOGIN FAST PATH ───
-        // Account has never set a password → the tenant_code IS the password.
-        // If they sent the wrong password, count it as a failed attempt.
-        if ($isFirstLogin) {
-            if ($password !== $userId) {
-                $this->log("First-login: wrong password for {$userId}");
-                return $this->handleFailedLogin($userId, $lockoutInfo, 'first_login');
-            }
-
-            $this->log("First-login: tenant_code used as password for {$userId}");
-            return $this->issueSetupToken($user, $needsPasswordChange, $needsSecretChange);
+            return [
+                false,
+                "Your account hasn't been set up yet. Please complete your account setup first.",
+                403,
+                [
+                    'requires_setup' => true,
+                    'setup_url' => '/rent_manager/tenant/pages/account_setup.php',
+                    'email_hint' => $user['email'] ?? null,
+                ],
+            ];
         }
 
-        // ─── 5. NORMAL PASSWORD VERIFY ───
+        // ─── 4. NORMAL PASSWORD VERIFY ───
         if (!verifyAndRehashPassword($this->conn, $userId, $password, $user['password'])) {
             $this->log("Password verification failed for user: {$userId}");
             return $this->handleFailedLogin($userId, $lockoutInfo);
         }
 
-        // ─── 6. SECRET LOCKOUT CHECK ───
+        // ─── 5. SECRET LOCKOUT CHECK ───
         list($secretUnlocked, $secretMessage, $secretCode, $secretInfo) = $this->checkSecretLockout($userId);
         if (!$secretUnlocked) {
             $this->log("Login blocked by secret-answer lockout for user: {$userId}");
             return [$secretUnlocked, $secretMessage, $secretCode, $secretInfo];
         }
 
-        // ─── 7. POST-VERIFY SETUP REQUIRED ───
-        // Password is correct, but secret is missing (e.g., admin password reset)
-        if ($needsPasswordChange || $needsSecretChange) {
-            $this->log("Setup required after password auth for {$userId}");
-            return $this->issueSetupToken($user, $needsPasswordChange, $needsSecretChange);
-        }
-
-        // ─── 8. FULL LOGIN ───
+        // ─── 6. FULL LOGIN ───
         if (!$this->destroyExistingSession($userId)) {
             $this->log("Warning: Failed to destroy existing session for {$userId}");
         }
@@ -583,70 +580,6 @@ class LoginSecurity
                 'is_alumni' => ($user['evacuation_status'] === 'evacuated'),
                 'tenant_state' => $user['evacuation_status'],
                 'tenant_status' => $user['tenant_status'],
-            ]
-        ];
-    }
-
-    private function issueSetupToken($user, $needsPasswordChange, $needsSecretChange)
-    {
-        $userId = $user['tenant_code'];
-        $this->log("Issuing setup token for {$userId}");
-
-        // Clean up stale tokens for this user
-        $del = $this->conn->prepare("DELETE FROM temp_auth_tokens WHERE user_id = ? AND user_type = 'tenant'");
-        if ($del) {
-            $del->bind_param("s", $userId);
-            if (!$del->execute()) {
-                $this->log("WARNING: Failed to clear old setup tokens for {$userId}: " . $del->error);
-            }
-            $del->close();
-        }
-
-        $tempToken = bin2hex(random_bytes(32));
-        $expiresAt = date('Y-m-d H:i:s', strtotime('+15 minutes'));
-
-        $stmt = $this->conn->prepare("
-        INSERT INTO temp_auth_tokens (user_id, user_type, token, expires_at)
-        VALUES (?, 'tenant', ?, ?)
-    ");
-        if (!$stmt) {
-            $this->log("ERROR: Failed to prepare token insert for {$userId}: " . $this->conn->error);
-            return [false, "Failed to generate setup token. Please try again.", 500, null];
-        }
-
-        $stmt->bind_param("sss", $userId, $tempToken, $expiresAt);
-
-        if (!$stmt->execute()) {
-            $errMsg = $stmt->error;
-            $stmt->close();
-            $this->log("ERROR: Failed to insert setup token for {$userId}: " . $errMsg);
-            return [false, "Failed to generate setup token. Please try again.", 500, null];
-        }
-        $stmt->close();
-
-        $_SESSION['temp_auth_token'][$userId] = [
-            'token' => $tempToken,
-            'expires' => strtotime($expiresAt),
-            'user_data' => [
-                'tenant_code' => $user['tenant_code'],
-                'firstname' => $user['firstname'],
-                'lastname' => $user['lastname'],
-                'email' => $user['email'],
-            ],
-        ];
-
-        return [
-            true,
-            "Login successful. Please complete your account setup.",
-            200,
-            [
-                'user_id' => $userId,
-                'firstname' => $user['firstname'],
-                'lastname' => $user['lastname'],
-                'requires_action' => true,
-                'needs_password_change' => (bool) $needsPasswordChange,
-                'needs_secret_change' => (bool) $needsSecretChange,
-                'temp_token' => $tempToken,
             ]
         ];
     }
@@ -833,9 +766,12 @@ try {
         "message" => $message
     ];
 
-    if ($success && isset($additionalData)) {
-        $response['data'] = $additionalData;
-    }
+    // if ($success && isset($additionalData)) {
+    //     $response['data'] = $additionalData;
+    // }
+    if (isset($additionalData) && !empty($additionalData)) {
+    $response['data'] = $additionalData;
+}
 
     echo json_encode($response);
 
