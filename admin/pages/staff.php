@@ -102,7 +102,7 @@ guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
                 </select>
                 </div>
             
-                 <div class="form-group">
+                 <!-- <div class="form-group">
                     <label for="staffPassword">Password:</label>
                     <input type="password" id="staffPassword" name="staff_password" class ="validate" data-type ="password" required>
                 </div>
@@ -115,7 +115,7 @@ guardPageIfAdmin($conn);   // or guardPageIfTenant($conn)
                 <div class="form-group">
                     <label for="staffSecretAnswer">Secret Answer:</label>
                     <input type="password" id="staffSecretAnswer" name="staff_secret_answer" required>
-                </div>
+                </div> -->
 
 
                 <div class="form-group">

@@ -683,6 +683,40 @@ document.addEventListener("DOMContentLoaded", () => {
           setTimeout(() => {
             window.location.href = "splashscreen.php";
           }, 1500);
+        } else if (response.status === 403 && data.data?.requires_setup) {
+          // First-time user — send to account setup
+          console.log(
+            "First-login detected, redirecting to setup:",
+            data.data.setup_url,
+          );
+          displayError(
+            data.message || "Please complete your account setup first.",
+          );
+
+          // Pre-fill the email on the setup page via sessionStorage
+          if (data.data.email_hint) {
+            try {
+              sessionStorage.setItem(
+                "setup_prefill_email",
+                data.data.email_hint,
+              );
+            } catch (_) {
+              /* sessionStorage may be blocked — safe to ignore */
+            }
+          }
+
+          const setupUrl = data.data.setup_url || "../pages/account_setup.php";
+          UI.toast("Redirecting to account setup...", "info");
+
+          setTimeout(() => {
+            window.location.href = setupUrl;
+          }, 2000);
+
+          // Re-enable the submit button while redirecting (in case user navigates back)
+          if (submitBtn) {
+            submitBtn.innerHTML = originalBtnText;
+            submitBtn.disabled = false;
+          }
         } else {
           // Error - Check the error message
           let errorMessage = data.message || "Login failed. Please try again.";
