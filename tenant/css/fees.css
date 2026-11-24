@@ -726,45 +726,107 @@ body {
     color: #0a0a1a;
 }
 
+/* ==================== MODAL FOOTER ==================== */
 .modal-footer {
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    align-items: center;
+    gap: 12px;
     padding: 16px 24px 20px;
     border-top: 1px solid #eef2f7;
+    background: #fafbfc;           /* subtle contrast from modal body */
+    border-radius: 0 0 12px 12px;  /* matches modal's rounded corners */
 }
 
-.modal-footer .btn {
-    padding: 8px 24px;
+/* Base button style (applies to both variants) */
+.modal-footer .btn,
+.modal-footer button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;                       /* space between icon and text */
+    min-height: 40px;               /* consistent height, better click target */
+    padding: 10px 22px;
     border-radius: 8px;
-    font-weight: 500;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s;
-    border: none;
     font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+    border: 1px solid transparent;  /* reserve border space on both */
+    white-space: nowrap;
 }
 
+/* ========== SECONDARY ========== */
 .modal-footer .btn-secondary {
-    background: #f3f4f6;
-    color: #0a0a1a;
-    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    color: #374151;
+    border-color: #e5e7eb;
 }
-
 .modal-footer .btn-secondary:hover {
-    background: #e5e7eb;
+    background: #f9fafb;
+    border-color: #d1d5db;
+    color: #111827;
+}
+.modal-footer .btn-secondary:active {
+    background: #f3f4f6;
 }
 
+/* ========== PRIMARY ========== */
 .modal-footer .btn-primary {
     background: #4f46e5;
-    color: white;
+    color: #ffffff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
-
 .modal-footer .btn-primary:hover {
     background: #4338ca;
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.28);
+}
+.modal-footer .btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(79, 70, 229, 0.2);
 }
 
+/* ========== FOCUS STATES (accessibility) ========== */
+.modal-footer .btn:focus-visible,
+.modal-footer button:focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+}
+
+/* ========== DISABLED ========== */
+.modal-footer .btn:disabled,
+.modal-footer button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* ========== ICON ALIGNMENT ========== */
+.modal-footer .btn i,
+.modal-footer button i {
+    font-size: 14px;
+    line-height: 1;
+}
+
+/* ========== MOBILE ========== */
+@media (max-width: 480px) {
+    .modal-footer {
+        flex-direction: column-reverse;   /* primary on top when stacked */
+        align-items: stretch;
+        gap: 8px;
+        padding: 14px 16px 18px;
+    }
+    .modal-footer .btn,
+    .modal-footer button {
+        width: 100%;
+        padding: 12px 20px;
+        min-height: 44px;                 /* larger tap target on mobile */
+    }
+}
 /* -- Fee Detail Modal  */
 /* ==================== FEE DETAILS MODAL STYLES ==================== */
 

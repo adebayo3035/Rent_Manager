@@ -844,8 +844,8 @@ function showPaymentSuccessModal(paymentData) {
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn-secondary" onclick="closeModal('paymentSuccessModal')">Close</button>
-                    <button class="btn-primary" onclick="downloadReceipt('${paymentData.receipt_number}', ${paymentData.payment_id})">
+                    <button class="btn btn-secondary" onclick="closeModal('paymentSuccessModal')">Close</button>
+                    <button class="btn btn-primary" onclick="downloadReceipt('${paymentData.receipt_number}', ${paymentData.payment_id})">
                         <i class="fas fa-download"></i> Download Receipt
                     </button>
                 </div>

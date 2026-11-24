@@ -74,6 +74,10 @@
                     <i class="fas fa-wallet"></i>
                     <span>My Wallet</span>
                 </a>
+                <a href="transactions.php" class="nav-item" data-page="transactions">
+                    <i class="fas fa-receipt"></i>
+                    <span>Transaction Report</span>
+                </a>
                 <a href="documents.php" class="nav-item" data-page="documents">
                     <i class="fas fa-file-alt"></i>
                     <span>Documents</span>
